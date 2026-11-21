@@ -87,14 +87,18 @@ class ViewProjector {
     required this.size,
     required this.target,
     required double radius,
+    double distanceFactor = defaultDistanceFactor,
   }) : _cy = math.cos(camera.yaw),
        _sy = math.sin(camera.yaw),
        _cp = math.cos(camera.pitch),
        _sp = math.sin(camera.pitch),
-       distance = radius * 2.8,
+       distance = radius * distanceFactor,
        scale =
            (math.min(size.width, size.height) * 0.42 / radius) * camera.zoom,
        center = size.center(Offset.zero) + camera.pan;
+
+  /// Camera distance in scene radii used by the 3D preview.
+  static const defaultDistanceFactor = 2.8;
 
   final Camera3D camera;
   final Size size;
@@ -165,11 +169,24 @@ class Scene3DPainter extends CustomPainter {
     this.paintBackground = true,
     this.paintGround = true,
     this.paintGizmo = true,
+    this.night = false,
+    this.distanceFactor = ViewProjector.defaultDistanceFactor,
   });
 
   final Scene scene;
   final Camera3D camera;
   final bool showDimensions;
+
+  /// Illustrative night render: lit (emissive) faces get a soft glow, the
+  /// rest a moderate blue evening tone. Geometry is identical to day.
+  final bool night;
+
+  /// Camera distance in scene radii (larger = milder perspective). Photo
+  /// overlays use a longer, more photographic distance than the 3D preview.
+  final double distanceFactor;
+
+  /// Evening tone applied to unlit faces in [night] mode.
+  static const nightTone = Color(0xFF1B2846);
 
   /// Sky gradient behind the scene. Off for photo overlays (Live Preview),
   /// where only the model is drawn on a transparent canvas.
@@ -189,6 +206,7 @@ class Scene3DPainter extends CustomPainter {
       size: size,
       target: scene.focus,
       radius: scene.radius,
+      distanceFactor: distanceFactor,
     );
 
     if (paintBackground) {
@@ -397,8 +415,28 @@ class Scene3DPainter extends CustomPainter {
     final k = face.emissive
         ? 1.0
         : 0.5 + 0.5 * math.max(0.0, face.normal.dot(_light));
-    final fill = shade(face.color, k);
+    var fill = shade(face.color, k);
     final path = Path()..addPolygon(pts, true);
+    if (night) {
+      if (face.emissive) {
+        // Soft light spill around the lit face (render-only, no geometry).
+        final b = path.getBounds();
+        final sigma = math.max(2.0, b.shortestSide * 0.18);
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = Color.lerp(
+              face.color,
+              Colors.white,
+              0.55,
+            )!.withValues(alpha: 0.55 * face.color.a)
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, sigma),
+        );
+        fill = Color.lerp(fill, Colors.white, 0.12)!;
+      } else {
+        fill = Color.lerp(fill, nightTone, 0.5)!.withValues(alpha: fill.a);
+      }
+    }
     canvas.drawPath(path, Paint()..color = fill);
     if (face.outline) {
       canvas.drawPath(
@@ -414,7 +452,50 @@ class Scene3DPainter extends CustomPainter {
     }
   }
 
-  /// Draws text on a face using an affine map of its projected corners.
+  /// Projective map of the unit square onto the quad [q] (TL, TR, BR, BL):
+  /// (u, v) → ((a·u + b·v + c) / w, (d·u + e·v + f) / w), w = g·u + h·v + 1.
+  /// Returns null for degenerate, mirrored or non-convex quads.
+  static List<double>? squareToQuad(List<Offset> q) {
+    if (q.length < 4) return null;
+    // Convex, consistently wound (clockwise on screen = not mirrored).
+    for (var i = 0; i < 4; i++) {
+      final a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+      final cross =
+          (b.dx - a.dx) * (c.dy - b.dy) - (b.dy - a.dy) * (c.dx - b.dx);
+      if (!cross.isFinite || cross <= 1) return null;
+    }
+    final x0 = q[0].dx, y0 = q[0].dy, x1 = q[1].dx, y1 = q[1].dy;
+    final x2 = q[2].dx, y2 = q[2].dy, x3 = q[3].dx, y3 = q[3].dy;
+    final dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3;
+    final dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+    double g = 0, h = 0;
+    if (dx3.abs() > 1e-9 || dy3.abs() > 1e-9) {
+      final den = dx1 * dy2 - dx2 * dy1;
+      if (den.abs() < 1e-12) return null;
+      g = (dx3 * dy2 - dx2 * dy3) / den;
+      h = (dx1 * dy3 - dx3 * dy1) / den;
+    }
+    final m = [
+      x1 - x0 + g * x1, x3 - x0 + h * x3, x0, //
+      y1 - y0 + g * y1, y3 - y0 + h * y3, y0, //
+      g, h,
+    ];
+    // w must stay positive over the whole square (no wrap-around).
+    for (final (u, v) in const [
+      (0.0, 0.0),
+      (1.0, 0.0),
+      (1.0, 1.0),
+      (0.0, 1.0),
+    ]) {
+      if (g * u + h * v + 1 <= 1e-6) return null;
+    }
+    return m.every((e) => e.isFinite) ? m : null;
+  }
+
+  /// Draws text on a face with a projective (perspective-correct) map of
+  /// its projected corners, so turned / tilted artwork follows the face
+  /// exactly instead of shearing (the old affine map ignored the 4th
+  /// corner).
   void _paintFaceLabel(Canvas canvas, Face face, List<Offset> pts) {
     final p0 = pts[0], p1 = pts[1], p3 = pts[3];
     final ax = p1 - p0;
@@ -422,6 +503,8 @@ class Scene3DPainter extends CustomPainter {
     if (ax.distance < 18 || ay.distance < 6) return;
     final det = ax.dx * ay.dy - ax.dy * ay.dx;
     if (det <= 1) return; // edge-on or mirrored
+    final hm = squareToQuad(pts.sublist(0, 4));
+    if (hm == null) return;
     final wWorld = (face.points[1] - face.points[0]).length;
     final hWorld = (face.points[3] - face.points[0]).length;
     if (wWorld <= 0 || hWorld <= 0) return;
@@ -443,12 +526,13 @@ class Scene3DPainter extends CustomPainter {
     if (tp.width <= 0 || tp.height <= 0) return;
     final s = math.min(boxW * 0.86 / tp.width, boxH * 0.62 / tp.height);
     canvas.save();
+    // Column-major 4×4 of the homography, pre-scaled from the label box.
     canvas.transform(
       Float64List.fromList([
-        ax.dx / boxW, ax.dy / boxW, 0, 0, //
-        ay.dx / boxH, ay.dy / boxH, 0, 0, //
+        hm[0] / boxW, hm[3] / boxW, 0, hm[6] / boxW, //
+        hm[1] / boxH, hm[4] / boxH, 0, hm[7] / boxH, //
         0, 0, 1, 0, //
-        p0.dx, p0.dy, 0, 1,
+        hm[2], hm[5], 0, 1,
       ]),
     );
     canvas.translate(boxW / 2, boxH / 2);
@@ -574,5 +658,7 @@ class Scene3DPainter extends CustomPainter {
       old.showDimensions != showDimensions ||
       old.paintBackground != paintBackground ||
       old.paintGround != paintGround ||
-      old.paintGizmo != paintGizmo;
+      old.paintGizmo != paintGizmo ||
+      old.night != night ||
+      old.distanceFactor != distanceFactor;
 }

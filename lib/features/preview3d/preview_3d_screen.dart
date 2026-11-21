@@ -6,12 +6,17 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/length_input.dart';
 import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import '../../data/catalog/measurement_fields.dart';
 import '../drawing/signage_geometry.dart';
+import '../gsb/gsb_board.dart';
+import '../gsb/gsb_override_sheet.dart';
+import '../gsb/gsb_rules.dart';
+import '../gsb/gsb_scene.dart';
 import '../model3d/parametric_builder.dart';
 import '../model3d/signage_spec.dart';
 import '../model3d/technical_drawing_screen.dart';
@@ -79,6 +84,12 @@ class _Preview3DScreenState extends State<Preview3DScreen>
   bool _night = false;
   bool _selectedDimsOnly = false;
   String? _modelError;
+
+  /// GSB only: show the physical fabrication frame (rulebook members)
+  /// instead of the finished light box.
+  bool _fabFrame = false;
+  Scene? _structScene;
+  String? _structKey;
 
   @override
   void initState() {
@@ -152,15 +163,27 @@ class _Preview3DScreenState extends State<Preview3DScreen>
   ) {
     if (board.mediaCode != null && !SignageCatalog.isLegacy(board.mediaCode)) {
       // Catalog media: commit through the canonical measurement sync.
+      final sizeChanged = _wFt != null || _hFt != null;
       final problems = c.applySpecEdits(shop.id, board.id, _unitId!, _edits());
       if (problems.isNotEmpty) {
         showSnack(context, problems.first, error: true);
         return;
       }
       _cancelEdits();
+      final u = board.unitById(_unitId);
+      final stale = !sizeChanged || u == null
+          ? 0
+          : board
+                .previewsOf(u)
+                .where((p) => p.kind != CaptureKind.edited)
+                .length;
       showSnack(
         context,
-        'Measurements saved – recce form, 2D drawing and PDF use them',
+        stale == 0
+            ? 'Measurements saved – recce form, 2D drawing and PDF use them'
+            : 'Measurements saved. $stale saved preview(s) used the previous '
+                  'size – open Live Preview / Camera AR and save again to '
+                  'refresh them.',
       );
       return;
     }
@@ -233,7 +256,26 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     final spec = parametric ? _editedSpec(board, unit) : null;
     final model = spec == null ? null : _safeModel(spec, brand);
     _statusLabel = parametric ? c.modelStatus(board.mediaCode!).label : null;
-    final scene = model == null ? _sceneFor(g, brand) : _styled(model);
+    final isGsb = GsbBoard.isGsb(board);
+    final plan = isGsb
+        ? GsbBoard.planFor(
+            board,
+            unit,
+            widthIn: g.widthFt * 12,
+            heightIn: g.heightFt * 12,
+          )
+        : null;
+    final Scene scene;
+    if (model == null) {
+      scene = _sceneFor(g, brand);
+    } else {
+      final structural = isGsb && _fabFrame && plan != null && !plan.hasErrors;
+      scene = _styled(
+        model,
+        structural ? _structureFor(model, plan, spec!) : model.scene,
+        gsb: isGsb,
+      );
+    }
     final canEdit = c.canEdit(shop);
     final media = SignageCatalog.media(board.mediaCode);
     final inst = SignageCatalog.installation(board.installationOf(unit));
@@ -337,7 +379,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
           builder: (context, constraints) => Column(
             children: [
               if (board.units.length > 1) _unitPicker(board, unit),
-              Expanded(child: _viewport(scene, g, model)),
+              Expanded(child: _viewport(scene, g, model, gsb: isGsb)),
               _dimensionPanel(
                 c,
                 shop,
@@ -348,6 +390,8 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                 maxHeight: constraints.maxHeight * 0.42,
                 spec: spec,
                 model: model,
+                plan: plan,
+                unit: unit,
               ),
             ],
           ),
@@ -371,8 +415,56 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     if (_clrFt != null) SpecField.mountingHeight: _clrFt! * kMmPerFoot,
   };
 
+  /// Structural GSB scene, rebuilt only when the model or plan changes
+  /// (never on day / night toggles or camera moves).
+  Scene _structureFor(
+    ParametricModel model,
+    GsbFabricationPlan plan,
+    SignageModelSpec spec,
+  ) {
+    final i = plan.input;
+    final key = [
+      identityHashCode(model),
+      i.variant.key,
+      i.widthIn,
+      i.heightIn,
+      i.depthIn,
+      i.profileWidthIn,
+      i.profileHeightIn,
+      spec.mountingHeightMm,
+    ].join('|');
+    if (_structScene == null || _structKey != key) {
+      _structScene = gsbStructureScene(
+        model,
+        plan,
+        mountingFt: spec.mountingHeightMm / kMmPerFoot,
+      );
+      _structKey = key;
+    }
+    return _structScene!;
+  }
+
   SignageModelSpec _editedSpec(Board board, SignageUnit unit) {
-    final base = SignageModelSpec.of(board, unit);
+    var base = SignageModelSpec.of(board, unit);
+    if (GsbBoard.isGsb(board)) {
+      // Provisional preview of active (unapproved) GSB overrides; never
+      // written to the recce measurements.
+      final depthOv = GsbBoard.activeOverride(
+        board,
+        unit.id,
+        GsbOverrideField.depth,
+      );
+      final profOv = GsbBoard.activeOverride(
+        board,
+        unit.id,
+        GsbOverrideField.profileWidth,
+      );
+      final ov = <SpecField, double>{
+        if (depthOv != null) SpecField.depth: depthOv.proposedIn * 25.4,
+        if (profOv != null) SpecField.frameThickness: profOv.proposedIn * 25.4,
+      };
+      if (ov.isNotEmpty) base = base.copyWith(values: ov);
+    }
     final edits = _edits();
     return edits.isEmpty ? base : base.copyWith(values: edits);
   }
@@ -396,7 +488,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
 
   /// View styling: surroundings, X-ray (transparent) material, night
   /// appearance and selected-component dimensions. Display only.
-  Scene _styled(ParametricModel model) {
+  Scene _styled(ParametricModel model, Scene base, {bool gsb = false}) {
     final selected = model.component(_selectedPart ?? '');
     final dims = _selectedDimsOnly && selected != null
         ? [
@@ -405,11 +497,15 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                 d.toDim3(),
           ]
         : null;
-    if (!_xray && !_night && dims == null) return model.scene;
+    if (!_xray && !_night && dims == null) return base;
     Color tone(Color c, bool emissive) {
       var out = c;
       if (_night && !emissive) {
-        out = Color.lerp(c, const Color(0xFF0B1020), 0.62)!;
+        // GSB: moderate soft-blue evening that keeps the facade and
+        // shutter readable; other media keep the original night tone.
+        out = gsb
+            ? Color.lerp(c, const Color(0xFF22314F), 0.42)!
+            : Color.lerp(c, const Color(0xFF0B1020), 0.62)!;
       }
       if (_xray) out = out.withValues(alpha: math.min(out.a, 0.35));
       return out;
@@ -425,8 +521,8 @@ class _Preview3DScreenState extends State<Preview3DScreen>
       labelColor: f.labelColor,
       layer: f.layer,
     );
-    final scene = Scene(focus: model.scene.focus);
-    for (final s in model.scene.solids) {
+    final scene = Scene(focus: base.focus);
+    for (final s in base.solids) {
       final copy = Solid(
         name: s.name,
         faces: [for (final f in s.faces) restyle(f)],
@@ -435,7 +531,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
       copy.decalNormal = s.decalNormal;
       scene.add(copy);
     }
-    scene.dims.addAll(dims ?? model.scene.dims);
+    scene.dims.addAll(dims ?? base.dims);
     scene.finalize();
     return scene;
   }
@@ -647,8 +743,9 @@ class _Preview3DScreenState extends State<Preview3DScreen>
   Widget _structurePanel(
     SignageModelSpec spec,
     ParametricModel model,
-    bool canEdit,
-  ) {
+    bool canEdit, {
+    bool gsb = false,
+  }) {
     final parts = [
       for (final p in model.components)
         if (!p.isContext) p,
@@ -659,9 +756,15 @@ class _Preview3DScreenState extends State<Preview3DScreen>
       SpecField.height,
       SpecField.mountingHeight,
     };
+    // GSB depth / frame profile only change through the reviewed override
+    // workflow (GSB fabrication section), never by free editing.
+    const gsbLocked = {SpecField.depth, SpecField.frameThickness};
     final fields = [
       for (final f in (selected?.editable ?? spec.editableFields))
-        if (!sizeFields.contains(f) && spec.has(f)) f,
+        if (!sizeFields.contains(f) &&
+            spec.has(f) &&
+            !(gsb && gsbLocked.contains(f)))
+          f,
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -704,6 +807,13 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                 _selectedDimsOnly,
                 (bool v) => _selectedDimsOnly = v,
               ),
+              if (gsb)
+                (
+                  'view_gsb_frame',
+                  'Fabrication frame',
+                  _fabFrame,
+                  (bool v) => _fabFrame = v,
+                ),
             ])
               FilterChip(
                 key: Key(key),
@@ -798,6 +908,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               _xray = false;
               _night = false;
               _selectedDimsOnly = false;
+              _fabFrame = false;
               _wFt = null;
               _hFt = null;
               _clrFt = null;
@@ -809,7 +920,13 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     );
   }
 
-  Widget _viewport(Scene scene, SignageGeometry g, ParametricModel? model) {
+  Widget _viewport(
+    Scene scene,
+    SignageGeometry g,
+    ParametricModel? model, {
+    bool gsb = false,
+  }) {
+    final nightView = _night && model != null;
     return Stack(
       children: [
         Positioned.fill(
@@ -849,16 +966,26 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               },
               onDoubleTap: () => _animateTo(_home(g)),
               child: Container(
-                color: _night && model != null
-                    ? const Color(0xFF0B1020)
-                    : Colors.transparent,
+                decoration: BoxDecoration(
+                  color: nightView && !gsb
+                      ? const Color(0xFF0B1020)
+                      : Colors.transparent,
+                  gradient: nightView && gsb
+                      ? const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xFF15203A), Color(0xFF34436A)],
+                        )
+                      : null,
+                ),
                 child: CustomPaint(
                   painter: Scene3DPainter(
                     scene: scene,
                     camera: _camera,
                     showDimensions: _showDims,
-                    paintBackground: !(_night && model != null),
+                    paintBackground: !nightView,
                     paintGround: _showContext || model == null,
+                    night: nightView && gsb,
                   ),
                   child: const SizedBox.expand(),
                 ),
@@ -945,6 +1072,8 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               ),
             ),
           ),
+        if (gsb && model != null)
+          Positioned(left: 8, bottom: 40, child: _gsbRenderToggle()),
         if (_statusLabel != null)
           Positioned(
             left: 8,
@@ -1016,6 +1145,318 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     );
   }
 
+  /// Render View (GSB Single / Double): Day | Night. Toggling restyles
+  /// colours only – camera, geometry and quantities are untouched.
+  Widget _gsbRenderToggle() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        key: const Key('gsb_render_view'),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AdinnColors.line),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (night, label, icon) in const [
+              (false, 'Day', Icons.wb_sunny_outlined),
+              (true, 'Night', Icons.nightlight_round),
+            ])
+              InkWell(
+                key: Key('gsb_render_${night ? 'night' : 'day'}'),
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => setState(() => _night = night),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _night == night
+                        ? (night ? const Color(0xFF1B2846) : AdinnColors.red)
+                        : null,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        icon,
+                        size: 15,
+                        color: _night == night
+                            ? Colors.white
+                            : AdinnColors.muted,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: _night == night
+                              ? Colors.white
+                              : AdinnColors.ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      if (_night)
+        Container(
+          margin: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          color: Colors.black.withValues(alpha: 0.5),
+          child: const Text(
+            'Illustrative night render',
+            style: TextStyle(color: Colors.white, fontSize: 10),
+          ),
+        ),
+    ],
+  );
+
+  /// GSB fabrication summary: variant, depth, frame profile, wall
+  /// thickness, modules and review items, with the override workflow.
+  Widget _gsbPanel(
+    AppController c,
+    Shop shop,
+    Board board,
+    SignageUnit unit,
+    GsbFabricationPlan plan,
+    bool canEdit,
+  ) {
+    final i = plan.input;
+    String inch(double v) => '${fmtNum(v)} in';
+    final depthOv = GsbBoard.activeOverride(
+      board,
+      unit.id,
+      GsbOverrideField.depth,
+    );
+    final reviews = plan.reviewItems.toList();
+    final errors = plan.issues
+        .where((x) => x.level == GsbIssueLevel.error)
+        .toList();
+    final history = GsbBoard.overridesOf(board, unit.id);
+    Widget line(String k, String v, {bool flag = false}) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              k,
+              style: const TextStyle(fontSize: 12, color: AdinnColors.muted),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              v,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: flag ? AdinnColors.warning : AdinnColors.ink,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    final cols = plan.columnsIn, rows = plan.rowsIn;
+    final modules = plan.modules.length <= 1
+        ? (plan.heightSplit && rows == null
+              ? 'Split required – partition needs review'
+              : 'Single module')
+        : '${plan.modules.length} modules · '
+              '${cols!.map(fmtNum).join(' + ')} in wide · '
+              '${rows!.map(fmtNum).join(' + ')} in high';
+    return Container(
+      key: const Key('gsb_fab_panel'),
+      margin: const EdgeInsets.only(top: 6, bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AdinnColors.canvas,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AdinnColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.engineering, size: 18, color: AdinnColors.red),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'GSB fabrication · ${i.variant.label}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (plan.requiresReview || depthOv != null)
+            Container(
+              key: const Key('gsb_review_tag'),
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AdinnColors.warning.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.rule, size: 14, color: AdinnColors.warning),
+                  SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      'Requires Engineering Review',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: AdinnColors.warning,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 6),
+          line(
+            'Board depth',
+            i.usesDefaultDepth
+                ? '${inch(i.depthIn)} (default)'
+                : '${inch(i.depthIn)} (default 8 in · '
+                      '${depthOv != null ? 'override – provisional' : 'recorded'})',
+            flag: !i.usesDefaultDepth,
+          ),
+          line(
+            'Frame profile',
+            '${fmtNum(i.profileWidthIn)} × ${fmtNum(i.profileHeightIn)} in MS SHS'
+                '${i.usesDefaultProfile ? ' (default)' : ' (override – provisional)'}',
+            flag: !i.usesDefaultProfile,
+          ),
+          line(
+            'Pipe wall thickness',
+            i.wallThicknessIn == null
+                ? 'Unspecified – requires engineering confirmation'
+                : '${inch(i.wallThicknessIn!)} (override – provisional)',
+            flag: true,
+          ),
+          line('Modules', modules),
+          line(
+            'Members',
+            '${plan.count(GsbMemberRole.internalVertical)} internal verticals'
+                ' (${i.variant.isDouble ? 'centre depth' : 'rear plane'}) · '
+                '${plan.count(GsbMemberRole.brace)} braces · '
+                '${plan.count(GsbMemberRole.seamBrace)} seam braces · '
+                '${plan.inserts.length} couplings',
+          ),
+          line(
+            'Cladding',
+            '${plan.printFlexFaces == 2 ? 'Front + rear' : 'Front'} flex · '
+                '${plan.hasRearGi ? 'rear GI · ' : ''}'
+                '${plan.trimPieceCount} powder-coated trim pieces · '
+                '1 LED set',
+          ),
+          for (final e in errors)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                e.message,
+                style: const TextStyle(fontSize: 11.5, color: AdinnColors.red),
+              ),
+            ),
+          if (reviews.isNotEmpty)
+            Material(
+              type: MaterialType.transparency,
+              child: Theme(
+                data: Theme.of(
+                  context,
+                ).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  key: const Key('gsb_review_items'),
+                  tilePadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(
+                    '${reviews.length} item(s) need engineering review',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdinnColors.warning,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  children: [
+                    for (final r in reviews)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '• ${r.message}',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          for (final o in history.reversed.take(4))
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${o.field.label}: '
+                      '${o.originalIn == null ? 'unspecified' : inch(o.originalIn!)}'
+                      ' → ${inch(o.proposedIn)} · ${o.status.label}\n'
+                      '“${o.reason}” · ${fmtDateTime(o.createdAt)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: o.isActive
+                            ? AdinnColors.warning
+                            : AdinnColors.muted,
+                      ),
+                    ),
+                  ),
+                  if (o.isActive && canEdit)
+                    TextButton(
+                      key: Key('gsb_revert_${o.id}'),
+                      onPressed: () =>
+                          c.revertGsbOverride(shop.id, board, o.id),
+                      child: const Text('Revert'),
+                    ),
+                ],
+              ),
+            ),
+          if (canEdit)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('gsb_override'),
+                onPressed: () => showGsbOverrideSheet(
+                  context,
+                  shopId: shop.id,
+                  board: board,
+                  unit: unit,
+                  plan: plan,
+                ),
+                icon: const Icon(Icons.edit_note, size: 18),
+                label: const Text('Edit / Override depth or frame'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _roundButton(IconData icon, String tooltip, VoidCallback onTap) {
     return Material(
       color: Colors.white,
@@ -1044,6 +1485,8 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     required double maxHeight,
     SignageModelSpec? spec,
     ParametricModel? model,
+    GsbFabricationPlan? plan,
+    SignageUnit? unit,
   }) {
     final u = g.unit;
     final dirty = _isDirty;
@@ -1114,15 +1557,18 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                     children: [
                       _slider(
                         key: const Key('width-slider'),
+                        fieldKey: const Key('width-exact'),
                         label: 'Width',
                         valueFt: g.widthFt,
                         minFt: 1,
                         maxFt: math.max(40, (saved.widthFt * 2).ceilToDouble()),
+                        limitFt: _maxWidthFt,
                         unit: u,
                         onChanged: (v) => setState(() => _wFt = v),
                       ),
                       _slider(
                         key: const Key('height-slider'),
+                        fieldKey: const Key('height-exact'),
                         label: 'Height',
                         valueFt: g.heightFt,
                         minFt: 0.5,
@@ -1130,12 +1576,14 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                           20,
                           (saved.heightFt * 2).ceilToDouble(),
                         ),
+                        limitFt: _maxHeightFt,
                         unit: u,
                         onChanged: (v) => setState(() => _hFt = v),
                       ),
                       if (clrKey != null)
                         _slider(
                           key: const Key('clearance-slider'),
+                          fieldKey: const Key('clearance-exact'),
                           label: mountLabel,
                           valueFt: mountFt,
                           minFt: 0,
@@ -1143,6 +1591,8 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                             30,
                             (saved.clearanceFt * 2).ceilToDouble(),
                           ),
+                          limitFt: _maxMountFt,
+                          allowZero: true,
                           unit: u,
                           onChanged: (v) => setState(() => _clrFt = v),
                         ),
@@ -1189,8 +1639,15 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                           ),
                         ],
                       ),
+                      if (plan != null && unit != null)
+                        _gsbPanel(c, shop, board, unit, plan, canEdit),
                       if (spec != null && model != null)
-                        _structurePanel(spec, model, canEdit),
+                        _structurePanel(
+                          spec,
+                          model,
+                          canEdit,
+                          gsb: GsbBoard.isGsb(board),
+                        ),
                     ],
                   ),
                 ),
@@ -1201,22 +1658,37 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     );
   }
 
+  /// Sanity limits for typed values (the slider range adapts up to these;
+  /// typed values are never silently clamped to the old slider range).
+  static const _maxWidthFt = 200.0;
+  static const _maxHeightFt = 100.0;
+  static const _maxMountFt = 200.0;
+
+  /// `Label  [exact input]  [slider]` – one authoritative value (the
+  /// pending edit in feet, full precision); typing updates the slider and
+  /// sliding updates the text.
   Widget _slider({
     required Key key,
+    required Key fieldKey,
     required String label,
     required double valueFt,
     required double minFt,
     required double maxFt,
+    required double limitFt,
     required MeasureUnit unit,
     required ValueChanged<double> onChanged,
+    bool allowZero = false,
   }) {
-    final value = valueFt.clamp(minFt, maxFt).toDouble();
+    // Grow the slider range to include a typed value instead of clamping.
+    final lo = math.min(minFt, valueFt);
+    final hi = math.max(maxFt, math.min(limitFt, valueFt * 1.25));
+    final value = valueFt.clamp(lo, hi).toDouble();
     return SizedBox(
-      height: 44,
+      height: 48,
       child: Row(
         children: [
           SizedBox(
-            width: 88,
+            width: 74,
             child: Text(
               label,
               maxLines: 1,
@@ -1224,33 +1696,151 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               style: const TextStyle(fontSize: 13),
             ),
           ),
+          SizedBox(
+            width: 104,
+            child: ExactLengthField(
+              key: fieldKey,
+              label: label,
+              valueFt: valueFt,
+              unit: unit,
+              maxFt: limitFt,
+              allowZero: allowZero,
+              onCommitted: onChanged,
+            ),
+          ),
           Expanded(
             child: Slider(
               key: key,
               value: value,
-              min: minFt,
-              max: maxFt,
-              divisions: ((maxFt - minFt) / 0.25).round(),
+              min: lo,
+              max: hi,
+              divisions: math.max(1, ((hi - lo) / 0.25).round()),
               onChanged: onChanged,
-            ),
-          ),
-          SizedBox(
-            width: 70,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: Text(
-                fmtLength(valueFt, unit),
-                maxLines: 1,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Editable exact length (e.g. `5 ft 6 in`). Shows the authoritative value
+/// while not focused; parses and validates on submit / focus loss and only
+/// then reports a value – invalid text is never committed.
+class ExactLengthField extends StatefulWidget {
+  const ExactLengthField({
+    super.key,
+    required this.label,
+    required this.valueFt,
+    required this.unit,
+    required this.onCommitted,
+    this.maxFt,
+    this.allowZero = false,
+  });
+
+  final String label;
+  final double valueFt;
+  final MeasureUnit unit;
+  final ValueChanged<double> onCommitted;
+  final double? maxFt;
+  final bool allowZero;
+
+  @override
+  State<ExactLengthField> createState() => _ExactLengthFieldState();
+}
+
+class _ExactLengthFieldState extends State<ExactLengthField> {
+  late final TextEditingController _ctl;
+  final _focus = FocusNode();
+  String? _error;
+
+  String get _formatted => formatLengthInput(widget.valueFt, widget.unit);
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = TextEditingController(text: _formatted);
+    _focus.addListener(() {
+      if (_focus.hasFocus) {
+        _ctl.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _ctl.text.length,
+        );
+      } else {
+        _commit(revertOnError: true);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ExactLengthField old) {
+    super.didUpdateWidget(old);
+    // Slider moved / edits cancelled: follow the authoritative value
+    // unless the user is typing.
+    if (!_focus.hasFocus &&
+        (old.valueFt != widget.valueFt || old.unit != widget.unit)) {
+      _ctl.text = _formatted;
+      _error = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  void _commit({bool revertOnError = false}) {
+    final ft = parseLengthToFeet(_ctl.text, widget.unit);
+    final err = validateLengthFeet(
+      ft,
+      label: widget.label,
+      maxFt: widget.maxFt,
+      allowZero: widget.allowZero,
+    );
+    if (err != null) {
+      if (revertOnError) {
+        setState(() => _error = null);
+        _ctl.text = _formatted;
+        if (mounted) showSnack(context, err, error: true);
+      } else {
+        setState(() => _error = err);
+        showSnack(context, err, error: true);
+      }
+      return;
+    }
+    setState(() => _error = null);
+    if ((ft! - widget.valueFt).abs() > 1e-9) widget.onCommitted(ft);
+    if (!_focus.hasFocus) _ctl.text = formatLengthInput(ft, widget.unit);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _ctl,
+      focusNode: _focus,
+      keyboardType: TextInputType.text,
+      textInputAction: TextInputAction.done,
+      autocorrect: false,
+      enableSuggestions: false,
+      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+      decoration: InputDecoration(
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        border: const OutlineInputBorder(),
+        errorText: _error,
+        errorStyle: const TextStyle(fontSize: 0, height: 0),
+        hintText:
+            widget.unit == MeasureUnit.ft || widget.unit == MeasureUnit.inch
+            ? '5 ft 6 in'
+            : null,
+      ),
+      onSubmitted: (_) {
+        _commit();
+        if (_error == null) _focus.unfocus();
+      },
+      onTapOutside: (_) => _focus.unfocus(),
     );
   }
 }

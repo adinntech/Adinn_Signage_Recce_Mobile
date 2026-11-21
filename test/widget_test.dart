@@ -272,6 +272,11 @@ void main() {
 
     await tester.tap(find.byKey(const Key('media_GSB')));
     await tester.pumpAndSettle();
+    // GSB asks for the board type first.
+    await tester.tap(find.byKey(const Key('gsb_type_single')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('gsb_type_continue')));
+    await tester.pumpAndSettle();
     expect(b.mediaCode, 'GSB');
     await tester.tap(find.byKey(const Key('inst_double_pole')));
     await tester.pumpAndSettle();

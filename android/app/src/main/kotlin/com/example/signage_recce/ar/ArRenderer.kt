@@ -125,6 +125,12 @@ internal class ArRenderer(private val listener: ArRendererListener) : GLSurfaceV
     private val taps = ConcurrentLinkedQueue<TapRequest>()
     @Volatile private var captureCallback: ((ByteArray?, String?) -> Unit)? = null
 
+    /** GSB render set: original / day / night of ONE camera frame. */
+    @Volatile private var captureSetCallback: ((Map<String, ByteArray>?, String?) -> Unit)? = null
+
+    /** Illustrative night view of the live camera + models (render only). */
+    @Volatile var nightMode = false
+
     // Multi-object scene (GL thread only, changed through [commands]).
     private val sceneModels = HashMap<String, SceneModel>()
     private val objects = LinkedHashMap<String, SceneObject>()
@@ -238,10 +244,18 @@ internal class ArRenderer(private val listener: ArRendererListener) : GLSurfaceV
         previous?.invoke(null, "Superseded by a newer capture")
     }
 
+    fun requestCaptureSet(callback: (Map<String, ByteArray>?, String?) -> Unit) {
+        val previous = captureSetCallback
+        captureSetCallback = callback
+        previous?.invoke(null, "Superseded by a newer capture")
+    }
+
     /** Fails pending requests (session closing). Any thread. */
     fun cancelPending(reason: String) {
         captureCallback?.invoke(null, reason)
         captureCallback = null
+        captureSetCallback?.invoke(null, reason)
+        captureSetCallback = null
         while (true) {
             val t = taps.poll() ?: break
             t.callback(mapOf("placed" to false, "reason" to reason))
@@ -334,7 +348,9 @@ internal class ArRenderer(private val listener: ArRendererListener) : GLSurfaceV
             return
         }
 
-        background.draw(frame)
+        val night = if (nightMode) 1f else 0f
+        background.draw(frame, night)
+        modelRenderer.night = night
         val camera = frame.camera
         reportTracking(camera.trackingState.name.lowercase(), camera.trackingFailureReason.name)
 
@@ -355,7 +371,7 @@ internal class ArRenderer(private val listener: ArRendererListener) : GLSurfaceV
         val allPlanes = s.getAllTrackables(Plane::class.java)
         reportPlanes(allPlanes)
 
-        val capturing = captureCallback != null
+        val capturing = captureCallback != null || captureSetCallback != null
         // Plane indicators are UI hints: never part of a capture.
         if (planesVisible && !capturing) {
             val preferVertical = if (indicatorActive) indicatorVertical else model?.preferVertical ?: false
@@ -389,9 +405,85 @@ internal class ArRenderer(private val listener: ArRendererListener) : GLSurfaceV
             if (!modelDrawn) {
                 failCapture("Place the signage model before capturing")
             } else {
-                readFrame()
+                if (captureCallback != null) readFrame()
+                if (captureSetCallback != null) readFrameSet(frame, night)
             }
         }
+    }
+
+    /** Redraws the models already positioned this frame (no side effects). */
+    private fun redrawModels() {
+        val a = anchor
+        if (a != null && a.trackingState == TrackingState.TRACKING) {
+            modelRenderer.draw(modelMatrix, view, projection)
+        }
+        for (o in objects.values) {
+            if (!o.visible || !o.matrixValid) continue
+            val mesh = sceneModels[o.modelKey]?.mesh ?: continue
+            if (!mesh.isEmpty) modelRenderer.drawMesh(mesh, o.matrix, view, projection)
+        }
+    }
+
+    private fun readPixels(): ByteBuffer {
+        val pixels = ByteBuffer.allocateDirect(width * height * 4).order(ByteOrder.nativeOrder())
+        GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixels)
+        GlUtil.checkError("glReadPixels")
+        return pixels
+    }
+
+    /**
+     * Renders the SAME camera frame and pose three times – original (camera
+     * only, never graded), day and night – reads each, then restores the
+     * on-screen frame in the current mode. Keeps all three exactly aligned.
+     */
+    private fun readFrameSet(frame: Frame, current: Float) {
+        val cb = captureSetCallback ?: return
+        captureSetCallback = null
+        val w = width
+        val h = height
+        val buffers = LinkedHashMap<String, ByteBuffer>()
+        for ((key, models, night) in listOf(
+            Triple("original", false, 0f),
+            Triple("day", true, 0f),
+            Triple("night", true, 1f),
+        )) {
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+            background.draw(frame, night)
+            if (models) {
+                modelRenderer.night = night
+                redrawModels()
+            }
+            buffers[key] = readPixels()
+        }
+        // Restore what the user sees.
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+        background.draw(frame, current)
+        modelRenderer.night = current
+        redrawModels()
+        encoder.execute {
+            try {
+                val out = LinkedHashMap<String, ByteArray>()
+                for ((key, pixels) in buffers) out[key] = encodePng(pixels, w, h)
+                cb(out, null)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Capture set encode failed", e)
+                cb(null, e.message ?: "Could not encode the AR capture")
+            }
+        }
+    }
+
+    private fun encodePng(pixels: ByteBuffer, w: Int, h: Int): ByteArray {
+        for (i in 3 until w * h * 4 step 4) pixels.put(i, 0xFF.toByte())
+        pixels.rewind()
+        val raw = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        raw.copyPixelsFromBuffer(pixels)
+        val flip = android.graphics.Matrix().apply { preScale(1f, -1f) }
+        val image = Bitmap.createBitmap(raw, 0, 0, w, h, flip, false)
+        raw.recycle()
+        val out = ByteArrayOutputStream()
+        image.compress(Bitmap.CompressFormat.PNG, 100, out)
+        image.recycle()
+        return out.toByteArray()
     }
 
     // --- Single-model drawing ----------------------------------------------
@@ -739,9 +831,14 @@ internal class ArRenderer(private val listener: ArRendererListener) : GLSurfaceV
     }
 
     private fun failCapture(reason: String) {
-        val cb = captureCallback ?: return
-        captureCallback = null
-        cb(null, reason)
+        captureCallback?.let { cb ->
+            captureCallback = null
+            cb(null, reason)
+        }
+        captureSetCallback?.let { cb ->
+            captureSetCallback = null
+            cb(null, reason)
+        }
     }
 
     /** Reads the frame just rendered (camera + models) and encodes a PNG. */

@@ -2,12 +2,14 @@ import 'dart:math' as math;
 
 import 'ar_layout.dart';
 import 'enums.dart';
+import 'gsb_override.dart';
 import 'media_reference.dart';
 import 'panorama.dart';
 import 'site_survey.dart';
 
 export 'ar_layout.dart';
 export 'enums.dart';
+export 'gsb_override.dart';
 export 'media_reference.dart';
 export 'panorama.dart';
 export 'site_survey.dart';
@@ -689,6 +691,28 @@ class PreviewCapture {
   /// All units shown in this capture.
   Set<String> get unitIds => {unitId, ...overlays.map((o) => o.unitId)};
 
+  /// [info] keys of generated companion files (GSB day / night renders,
+  /// AR original frame, comparison PDF). Additive and optional: older
+  /// captures simply have none.
+  static const companionKeys = [
+    'originalPath',
+    'dayPath',
+    'nightPath',
+    'comparisonPdf',
+  ];
+
+  /// Generated companion files of this capture (never the site photo).
+  List<String> get companionPaths => [
+    for (final k in companionKeys)
+      if ((info[k] ?? '').isNotEmpty && info[k] != path) info[k]!,
+  ];
+
+  /// Comparison PDF generated with this capture, if any.
+  String? get comparisonPdf {
+    final p = info['comparisonPdf'];
+    return p == null || p.isEmpty ? null : p;
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'kind': kind.name,
@@ -766,7 +790,9 @@ class Board {
     this.doubleSided,
     this.legacyMediaCode,
     Map<String, dynamic>? answersArchive,
+    List<GsbSpecOverride>? gsbOverrides,
   }) : answersArchive = answersArchive ?? {},
+       gsbOverrides = gsbOverrides ?? [],
        comparisons = comparisons ?? [],
        answers = answers ?? {},
        photos = photos ?? [],
@@ -828,6 +854,17 @@ class Board {
   /// Site answers that stopped applying after a media / installation change.
   /// Kept so switching back restores them (no silent data loss).
   Map<String, dynamic> answersArchive;
+
+  /// GSB fabrication spec overrides (depth / profile / wall thickness)
+  /// proposed by the vendor. History is kept; reverted entries stay.
+  List<GsbSpecOverride> gsbOverrides;
+
+  /// Canonical GSB fabrication variant key derived from the stored
+  /// [doubleSided] choice: `GSB_SINGLE` / `GSB_DOUBLE`, or null when the
+  /// media is not GSB or the sidedness was never chosen explicitly.
+  String? get gsbVariantKey => mediaCode != 'GSB' || doubleSided == null
+      ? null
+      : (doubleSided! ? 'GSB_DOUBLE' : 'GSB_SINGLE');
 
   /// Media Group ID.
   String get groupId => id;
@@ -934,6 +971,10 @@ class Board {
     if (doubleSided != null) 'doubleSided': doubleSided,
     if (legacyMediaCode != null) 'legacyMediaCode': legacyMediaCode,
     if (answersArchive.isNotEmpty) 'answersArchive': answersArchive,
+    // Derived, write-only (always recomputed from mediaCode + doubleSided).
+    if (gsbVariantKey != null) 'boardVariant': gsbVariantKey,
+    if (gsbOverrides.isNotEmpty)
+      'gsbOverrides': gsbOverrides.map((o) => o.toJson()).toList(),
   };
 
   factory Board.fromJson(Map<String, dynamic> j) {
@@ -967,6 +1008,7 @@ class Board {
       answersArchive: j['answersArchive'] is Map
           ? Map<String, dynamic>.from(j['answersArchive'] as Map)
           : null,
+      gsbOverrides: _list(j['gsbOverrides'], GsbSpecOverride.fromJson),
       unitSeq: math.max(
         (j['unitSeq'] as num?)?.toInt() ?? units.length,
         units.length,

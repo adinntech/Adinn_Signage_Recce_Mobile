@@ -10,6 +10,9 @@ import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import '../drawing/drawing_2d_screen.dart';
+import '../gsb/gsb_board.dart';
+import '../gsb/gsb_rules.dart';
+import '../gsb/gsb_type_sheet.dart';
 import '../notes/voice_notes_section.dart';
 import '../photos/photo_section.dart';
 import '../preview3d/preview_3d_screen.dart';
@@ -129,6 +132,33 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
     );
   }
 
+  /// Media card tap. GSB first asks for the board type (single / double);
+  /// cancelling the sheet leaves the recce untouched. Other media are
+  /// selected directly, exactly as before.
+  Future<void> _onMediaTap(AppController c, Board b, MediaType m) async {
+    if (m.code != SignageCatalog.gsb) {
+      _selectMedia(c, b, m);
+      return;
+    }
+    // Restore only an explicit, saved GSB choice (never carry over the
+    // sidedness of another media type).
+    final initial = b.mediaCode == SignageCatalog.gsb && b.doubleSided != null
+        ? (b.doubleSided! ? GsbVariant.double : GsbVariant.single)
+        : null;
+    final picked = await showGsbTypeSheet(context, initial: initial);
+    if (picked == null || !mounted) return;
+    final isDouble = picked == GsbVariant.double;
+    if (b.mediaCode != m.code) {
+      b.doubleSided = isDouble;
+      _selectMedia(c, b, m);
+    } else if (b.doubleSided != isDouble) {
+      c.setDoubleSided(widget.shopId, b, isDouble);
+      setState(() => _step = 1);
+    } else {
+      setState(() => _step = 1);
+    }
+  }
+
   void _selectMedia(AppController c, Board b, MediaType m) {
     if (b.mediaCode == m.code) {
       setState(() => _step = 1);
@@ -145,7 +175,9 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
       widget.shopId,
       b,
       title: 'Board updated',
-      message: '${b.name}: media set to ${m.shortName}.',
+      message:
+          '${b.name}: media set to ${m.shortName}'
+          '${GsbBoard.isGsb(b) ? ' (${GsbBoard.variantOf(b)!.label})' : ''}.',
     );
     _notePruned(pruned);
     setState(() => _step = 1);
@@ -221,8 +253,11 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
       Step(
         title: const Text('Media type'),
         subtitle: Text(
-          media?.name ??
-              'Choose one of ${SignageCatalog.catalogCodes.length} media types',
+          media == null
+              ? 'Choose one of ${SignageCatalog.catalogCodes.length} media types'
+              : GsbBoard.isExplicit(board)
+              ? '${media.name} · ${GsbBoard.variantOf(board)!.label}'
+              : media.name,
         ),
         state: _state(_mediaDone(board), 0, editable),
         isActive: _step >= 0,
@@ -238,9 +273,17 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
             _MediaGrid(
               selected: board.mediaCode,
               enabled: editable,
-              onSelect: (m) => _selectMedia(c, board, m),
+              onSelect: (m) => _onMediaTap(c, board, m),
             ),
-            if (media?.sidedness == MediaSidedness.selectable)
+            // GSB: the board type comes from the selection sheet (one
+            // source of truth); the summary reopens it.
+            if (GsbBoard.isGsb(board))
+              _GsbVariantSummary(
+                board: board,
+                enabled: editable,
+                onChange: () => _onMediaTap(c, board, media!),
+              )
+            else if (media?.sidedness == MediaSidedness.selectable)
               _SidednessChoice(
                 doubleSided: board.doubleSided ?? false,
                 enabled: editable,
@@ -1048,7 +1091,76 @@ class _LegacyMediaCard extends StatelessWidget {
   }
 }
 
-/// Single / double-sided choice for GSB and Non-Lit boards.
+/// Selected GSB board type with a "Change" action (reopens the sheet).
+class _GsbVariantSummary extends StatelessWidget {
+  const _GsbVariantSummary({
+    required this.board,
+    required this.enabled,
+    required this.onChange,
+  });
+
+  final Board board;
+  final bool enabled;
+  final VoidCallback onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final explicit = GsbBoard.isExplicit(board);
+    final variant = GsbBoard.variantOf(board)!;
+    return Container(
+      key: const Key('gsb_variant_summary'),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: explicit ? AdinnColors.redLight : const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: explicit ? AdinnColors.red : const Color(0xFFFFCC80),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            variant.isDouble ? Icons.flip : Icons.crop_landscape,
+            color: AdinnColors.red,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  explicit ? variant.label : 'GSB board type not confirmed',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  explicit
+                      ? (variant.isDouble
+                            ? 'Two display faces on one physical board.'
+                            : 'One display face (front artwork).')
+                      : 'Older record shown as single-sided. Tap Change to '
+                            'confirm the board type.',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AdinnColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            key: const Key('gsb_variant_change'),
+            onPressed: enabled ? onChange : null,
+            child: const Text('Change'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Single / double-sided choice for Non-Lit boards (GSB uses the board
+/// type sheet instead).
 class _SidednessChoice extends StatelessWidget {
   const _SidednessChoice({
     required this.doubleSided,

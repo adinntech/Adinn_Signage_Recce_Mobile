@@ -116,6 +116,14 @@ internal class ModelRenderer {
     private var uLight = 0
     private var uUseTexture = 0
     private var uTexture = 0
+    private var uNight = 0
+
+    /**
+     * Illustrative night view (0 = day, 1 = night): unlit faces take the
+     * evening grade, emissive (lit GSB) faces stay bright. Render-only –
+     * geometry and quantities never change. GL thread only.
+     */
+    var night = 0f
 
     /** Model of the original single-model API (creation param / setModel). */
     private var defaultMesh: ModelMesh? = null
@@ -136,6 +144,7 @@ internal class ModelRenderer {
         uLight = GLES20.glGetUniformLocation(program, "u_Light")
         uUseTexture = GLES20.glGetUniformLocation(program, "u_UseTexture")
         uTexture = GLES20.glGetUniformLocation(program, "u_Texture")
+        uNight = GLES20.glGetUniformLocation(program, "u_Night")
         GlUtil.checkError("ModelRenderer.create")
     }
 
@@ -253,6 +262,7 @@ internal class ModelRenderer {
         GLES20.glUniformMatrix4fv(uModel, 1, false, model, 0)
         GLES20.glUniform3f(uLight, LIGHT[0], LIGHT[1], LIGHT[2])
         GLES20.glUniform1i(uTexture, 0)
+        GLES20.glUniform1f(uNight, night)
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
         GLES20.glDisable(GLES20.GL_CULL_FACE)
         GLES20.glEnable(GLES20.GL_BLEND)
@@ -338,10 +348,12 @@ internal class ModelRenderer {
             varying vec4 v_Color;
             varying vec2 v_Uv;
             varying float v_Shade;
+            varying float v_Emissive;
             void main() {
                 vec3 n = normalize((u_Model * vec4(a_Normal, 0.0)).xyz);
                 float lambert = 0.58 + 0.42 * max(dot(n, u_Light), 0.0);
                 v_Shade = mix(lambert, 1.0, a_Emissive);
+                v_Emissive = a_Emissive;
                 v_Color = a_Color;
                 v_Uv = a_Uv;
                 gl_Position = u_Mvp * vec4(a_Position, 1.0);
@@ -352,12 +364,18 @@ internal class ModelRenderer {
             precision mediump float;
             uniform float u_UseTexture;
             uniform sampler2D u_Texture;
+            uniform float u_Night;
             varying vec4 v_Color;
             varying vec2 v_Uv;
             varying float v_Shade;
+            varying float v_Emissive;
             void main() {
                 vec4 base = u_UseTexture > 0.5 ? texture2D(u_Texture, v_Uv) : v_Color;
-                gl_FragColor = vec4(base.rgb * v_Shade, max(base.a, 0.35));
+                vec3 rgb = base.rgb * v_Shade;
+                vec3 lit = min(rgb * 1.12 + vec3(0.04), vec3(1.0));
+                vec3 dusk = rgb * vec3(0.42, 0.50, 0.70) + vec3(0.02, 0.03, 0.07);
+                vec3 nightRgb = v_Emissive > 0.5 ? lit : dusk;
+                gl_FragColor = vec4(mix(rgb, nightRgb, u_Night), max(base.a, 0.35));
             }
         """
     }

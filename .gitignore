@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local AI prompt files - Do not push to GitHub
+/prompt
+/prompt.txt

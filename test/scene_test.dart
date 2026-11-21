@@ -51,7 +51,7 @@ void main() {
       expect(g.bottomFt, 12);
       expect(g.topFt, 16);
       expect(g.poleGapFt, 10, reason: 'gap cannot exceed board width');
-      expect(g.depthFt, 0.75);
+      expect(g.depthFt, closeTo(8 / 12, 1e-12)); // GSB 8-in box (rulebook)
       expect(g.usingDefaults, isFalse);
     });
 

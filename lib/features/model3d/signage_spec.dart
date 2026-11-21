@@ -389,7 +389,15 @@ class SignageModelSpec {
 
     // Template-specific construction.
     if (tpl == 'gsb' || tpl == 'nonlit' || tpl == 'sandwich') {
-      put(SpecField.frameThickness, tpl == 'sandwich' ? 25 : 40);
+      // GSB main frame: 1 × 1 in MS SHS (rulebook); others unchanged.
+      put(
+        SpecField.frameThickness,
+        switch (tpl) {
+          'sandwich' => 25,
+          'gsb' when code == SignageCatalog.gsb => 25.4,
+          _ => 40,
+        },
+      );
     }
     if (const {'foam', 'acrylic', 'acp2d', 'acp3d', 'sandwich'}.contains(tpl)) {
       put(SpecField.materialThickness, media!.thicknessMm);

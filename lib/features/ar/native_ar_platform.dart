@@ -15,7 +15,8 @@ import 'ar_session_controller.dart';
 /// `android/app/src/main/kotlin/.../ar/` through platform channels and shows
 /// the native GL camera view with hybrid composition (the camera image,
 /// detected planes and the anchored signage model are rendered natively).
-class NativeArPlatform implements ArPlatform, ArSceneEngine {
+class NativeArPlatform
+    implements ArPlatform, ArSceneEngine, ArRenderViewCapable {
   NativeArPlatform({
     MethodChannel? channel,
     EventChannel? eventChannel,
@@ -180,6 +181,22 @@ class NativeArPlatform implements ArPlatform, ArSceneEngine {
   @override
   Future<Uint8List?> captureScene() =>
       _call<Uint8List>('capture').timeout(captureTimeout);
+
+  @override
+  Future<void> setNightMode(bool night) =>
+      _call<void>('setRenderMode', {'night': night});
+
+  @override
+  Future<Map<String, Uint8List>?> captureRenderSet() async {
+    final r = await _call<Map<Object?, Object?>>(
+      'captureSet',
+    ).timeout(captureTimeout * 2);
+    if (r == null) return null;
+    return {
+      for (final e in r.entries)
+        if (e.value is Uint8List) '${e.key}': e.value! as Uint8List,
+    };
+  }
 
   // ---------------------------------------------------------------------------
   // Multi-object scene (ArSceneEngine)

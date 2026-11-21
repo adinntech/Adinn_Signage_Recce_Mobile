@@ -174,7 +174,9 @@ class SignageCatalog {
       name: 'GSB Board (Glow Sign Board)',
       description: 'Back-lit flex/ACP box with LED modules inside an MS frame.',
       icon: Icons.lightbulb_outline,
-      depthFt: 0.75,
+      // 8 in outside-to-outside box depth (Signage Fabrication Rulebook
+      // 1.0, GSB Single / Double). Was 0.75 ft (9 in) before.
+      depthFt: 8 / 12,
       illuminated: true,
       installations: [
         shopFascia,

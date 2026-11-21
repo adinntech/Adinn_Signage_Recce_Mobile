@@ -1103,8 +1103,12 @@ class AppController extends ChangeNotifier {
     final c = b.previews.where((e) => e.id == captureId).firstOrNull;
     if (c == null) return;
     b.previews.remove(c);
-    if (!_referencedInSnapshots(s, c.path)) {
-      await media?.deleteIfExists(c.path);
+    // Generated companions (night render / comparison PDF) go with the
+    // preview; the original site photo is never one of them.
+    for (final path in [c.path, ...c.companionPaths]) {
+      if (!_referencedInSnapshots(s, path)) {
+        await media?.deleteIfExists(path);
+      }
     }
     touchBoard(
       shopId,
@@ -1500,6 +1504,84 @@ class AppController extends ChangeNotifier {
       b,
       title: 'Board updated',
       message: '${b.name}: ${doubleSided ? 'double' : 'single'}-sided.',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // GSB fabrication spec overrides (depth / frame profile / wall thickness)
+  // ---------------------------------------------------------------------------
+
+  /// Records a vendor-proposed GSB spec override. Never approves anything:
+  /// the entry is stored as "Requires Engineering Review". Returns an error
+  /// message (nothing saved) or null on success.
+  String? addGsbOverride(
+    String shopId,
+    Board b, {
+    required String unitId,
+    required GsbOverrideField field,
+    required double? originalIn,
+    required double proposedIn,
+    required String reason,
+    required String ruleVersion,
+  }) {
+    final s = shop(shopId);
+    if (s == null || b.unitById(unitId) == null) return 'Item not found';
+    if (!canEdit(s)) return 'This recce is read-only now';
+    if (!proposedIn.isFinite || proposedIn <= 0) {
+      return '${field.label} must be a positive number';
+    }
+    if (originalIn != null && (proposedIn - originalIn).abs() < 1e-6) {
+      return 'The proposed value is the same as the current value';
+    }
+    final why = reason.trim();
+    if (why.isEmpty) return 'Enter the reason for the override';
+    if (why.length < 5) return 'Describe the reason in a few words';
+    b.gsbOverrides.add(
+      GsbSpecOverride(
+        id: newId('gov'),
+        unitId: unitId,
+        field: field,
+        originalIn: originalIn,
+        proposedIn: proposedIn,
+        reason: why,
+        userId: currentUser?.id ?? '',
+        projectId: s.projectId,
+        taskId: s.taskId,
+        shopId: s.id,
+        boardId: b.id,
+        createdAt: _clock(),
+        ruleVersion: ruleVersion,
+      ),
+    );
+    final u = b.unitById(unitId)!;
+    touchBoard(
+      shopId,
+      b,
+      title: 'GSB override – review required',
+      message:
+          '${b.name} – ${b.unitLabel(u)}: ${field.label} '
+          '${originalIn == null ? 'unspecified' : '${fmtNum(originalIn)} in'}'
+          ' → ${fmtNum(proposedIn)} in (Requires Engineering Review).',
+    );
+    return null;
+  }
+
+  /// Reverts an override (history kept; the default applies again).
+  void revertGsbOverride(String shopId, Board b, String overrideId) {
+    final s = shop(shopId);
+    if (s == null) return;
+    if (!canEdit(s)) throw StateError('This recce is read-only now');
+    final o = b.gsbOverrides.where((e) => e.id == overrideId).firstOrNull;
+    if (o == null || !o.isActive) return;
+    o
+      ..status = GsbOverrideStatus.reverted
+      ..revertedAt = _clock()
+      ..revertedBy = currentUser?.id;
+    touchBoard(
+      shopId,
+      b,
+      title: 'GSB override reverted',
+      message: '${b.name}: ${o.field.label} override reverted to default.',
     );
   }
 

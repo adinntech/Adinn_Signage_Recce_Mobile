@@ -145,8 +145,8 @@ void main() {
       expect(g.widthM, closeTo(8 * 0.3048, 1e-9));
       expect(g.heightM, closeTo(3 * 0.3048, 1e-9));
       expect(g.widthM / g.heightM, closeTo(8 / 3, 1e-9));
-      // Board depth for GSB = 0.75 ft → back at z = -0.2286 m.
-      expect(g.pivotWall[2], closeTo(-0.75 * 0.3048, 1e-9));
+      // Board depth for GSB = 8 in (rulebook) → back at z = -0.2032 m.
+      expect(g.pivotWall[2], closeTo(-8 * 0.0254, 1e-9));
       final labelled = g.faces.where((f) => f.label != null).toList();
       expect(labelled, hasLength(1));
       expect(labelled.single.normal, [0, 0, 1]);
