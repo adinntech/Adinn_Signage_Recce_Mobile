@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/widgets/common_widgets.dart';
+
 import 'data/services/location_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_shell.dart';
