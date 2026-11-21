@@ -45,6 +45,39 @@ String fmtDateTime(DateTime utcOrLocal) {
   return '${fmtDate(d)}, $h:${two(d.minute)} $ampm';
 }
 
+/// 4:05 PM (device local time)
+String fmtTime(DateTime utcOrLocal) {
+  final d = utcOrLocal.toLocal();
+  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  return '$h:${two(d.minute)} ${d.hour < 12 ? 'AM' : 'PM'}';
+}
+
+/// "Today", "Yesterday", or the date: the heading of a day in a chat or a notification list (device local days).
+String fmtDayLabel(DateTime d, [DateTime? now]) {
+  final today = (now ?? DateTime.now()).toLocal();
+  final day = d.toLocal();
+  final diff = DateTime(today.year, today.month, today.day).difference(DateTime(day.year, day.month, day.day)).inDays;
+  if (diff == 0) return 'Today';
+  if (diff == 1) return 'Yesterday';
+  return fmtDate(day);
+}
+
+/// Hours with one decimal ("26.4 h" is shown as "1 d 2 h" once it reaches a day); "-" when there is no value.
+String fmtHours(double? hours) {
+  if (hours == null || hours.isNaN || hours < 0) return '-';
+  if ((hours * 10).round() / 10 < 24) return '${hours.toStringAsFixed(1)} h';
+  var days = hours ~/ 24;
+  var rest = (hours - days * 24).round();
+  if (rest >= 24) {
+    days++;
+    rest = 0;
+  }
+  return rest == 0 ? '$days d' : '$days d $rest h';
+}
+
+/// A percent with one decimal: "12.5%".
+String fmtPercent(double? v) => '${(v ?? 0).toStringAsFixed(1)}%';
+
 /// "just now", "5 min ago", "3 h ago", "2 days ago", or a date.
 String fmtRelative(DateTime d, [DateTime? now]) {
   final n = now ?? DateTime.now();

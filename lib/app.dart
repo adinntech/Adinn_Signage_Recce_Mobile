@@ -2,19 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/theme/app_theme.dart';
-import 'core/widgets/common_widgets.dart';
+import 'core/widgets/splash_screen.dart';
 import 'data/services/location_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_shell.dart';
+import 'features/live_auth/presentation/live_auth_controller.dart';
+import 'features/live_auth/presentation/live_change_mpin_screen.dart';
+import 'features/live_auth/presentation/live_login_screen.dart';
+import 'features/live_recce/data/chat_controller.dart';
+import 'features/live_recce/data/dashboard_controller.dart';
+import 'features/live_recce/data/live_services.dart';
+import 'features/live_recce/data/notifications_controller.dart';
+import 'features/live_recce/data/recce_controllers.dart';
+import 'features/live_recce/data/upload_queue.dart';
+import 'features/live_recce/presentation/live_home_shell.dart';
 import 'state/app_controller.dart';
 
 class AdinnRecceApp extends StatefulWidget {
-  const AdinnRecceApp({super.key, required this.controller, this.location});
+  const AdinnRecceApp({super.key, required this.controller, this.location, this.live});
 
   final AppController controller;
 
   /// GPS source; defaults to the device GPS. Tests inject a fake.
   final LocationService? location;
+
+  /// Live backend (login, projects, shops, recce). Null keeps the app in its offline prototype mode (tests).
+  final LiveServices? live;
 
   @override
   State<AdinnRecceApp> createState() => _AdinnRecceAppState();
@@ -28,6 +41,7 @@ class _AdinnRecceAppState extends State<AdinnRecceApp> {
   void initState() {
     super.initState();
     if (!widget.controller.isReady) widget.controller.init();
+    widget.live?.init();
   }
 
   @override
@@ -36,12 +50,21 @@ class _AdinnRecceAppState extends State<AdinnRecceApp> {
       providers: [
         ChangeNotifierProvider<AppController>.value(value: widget.controller),
         Provider<LocationService>.value(value: _location),
+        if (widget.live != null) ...[
+          Provider<LiveServices>.value(value: widget.live!),
+          ChangeNotifierProvider<LiveAuthController>.value(value: widget.live!.auth),
+          ChangeNotifierProvider<UploadQueue>.value(value: widget.live!.queue),
+          ChangeNotifierProvider<ShopListController>.value(value: widget.live!.shops),
+          ChangeNotifierProvider<ChatHub>.value(value: widget.live!.chat),
+          ChangeNotifierProvider<FieldDashboardController>.value(value: widget.live!.dashboard),
+          ChangeNotifierProvider<NotificationsController>.value(value: widget.live!.notifications),
+        ],
       ],
       child: MaterialApp(
         title: 'Adinn Recce',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
-        home: const RootGate(),
+        home: RootGate(live: widget.live != null),
       ),
     );
   }
@@ -49,47 +72,58 @@ class _AdinnRecceAppState extends State<AdinnRecceApp> {
 
 /// Chooses splash / login / home based on controller state.
 class RootGate extends StatelessWidget {
-  const RootGate({super.key});
+  const RootGate({super.key, this.live = false});
+
+  /// True when [LiveServices] are provided: the live login / home come first and the offline prototype
+  /// stays reachable through "Offline demo mode" on the login screen.
+  final bool live;
 
   @override
   Widget build(BuildContext context) {
     final c = context.watch<AppController>();
     if (!c.isReady) return const SplashScreen();
-    if (!c.isLoggedIn) return const LoginScreen();
-    // Key by user so switching accounts resets tab state.
-    return HomeShell(key: ValueKey(c.currentUser!.id));
+    if (!live) {
+      if (!c.isLoggedIn) return const LoginScreen();
+      // Key by user so switching accounts resets tab state.
+      return HomeShell(key: ValueKey(c.currentUser!.id));
+    }
+    final auth = context.watch<LiveAuthController>();
+    if (!auth.ready) return const SplashScreen();
+    final user = auth.user;
+    if (user != null) {
+      if (user.mustChangeMpin) return const LiveChangeMpinScreen();
+      return LiveHomeShell(key: ValueKey(user.id));
+    }
+    if (c.isLoggedIn) return HomeShell(key: ValueKey(c.currentUser!.id));
+    if (auth.offlineDemo) return const _OfflineDemoLogin();
+    return const LiveLoginScreen();
   }
 }
 
-class SplashScreen extends StatelessWidget {
-  const SplashScreen({super.key});
+/// The old PIN login, with a small way back to the live sign in.
+class _OfflineDemoLogin extends StatelessWidget {
+  const _OfflineDemoLogin();
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AdinnLogo(size: 44),
-            SizedBox(height: 18),
-            Text(
-              'Signage Recce',
-              style: TextStyle(
-                color: AdinnColors.muted,
-                fontWeight: FontWeight.w600,
+    return Stack(
+      children: [
+        const LoginScreen(),
+        SafeArea(
+          child: Align(
+            alignment: Alignment.topRight,
+            child: Material(
+              type: MaterialType.transparency,
+              child: TextButton.icon(
+                onPressed: context.read<LiveAuthController>().leaveOfflineDemo,
+                icon: const Icon(Icons.cloud_outlined, size: 18),
+                label: const Text('Online sign in'),
               ),
             ),
-            SizedBox(height: 24),
-            SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(strokeWidth: 3),
-            ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
+

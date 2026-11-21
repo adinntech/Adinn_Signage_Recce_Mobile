@@ -1,0 +1,1718 @@
+{
+  "info": {
+    "name": "Adinn Recce - SR Glass end to end",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run the folders in order. Tokens and ids are saved into the environment by test scripts. Pick a file in every photo upload request."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1 Login",
+      "item": [
+        {
+          "name": "1a Vendor login (vendor ID)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('accessToken', j.data.accessToken);",
+                  "pm.environment.set('refreshToken', j.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendorId\": \"{{vendorId}}\",\n  \"remember\": true,\n  \"device\": \"Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/auth/vendor-login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "auth",
+                "vendor-login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "1b Vendor / in-house login (MPIN) - optional",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('accessToken', j.data.accessToken);",
+                  "pm.environment.set('refreshToken', j.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "fieldLoginRole = VENDOR or RECCE",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{fieldIdentifier}}\",\n  \"mpin\": \"{{fieldMpin}}\",\n  \"loginRole\": \"{{fieldLoginRole}}\",\n  \"platform\": \"mobile\",\n  \"remember\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "1c Refresh token (rotates)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('accessToken', j.data.accessToken);",
+                  "pm.environment.set('refreshToken', j.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/auth/refresh",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            }
+          }
+        },
+        {
+          "name": "1d Who am I",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/auth/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 Projects and shops",
+      "item": [
+        {
+          "name": "2a Dashboard (project list with counts)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const p = pm.response.json().data.projects || [];",
+                  "if (p.length) pm.environment.set('projectId', p[0].projectId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/dashboard",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "dashboard"
+              ]
+            }
+          }
+        },
+        {
+          "name": "2b Shops of one project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const s = j.data || [];",
+                  "if (s.length) { pm.environment.set('siteId', s[0].siteId); pm.environment.set('projectId', s[0].projectId); }",
+                  "console.log(j.meta);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops?projectId={{projectId}}&page=1&limit=50",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops"
+              ],
+              "query": [
+                {
+                  "key": "projectId",
+                  "value": "{{projectId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 One shop - recce",
+      "item": [
+        {
+          "name": "3a Open shop (detail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "pm.environment.set('submissionId', d.submissionId || '');",
+                  "const front = (d.photos || []).find((p) => p.category === 'SHOP_FRONT');",
+                  "if (front) pm.environment.set('frontPhotoId', front.id);",
+                  "console.log('status', d.status, 'version', d.version, 'photos', (d.photos || []).length);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "3b Start visit",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/start",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "start"
+              ]
+            }
+          }
+        },
+        {
+          "name": "3c Boards V1 (GSB x2 6x4, Acrylic x1 4x2)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mediaItems\": [\n    {\n      \"key\": \"b1\",\n      \"name\": \"GSB\",\n      \"quantity\": 2,\n      \"width\": 6,\n      \"height\": 4,\n      \"unit\": \"FT\",\n      \"sided\": \"SINGLE\",\n      \"condition\": \"PROPOSED\",\n      \"position\": \"Shop fascia\",\n      \"notes\": \"\"\n    },\n    {\n      \"key\": \"b2\",\n      \"name\": \"Acrylic\",\n      \"quantity\": 1,\n      \"width\": 4,\n      \"height\": 2,\n      \"unit\": \"FT\",\n      \"sided\": \"SINGLE\",\n      \"condition\": \"PROPOSED\",\n      \"position\": \"Entrance glass\"\n    }\n  ],\n  \"notes\": \"Shop opens at 9 am\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/draft",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "draft"
+              ]
+            }
+          }
+        },
+        {
+          "name": "3d Installation (ladder, crane, equipment)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"installation\": {\n    \"ladderRequired\": \"YES\",\n    \"scaffoldingRequired\": \"NO\",\n    \"craneRequired\": \"NO\",\n    \"hydraRequired\": \"NO\",\n    \"manualInstallationPossible\": \"YES\",\n    \"electricalAccess\": \"AVAILABLE\",\n    \"installationHeightFt\": 12,\n    \"accessRestrictions\": [\n      \"Narrow lane\"\n    ],\n    \"additionalEquipment\": [\n      \"Ladder 12 ft\",\n      \"Drill machine\"\n    ],\n    \"obstruction\": \"Tree branch near right side\",\n    \"roadsideConstraints\": \"\",\n    \"safetyNotes\": \"Work before 6 pm\",\n    \"notes\": \"Ladder access available\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/draft",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "draft"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 Photos with GPS (pick a file in each)",
+      "item": [
+        {
+          "name": "4a Front view",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('photo stored', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Each photo carries its own GPS. Select a file in the `photos` row first.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Pick a demo image (for example from Unsplash) saved as front.jpg"
+                },
+                {
+                  "key": "meta",
+                  "type": "text",
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-front\",\"category\":\"SHOP_FRONT\",\"mediaKey\":\"b1\",\"caption\":\"Front view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0412,\"lng\":80.2345,\"gpsAccuracy\":8.2,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/photos",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "photos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "4b Side view",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('photo stored', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Each photo carries its own GPS. Select a file in the `photos` row first.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Pick a demo image (for example from Unsplash) saved as side.jpg"
+                },
+                {
+                  "key": "meta",
+                  "type": "text",
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-side\",\"category\":\"SIDE_VIEW\",\"mediaKey\":\"b1\",\"caption\":\"Side view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04122,\"lng\":80.23455,\"gpsAccuracy\":7.5,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/photos",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "photos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "4c Long shot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('photo stored', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Each photo carries its own GPS. Select a file in the `photos` row first.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Pick a demo image (for example from Unsplash) saved as long.jpg"
+                },
+                {
+                  "key": "meta",
+                  "type": "text",
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-long\",\"category\":\"LONG_SHOT\",\"mediaKey\":\"b1\",\"caption\":\"Long shot\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04105,\"lng\":80.2343,\"gpsAccuracy\":9,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/photos",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "photos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "4d Annotated view",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('photo stored', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Each photo carries its own GPS. Select a file in the `photos` row first.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Pick a demo image (for example from Unsplash) saved as annotated.jpg"
+                },
+                {
+                  "key": "meta",
+                  "type": "text",
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-annot\",\"category\":\"ANNOTATED_VIEW\",\"mediaKey\":\"b1\",\"caption\":\"Annotated view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04121,\"lng\":80.23448,\"gpsAccuracy\":6.8,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/photos",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "photos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "4e Location view",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('photo stored', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Each photo carries its own GPS. Select a file in the `photos` row first.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Pick a demo image (for example from Unsplash) saved as location.jpg"
+                },
+                {
+                  "key": "meta",
+                  "type": "text",
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-loc\",\"category\":\"LOCATION_VIEW\",\"mediaKey\":\"b1\",\"caption\":\"Location view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04118,\"lng\":80.23451,\"gpsAccuracy\":5.9,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/photos",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "photos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "4f Access path",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('photo stored', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Each photo carries its own GPS. Select a file in the `photos` row first.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Pick a demo image (for example from Unsplash) saved as access.jpg"
+                },
+                {
+                  "key": "meta",
+                  "type": "text",
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-access\",\"category\":\"ACCESS_PATH\",\"mediaKey\":\"b1\",\"caption\":\"Access path\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0409,\"lng\":80.2342,\"gpsAccuracy\":11,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/photos",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "photos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "4g Check progress (missing list)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "pm.environment.set('submissionId', d.submissionId || '');",
+                  "const front = (d.photos || []).find((p) => p.category === 'SHOP_FRONT');",
+                  "if (front) pm.environment.set('frontPhotoId', front.id);",
+                  "console.log('status', d.status, 'version', d.version, 'photos', (d.photos || []).length);",
+                  "console.log('missing', JSON.stringify(d.progress.missing), 'installationPending', JSON.stringify(d.installationPending));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 Submit Version 1",
+      "item": [
+        {
+          "name": "5a Submit V1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "console.log('version', d.version, 'duplicate', d.duplicate, 'status', d.detail && d.detail.status);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Run twice: second reply has duplicate:true and the same version.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotencyKey\": \"submit-{{siteId}}-1\",\n  \"notes\": \"All angles done\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/submit",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "submit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "5b Shop detail after submit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "pm.environment.set('submissionId', d.submissionId || '');",
+                  "const front = (d.photos || []).find((p) => p.category === 'SHOP_FRONT');",
+                  "if (front) pm.environment.set('frontPhotoId', front.id);",
+                  "console.log('status', d.status, 'version', d.version, 'photos', (d.photos || []).length);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 Reviewer (Operations / Client Servicing)",
+      "item": [
+        {
+          "name": "6a Reviewer login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('reviewerToken', j.data.accessToken);",
+                  "pm.environment.set('reviewerRefresh', j.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "reviewerLoginRole = OPERATIONS (stage OPS) or CLIENT_SERVICING (stage CS). Use your own test accounts.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{reviewerIdentifier}}\",\n  \"mpin\": \"{{reviewerMpin}}\",\n  \"loginRole\": \"{{reviewerLoginRole}}\",\n  \"platform\": \"web\",\n  \"remember\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "6b Inbox",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{reviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/inbox?view=all",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "inbox"
+              ],
+              "query": [
+                {
+                  "key": "view",
+                  "value": "all"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6c Review workspace",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{reviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/submissions/{{submissionId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "submissions",
+                "{{submissionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "6d Stage CS approves V1",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Log in as Client Servicing first (6a with CLIENT_SERVICING).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{reviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"CS\",\n  \"decision\": \"APPROVE\",\n  \"versionNo\": 1,\n  \"comment\": \"Looks good\",\n  \"checklist\": [\n    {\n      \"key\": \"correct_shop\",\n      \"passed\": true\n    },\n    {\n      \"key\": \"shop_front\",\n      \"passed\": true\n    },\n    {\n      \"key\": \"board_area\",\n      \"passed\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/submissions/{{submissionId}}/decision",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "submissions",
+                "{{submissionId}}",
+                "decision"
+              ]
+            }
+          }
+        },
+        {
+          "name": "6e Stage OPS rework: front photo + width",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Log in as Operations first (6a with OPERATIONS). Other decisions: APPROVE, REJECT (needs reason), ADDITIONAL.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{reviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"OPS\",\n  \"decision\": \"REWORK\",\n  \"versionNo\": 1,\n  \"comment\": \"Fix front photo and width\",\n  \"items\": [\n    {\n      \"type\": \"REPLACE_PHOTO\",\n      \"category\": \"SHOP_FRONT\",\n      \"photo\": \"{{frontPhotoId}}\",\n      \"note\": \"Board not clear, retake straight on\"\n    },\n    {\n      \"type\": \"FIX_MEASUREMENT\",\n      \"mediaKey\": \"b1\",\n      \"note\": \"Width is 8 ft, not 6 ft\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/submissions/{{submissionId}}/decision",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "submissions",
+                "{{submissionId}}",
+                "decision"
+              ]
+            }
+          }
+        },
+        {
+          "name": "6f Reviewer version list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{reviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/submissions/{{submissionId}}/versions",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "submissions",
+                "{{submissionId}}",
+                "versions"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 Rework and Version 2 (vendor token)",
+      "item": [
+        {
+          "name": "7a Shop detail: rework flag on the photo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "pm.environment.set('submissionId', d.submissionId || '');",
+                  "const front = (d.photos || []).find((p) => p.category === 'SHOP_FRONT');",
+                  "if (front) pm.environment.set('frontPhotoId', front.id);",
+                  "console.log('status', d.status, 'version', d.version, 'photos', (d.photos || []).length);",
+                  "const f = (d.photos || []).find((p) => p.category === 'SHOP_FRONT');",
+                  "console.log('front review', JSON.stringify(f && f.review));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "7b Photo history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/photos/{{frontPhotoId}}/history",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "photos",
+                "{{frontPhotoId}}",
+                "history"
+              ]
+            }
+          }
+        },
+        {
+          "name": "7c Replace only the front photo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('stored', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/photos",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "photos"
+              ]
+            },
+            "description": "Pick a new front image first.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": [],
+                  "description": "front2.jpg"
+                },
+                {
+                  "key": "meta",
+                  "type": "text",
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-front2\",\"category\":\"SHOP_FRONT\",\"mediaKey\":\"b1\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0413,\"lng\":80.2346,\"gpsAccuracy\":6.1,\"replaces\":\"{{frontPhotoId}}\",\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "7d Boards V2 (GSB width 6 to 8)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mediaItems\": [\n    {\n      \"key\": \"b1\",\n      \"name\": \"GSB\",\n      \"quantity\": 2,\n      \"width\": 8,\n      \"height\": 4,\n      \"unit\": \"FT\",\n      \"sided\": \"SINGLE\",\n      \"condition\": \"PROPOSED\",\n      \"position\": \"Shop fascia\"\n    },\n    {\n      \"key\": \"b2\",\n      \"name\": \"Acrylic\",\n      \"quantity\": 1,\n      \"width\": 4,\n      \"height\": 2,\n      \"unit\": \"FT\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/draft",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "draft"
+              ]
+            }
+          }
+        },
+        {
+          "name": "7e Submit V2",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotencyKey\": \"submit-{{siteId}}-2\",\n  \"notes\": \"Front retaken, width corrected\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/submit",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "submit"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8 Versions, history, channel",
+      "item": [
+        {
+          "name": "8a Version list (V1, V2 array)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/versions",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "versions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "8b Compare V1 and V2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/versions/compare?from=1&to=2",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "versions",
+                "compare"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "1"
+                },
+                {
+                  "key": "to",
+                  "value": "2"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "8c Approval history / activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/activity",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "activity"
+              ]
+            }
+          }
+        },
+        {
+          "name": "8d Channel messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/messages?limit=20",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "8e Post channel message",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Front photo retaken as asked\",\n  \"refs\": [\n    {\n      \"type\": \"BOARD\",\n      \"id\": \"b1\"\n    },\n    {\n      \"type\": \"VERSION\",\n      \"id\": \"2\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/messages",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "messages"
+              ]
+            }
+          }
+        },
+        {
+          "name": "8f Unread count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/messages/unread",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "messages",
+                "unread"
+              ]
+            }
+          }
+        },
+        {
+          "name": "8g Mark read",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce/shops/{{siteId}}/messages/read",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce",
+                "shops",
+                "{{siteId}}",
+                "messages",
+                "read"
+              ]
+            }
+          }
+        },
+        {
+          "name": "8h Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/notifications",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "notifications"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "9 Reviewer approves V2",
+      "item": [
+        {
+          "name": "9a CS approves V2",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Login as Client Servicing (6a). Then repeat with stage OPS and an Operations login. Both must approve V2 for status APPROVED.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{reviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"CS\",\n  \"decision\": \"APPROVE\",\n  \"versionNo\": 2,\n  \"comment\": \"V2 ok\",\n  \"checklist\": [\n    {\n      \"key\": \"correct_shop\",\n      \"passed\": true\n    },\n    {\n      \"key\": \"shop_front\",\n      \"passed\": true\n    },\n    {\n      \"key\": \"board_area\",\n      \"passed\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/submissions/{{submissionId}}/decision",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "submissions",
+                "{{submissionId}}",
+                "decision"
+              ]
+            }
+          }
+        },
+        {
+          "name": "9b Reviewer activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{reviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/submissions/{{submissionId}}/activity",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "submissions",
+                "{{submissionId}}",
+                "activity"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.environment.set('capturedAt', new Date().toISOString());"
+        ]
+      }
+    }
+  ]
+}
