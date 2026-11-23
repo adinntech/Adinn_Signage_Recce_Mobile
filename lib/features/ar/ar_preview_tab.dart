@@ -22,7 +22,8 @@ import '../gsb/gsb_rules.dart';
 import '../preview_live/capture_utils.dart';
 import '../preview_live/live_preview_tab.dart' show PngWriter;
 import '../preview_live/preview_gallery.dart';
-import '../preview_live/live_preview_render.dart' show kNightDisclaimer;
+import '../preview_live/live_preview_render.dart'
+    show kNightDisclaimer, kNightDoubleNote;
 import 'ar_editor_panels.dart';
 import 'ar_model_builder.dart';
 import 'ar_scene_controller.dart';
@@ -1118,7 +1119,8 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
                           _banner(ar.error!),
                         if (ar.nightMode)
                           _banner(
-                            'Night View – $kNightDisclaimer',
+                            'Night View – $kNightDisclaimer'
+                            '${GsbBoard.variantOf(app.board(widget.shopId, widget.boardId))?.isDouble == true ? ' $kNightDoubleNote' : ''}',
                             key: const ValueKey('ar_night_banner'),
                             color: const Color(0xCC1B2846),
                           ),

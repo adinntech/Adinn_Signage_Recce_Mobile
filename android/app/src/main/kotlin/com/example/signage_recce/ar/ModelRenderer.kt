@@ -23,6 +23,8 @@ internal class ModelFace(
     val labelColor: Int,
     val emissive: Boolean,
     val layer: Int,
+    /** Night View: a self-lit face that does NOT glow (e.g. unlit rear flex). */
+    val glow: Boolean = emissive,
 )
 
 /**
@@ -82,6 +84,7 @@ internal class ModelData(
                     labelColor = int(f["lc"], Color.WHITE),
                     emissive = f["e"] == true,
                     layer = int(f["k"], 0),
+                    glow = (f["g"] as? Boolean) ?: (f["e"] == true),
                 )
             }
             require(faces.isNotEmpty()) { "Signage model has no faces" }
@@ -194,7 +197,8 @@ internal class ModelRenderer {
         out += Color.alpha(c) / 255f
         out += u
         out += v
-        out += if (face.emissive) 1f else 0f
+        // 1 = self-lit and glowing at night, 0.5 = self-lit by day only.
+        out += if (face.emissive) (if (face.glow) 1f else 0.5f) else 0f
     }
 
     /** Quad (TL, TR, BR, BL) with the label painted into a texture. */
@@ -352,7 +356,7 @@ internal class ModelRenderer {
             void main() {
                 vec3 n = normalize((u_Model * vec4(a_Normal, 0.0)).xyz);
                 float lambert = 0.58 + 0.42 * max(dot(n, u_Light), 0.0);
-                v_Shade = mix(lambert, 1.0, a_Emissive);
+                v_Shade = mix(lambert, 1.0, step(0.25, a_Emissive));
                 v_Emissive = a_Emissive;
                 v_Color = a_Color;
                 v_Uv = a_Uv;
@@ -374,7 +378,7 @@ internal class ModelRenderer {
                 vec3 rgb = base.rgb * v_Shade;
                 vec3 lit = min(rgb * 1.12 + vec3(0.04), vec3(1.0));
                 vec3 dusk = rgb * vec3(0.42, 0.50, 0.70) + vec3(0.02, 0.03, 0.07);
-                vec3 nightRgb = v_Emissive > 0.5 ? lit : dusk;
+                vec3 nightRgb = v_Emissive > 0.75 ? lit : dusk;
                 gl_FragColor = vec4(mix(rgb, nightRgb, u_Night), max(base.a, 0.35));
             }
         """

@@ -396,6 +396,7 @@ class SitePhoto {
     this.geo,
     List<String>? unitIds,
     SiteMarkup? markup,
+    this.gsbView,
   }) : annotations = annotations ?? [],
        unitIds = unitIds ?? [],
        markup = markup ?? SiteMarkup();
@@ -423,6 +424,11 @@ class SitePhoto {
   /// [annotations] so the classic editor data is never rewritten.
   SiteMarkup markup;
 
+  /// GSB only: which side of the proposed board this photo looks at
+  /// (`front`, `left`, `right`, `back`, `custom`). Null = not chosen
+  /// (front). Presentation metadata; the photo file is never touched.
+  String? gsbView;
+
   /// Built-in sample photo (rendered in Dart) used for demos/emulators.
   bool get isDemo => path.startsWith(demoPrefix);
 
@@ -441,6 +447,7 @@ class SitePhoto {
     'geo': geo?.toJson(),
     if (unitIds.isNotEmpty) 'unitIds': unitIds,
     if (!markup.isEmpty) 'markup': markup.toJson(),
+    if (gsbView != null) 'gsbView': gsbView,
   };
 
   factory SitePhoto.fromJson(Map<String, dynamic> j) => SitePhoto(
@@ -454,6 +461,7 @@ class SitePhoto {
     geo: GeoFix.fromJson(j['geo']),
     unitIds: _strings(j['unitIds']),
     markup: SiteMarkup.fromJson(j['markup']),
+    gsbView: j['gsbView'] is String ? j['gsbView'] as String : null,
   );
 }
 
@@ -791,6 +799,8 @@ class Board {
     this.legacyMediaCode,
     Map<String, dynamic>? answersArchive,
     List<GsbSpecOverride>? gsbOverrides,
+    this.gsbLedSide,
+    this.nlbSubtype,
   }) : answersArchive = answersArchive ?? {},
        gsbOverrides = gsbOverrides ?? [],
        comparisons = comparisons ?? [],
@@ -858,6 +868,21 @@ class Board {
   /// GSB fabrication spec overrides (depth / profile / wall thickness)
   /// proposed by the vendor. History is kept; reverted entries stay.
   List<GsbSpecOverride> gsbOverrides;
+
+  /// GSB Double: side of the ONE physical LED set (`front` / `rear`).
+  /// Null = front. Never changes LED quantities.
+  String? gsbLedSide;
+
+  bool get gsbLedOnRear => gsbLedSide == 'rear';
+
+  /// NLB fabrication subtype: `NLB_SINGLE_FRAME` (rulebook NON_LIT) or
+  /// `NLB_BOX_FRAME` (NON_LIT_BOX). Null = never chosen (legacy NLB keeps
+  /// its previous behaviour). Additive; the media category stays `NLB`.
+  String? nlbSubtype;
+
+  bool get isNlb => mediaCode == 'NLB';
+  bool get isNlbBoxFrame => isNlb && nlbSubtype == 'NLB_BOX_FRAME';
+  bool get isNlbSingleFrame => isNlb && nlbSubtype == 'NLB_SINGLE_FRAME';
 
   /// Canonical GSB fabrication variant key derived from the stored
   /// [doubleSided] choice: `GSB_SINGLE` / `GSB_DOUBLE`, or null when the
@@ -975,6 +1000,8 @@ class Board {
     if (gsbVariantKey != null) 'boardVariant': gsbVariantKey,
     if (gsbOverrides.isNotEmpty)
       'gsbOverrides': gsbOverrides.map((o) => o.toJson()).toList(),
+    if (gsbLedSide != null) 'gsbLedSide': gsbLedSide,
+    if (nlbSubtype != null) 'nlbSubtype': nlbSubtype,
   };
 
   factory Board.fromJson(Map<String, dynamic> j) {
@@ -1009,6 +1036,12 @@ class Board {
           ? Map<String, dynamic>.from(j['answersArchive'] as Map)
           : null,
       gsbOverrides: _list(j['gsbOverrides'], GsbSpecOverride.fromJson),
+      gsbLedSide: j['gsbLedSide'] is String ? j['gsbLedSide'] as String : null,
+      nlbSubtype:
+          j['nlbSubtype'] == 'NLB_SINGLE_FRAME' ||
+              j['nlbSubtype'] == 'NLB_BOX_FRAME'
+          ? j['nlbSubtype'] as String
+          : null,
       unitSeq: math.max(
         (j['unitSeq'] as num?)?.toInt() ?? units.length,
         units.length,

@@ -9,6 +9,7 @@ import '../gsb/gsb_board.dart';
 import '../gsb/gsb_comparison_pdf.dart';
 import '../gsb/gsb_comparison_service.dart';
 import '../gsb/gsb_rules.dart';
+import '../gsb/gsb_view.dart';
 import 'live_preview_render.dart';
 import 'preview_gallery.dart' show openComparisonPdf;
 
@@ -83,6 +84,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
       brand: brand,
       overlays: restored,
     )..addListener(_changed);
+    _c!.photoView = GsbPhotoViewX.fromKey(photo.gsbView);
     if (restored == null) {
       final unitId =
           board.unitById(widget.initialUnitId)?.id ?? board.units.first.id;
@@ -450,9 +452,12 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
                               color: Colors.black.withValues(alpha: 0.55),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: const Text(
-                              'Night View · illustrative simulation',
-                              style: TextStyle(
+                            child: Text(
+                              b.doubleSided == true
+                                  ? 'Night View · illustrative · both faces lit '
+                                        '(optical review)'
+                                  : 'Night View · illustrative simulation',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 10.5,
                               ),
@@ -512,6 +517,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
     required double min,
     required double max,
     required ValueChanged<double> onChanged,
+    String? valueText,
   }) {
     return Row(
       children: [
@@ -530,7 +536,56 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
             onChanged: onChanged,
           ),
         ),
+        if (valueText != null)
+          SizedBox(
+            width: 40,
+            child: Text(
+              valueText,
+              key: ValueKey('${key.toString()}_value'),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
       ],
+    );
+  }
+
+  /// GSB: which side of the board the photo looks at. Sets the starting
+  /// turn; manual Turn adjustments stay on top of it.
+  Widget _viewSelector(LivePreviewController c) {
+    final app = context.read<AppController>();
+    return SizedBox(
+      height: 36,
+      child: ListView(
+        key: const ValueKey('gsb_photo_view'),
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final v in GsbPhotoView.values)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                key: ValueKey('gsb_view_${v.name}'),
+                label: Text(v.label, style: const TextStyle(fontSize: 12)),
+                visualDensity: VisualDensity.compact,
+                selected: (c.photoView ?? GsbPhotoView.front) == v,
+                onSelected: !widget.editable
+                    ? null
+                    : (_) {
+                        c.setPhotoView(v);
+                        app.setGsbPhotoView(
+                          widget.shopId,
+                          c.board,
+                          c.photo.id,
+                          v.name,
+                        );
+                      },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -610,14 +665,18 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
                       max: LivePreviewController.maxScale,
                       onChanged: c.setScale,
                     ),
+                    // Shared by every media type: view presets + full 360°
+                    // Turn (−180…+180). Geometry still differs per media.
+                    _viewSelector(c),
                     _slider(
                       key: const ValueKey('live_yaw'),
                       icon: Icons.threed_rotation,
                       label: 'Turn',
-                      value: sel.yaw,
-                      min: -1.4,
-                      max: 1.4,
+                      value: wrapYaw(sel.yaw),
+                      min: -math.pi,
+                      max: math.pi,
                       onChanged: c.setYaw,
+                      valueText: yawDegreesLabel(sel.yaw),
                     ),
                     _slider(
                       key: const ValueKey('live_pitch'),

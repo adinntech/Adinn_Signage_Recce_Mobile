@@ -38,6 +38,9 @@ class SignageGeometry {
     this.baseDepthFt = 0,
     this.supportType,
     this.spec,
+    this.gsbLedRear = false,
+    this.nlbBoxFrame = false,
+    this.nlbSingleFrame = false,
   });
 
   static const defaultWidthFt = 10.0;
@@ -89,6 +92,16 @@ class SignageGeometry {
   /// recorded values. Null for GSB / NLB / ACP and legacy media, which keep
   /// the original scene builder.
   final SignageModelSpec? spec;
+
+  /// GSB Double: the single physical LED set faces the rear (Night View
+  /// glow only; never a quantity).
+  final bool gsbLedRear;
+
+  /// NLB Box Frame (rulebook NON_LIT_BOX): fully flex-covered 4-in box.
+  final bool nlbBoxFrame;
+
+  /// NLB Single Frame (NON_LIT): slim open steel frame, pipes visible.
+  final bool nlbSingleFrame;
 
   double get topFt => bottomFt + heightFt;
   double get areaSqFt => widthFt * heightFt;
@@ -240,14 +253,22 @@ class SignageGeometry {
     return SignageGeometry(
       widthFt: w,
       heightFt: h,
+      nlbBoxFrame: b.isNlbBoxFrame,
+      nlbSingleFrame: b.isNlbSingleFrame,
       depthFt:
-          recFt('board_depth') ?? (media.depthFt < 0.05 ? 0.05 : media.depthFt),
+          recFt('board_depth') ??
+          (b.isNlbSingleFrame
+              ? 1 / 12
+              : b.isNlbBoxFrame
+              ? 4 / 12
+              : (media.depthFt < 0.05 ? 0.05 : media.depthFt)),
       clearanceFt: clearance,
       bottomFt: bottom,
       buildingHeightFt: buildingH.toDouble(),
       poleGapFt: poleGap,
       projectionFt: projection,
       doubleSided: SignageCatalog.isDoubleSided(b),
+      gsbLedRear: b.gsbLedOnRear,
       mediaCode: media.code,
       installationCode: installation,
       unit: b.unit,
@@ -327,6 +348,9 @@ class SignageGeometry {
       other.poleGapFt == poleGapFt &&
       other.projectionFt == projectionFt &&
       other.doubleSided == doubleSided &&
+      other.gsbLedRear == gsbLedRear &&
+      other.nlbBoxFrame == nlbBoxFrame &&
+      other.nlbSingleFrame == nlbSingleFrame &&
       other.mediaCode == mediaCode &&
       other.installationCode == installationCode &&
       other.unit == unit &&
@@ -351,6 +375,9 @@ class SignageGeometry {
     poleGapFt,
     projectionFt,
     doubleSided,
+    gsbLedRear,
+    nlbBoxFrame,
+    nlbSingleFrame,
     mediaCode,
     installationCode,
     unit,

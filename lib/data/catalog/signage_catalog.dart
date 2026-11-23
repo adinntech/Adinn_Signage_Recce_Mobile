@@ -293,12 +293,12 @@ class SignageCatalog {
     MediaType(
       code: foamVinyl,
       template: 'foam',
-      thicknessMm: 5,
+      thicknessMm: 3, // rigid foam board: 3 mm substrate
       shortName: 'Foam Vinyl',
       name: 'Foam Board with Vinyl',
       description: 'Printed vinyl on a thin foam / sun-board substrate.',
       icon: Icons.layers_outlined,
-      depthFt: 0.02,
+      depthFt: 3 / 304.8,
       illuminated: false,
       installations: [wallMount, directWall],
       color: Color(0xFF6D4C41),

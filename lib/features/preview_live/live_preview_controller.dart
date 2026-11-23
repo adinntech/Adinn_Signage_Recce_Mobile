@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/models/models.dart';
 import '../drawing/signage_geometry.dart';
+import '../gsb/gsb_view.dart';
 import '../preview3d/scene3d.dart';
 import '../preview3d/signage_scene_builder.dart';
 import 'live_preview_render.dart';
@@ -21,6 +22,8 @@ SignageGeometry unitGeometry(Board b, SignageUnit u) {
     height: b.heightOf(u),
     unit: b.unit,
     doubleSided: b.doubleSided,
+    gsbLedSide: b.gsbLedSide,
+    nlbSubtype: b.nlbSubtype,
   );
   return SignageGeometry.fromBoard(tmp, unit: u);
 }
@@ -52,6 +55,29 @@ class LivePreviewController extends ChangeNotifier {
   /// Day / Night render view (GSB only in the UI). View state only: it
   /// never changes any overlay transform.
   RenderView view = RenderView.day;
+
+  /// GSB: side of the board the photo looks at (null = front).
+  GsbPhotoView? photoView;
+
+  bool get isGsb => board.mediaCode == 'GSB';
+
+  /// Switches the view preset of the selected board. The vendor's manual
+  /// adjustment is kept: yaw = new base + (yaw − old base). Custom keeps the
+  /// current yaw as is.
+  void setPhotoView(GsbPhotoView v) {
+    final old = photoView ?? GsbPhotoView.front;
+    photoView = v;
+    final o = selected;
+    if (o != null) {
+      if (v != GsbPhotoView.custom) {
+        final offset = old == GsbPhotoView.custom
+            ? 0.0
+            : wrapYaw(o.yaw - old.baseYaw);
+        o.yaw = effectiveYaw(v, offset);
+      }
+    }
+    notifyListeners();
+  }
 
   void setView(RenderView v) {
     if (view == v) return;
@@ -92,6 +118,13 @@ class LivePreviewController extends ChangeNotifier {
       brand: brand,
       dimensions: true,
     );
+    if (board.mediaCode == 'GSB' || board.mediaCode == 'NLB') {
+      // Live Preview shows ONLY the board width / height. Mounting /
+      // clearance dimensions stay in the data (and in the 3D Isometric view).
+      scene.dims.removeWhere(
+        (d) => !d.label.startsWith('W ') && !d.label.startsWith('H '),
+      );
+    }
     _scenes[unit.id] = (g, scene);
     return scene;
   }
@@ -136,11 +169,24 @@ class LivePreviewController extends ChangeNotifier {
       );
     }
     final n = index ?? overlays.length;
-    return PreviewOverlay(unitId: unitId, cx: 0.5 + 0.06 * (n % 4), cy: 0.45);
+    return PreviewOverlay(
+      unitId: unitId,
+      cx: 0.5 + 0.06 * (n % 4),
+      cy: 0.45,
+      yaw: _initialYaw,
+    );
   }
 
+  PreviewOverlay _withBaseYaw(PreviewOverlay o) {
+    o.yaw = _initialYaw;
+    return o;
+  }
+
+  /// Start orientation from the photo's GSB view preset.
+  double get _initialYaw => (photoView ?? GsbPhotoView.front).baseYaw;
+
   void addUnit(String unitId) {
-    overlays.add(defaultFor(unitId));
+    overlays.add(_withBaseYaw(defaultFor(unitId)));
     _selected = overlays.length - 1;
     notifyListeners();
   }
@@ -215,8 +261,9 @@ class LivePreviewController extends ChangeNotifier {
     o.rotation = a;
   }, [r]);
 
-  void setYaw(double y) =>
-      _edit((o) => o.yaw = y.clamp(-1.4, 1.4).toDouble(), [y]);
+  /// Full turn: any angle, normalised to (−π, π] (old saved values within
+  /// ±1.4 rad stay as they are).
+  void setYaw(double y) => _edit((o) => o.yaw = wrapYaw(y), [y]);
 
   void setPitch(double p) =>
       _edit((o) => o.pitch = p.clamp(minPitch, maxPitch).toDouble(), [p]);
@@ -227,7 +274,9 @@ class LivePreviewController extends ChangeNotifier {
   void resetSelected() {
     final o = selected;
     if (o == null) return;
-    overlays[selectedIndex] = defaultFor(o.unitId, index: selectedIndex);
+    overlays[selectedIndex] = _withBaseYaw(
+      defaultFor(o.unitId, index: selectedIndex),
+    );
     notifyListeners();
   }
 

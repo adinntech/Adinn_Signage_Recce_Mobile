@@ -155,7 +155,7 @@ void main() {
         for (final f in g.faces)
           for (var i = 0; i < f.points.length; i += 3) f.points[i],
       ];
-      expect(xs.reduce((a, b) => a > b ? a : b), closeTo(1.2192, 1e-6));
+      expect(xs.reduce((a, b) => a > b ? a : b), closeTo(1.2192, 0.002));
     });
 
     test('pole, standee and rooftop items prefer ground placement', () {

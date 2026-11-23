@@ -4,6 +4,8 @@ import 'dart:ui';
 import '../../core/utils/formatters.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../drawing/signage_geometry.dart';
+import '../gsb/gsb_presentation.dart';
+import '../nlb/nlb_presentation.dart';
 import '../model3d/parametric_builder.dart';
 import 'scene3d.dart';
 
@@ -241,10 +243,55 @@ class SignageSceneBuilder {
       return;
     }
 
+    if (g.mediaCode == SignageCatalog.nlb && g.nlbSingleFrame) {
+      // NLB Single Frame: slim open frame with visible pipes.
+      for (final s in NlbSingleBoard.build(
+        NlbSinglePresentation(
+          widthFt: w,
+          heightFt: t - b,
+          bottomFt: b,
+          profileIn: d * 12,
+          brand: brand,
+        ),
+      )) {
+        scene.add(s);
+      }
+      return;
+    }
+    if (g.mediaCode == SignageCatalog.nlb && g.nlbBoxFrame) {
+      // NLB Box Frame: fully flex-covered box (frame stays hidden).
+      for (final s in NlbBoxBoard.build(
+        NlbBoxPresentation(
+          widthFt: w,
+          heightFt: t - b,
+          depthFt: d,
+          bottomFt: b,
+          brand: brand,
+        ),
+      )) {
+        scene.add(s);
+      }
+      return;
+    }
     final min = Vec3(-w / 2, b, -d);
     final max = Vec3(w / 2, t, 0);
     switch (g.mediaCode) {
       case SignageCatalog.gsb:
+        // Finished exterior (flex, blue powder-coated covers, GI / rear
+        // flex, sample screws) shared with the Isometric view.
+        for (final s in GsbFinishedBoard.build(
+          GsbPresentation(
+            widthFt: w,
+            heightFt: t - b,
+            depthFt: d,
+            bottomFt: b,
+            isDouble: g.doubleSided,
+            ledOnRear: g.gsbLedRear,
+            brand: brand,
+          ),
+        )) {
+          scene.add(s);
+        }
       case SignageCatalog.flange:
         scene.add(
           Shapes.box(

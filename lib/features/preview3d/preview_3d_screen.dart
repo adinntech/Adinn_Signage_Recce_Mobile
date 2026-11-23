@@ -511,16 +511,20 @@ class _Preview3DScreenState extends State<Preview3DScreen>
       return out;
     }
 
-    Face restyle(Face f) => Face(
-      f.points,
-      tone(f.color, f.emissive),
-      f.normal,
-      outline: f.outline || _xray,
-      emissive: f.emissive,
-      label: f.label,
-      labelColor: f.labelColor,
-      layer: f.layer,
-    );
+    Face restyle(Face f) =>
+        Face(
+            f.points,
+            tone(f.color, f.emissive),
+            f.normal,
+            outline: f.outline || _xray,
+            emissive: f.emissive,
+            label: f.label,
+            labelColor: f.labelColor,
+            layer: f.layer,
+          )
+          ..glow = f.glow
+          ..perforationPitchFt = f.perforationPitchFt
+          ..perforationHole = f.perforationHole;
     final scene = Scene(focus: base.focus);
     for (final s in base.solids) {
       final copy = Solid(
@@ -1367,6 +1371,48 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                 '${plan.trimPieceCount} powder-coated trim pieces · '
                 '1 LED set',
           ),
+          if (i.variant.isDouble)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 120,
+                    child: Text(
+                      'LED set side',
+                      style: TextStyle(fontSize: 12, color: AdinnColors.muted),
+                    ),
+                  ),
+                  for (final side in const ['front', 'rear'])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        key: Key('gsb_led_$side'),
+                        label: Text(
+                          side == 'front' ? 'Front' : 'Rear',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        selected:
+                            (board.gsbLedOnRear ? 'rear' : 'front') == side,
+                        onSelected: canEdit
+                            ? (_) => c.setGsbLedSide(shop.id, board, side)
+                            : null,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (i.variant.isDouble)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text(
+                'One physical LED set (side recorded above, quantity never '
+                'doubled). Night View shows both flex faces softly lit as an '
+                'illustration; two-face optics need review.',
+                style: TextStyle(fontSize: 11, color: AdinnColors.muted),
+              ),
+            ),
           for (final e in errors)
             Padding(
               padding: const EdgeInsets.only(top: 4),

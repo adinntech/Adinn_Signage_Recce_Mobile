@@ -79,6 +79,25 @@ class _PhotoSectionState extends State<PhotoSection> {
     );
   }
 
+  /// GSB / NLB (vendor flow): no "Which angle is this photo?" prompt. The
+  /// board orientation is chosen in Live Preview (view selector), and the
+  /// photo keeps a neutral label instead of a guessed angle. Other media
+  /// keep the existing prompt; historical labels are never touched.
+  bool get _skipAnglePrompt =>
+      widget.board.mediaCode == SignageCatalog.gsb ||
+      widget.board.mediaCode == SignageCatalog.nlb;
+
+  String _neutralLabel() => 'Site photo ${widget.board.photos.length + 1}';
+
+  Future<String> _labelForNewPhoto() async {
+    if (_skipAnglePrompt) return _neutralLabel();
+    return await _pickLabel() ??
+        SignageCatalog.photoLabels[min(
+          widget.board.photos.length,
+          SignageCatalog.photoLabels.length - 1,
+        )];
+  }
+
   /// GPS fix for a photo geotag, or null (never throws, never blocks long).
   Future<GeoFix?> _tryFix(LocationService location) async {
     try {
@@ -134,12 +153,7 @@ class _PhotoSectionState extends State<PhotoSection> {
       final height = decoded.height;
       decoded.dispose();
       if (!mounted) return;
-      final label =
-          await _pickLabel() ??
-          SignageCatalog.photoLabels[min(
-            widget.board.photos.length,
-            SignageCatalog.photoLabels.length - 1,
-          )];
+      final label = await _labelForNewPhoto();
       final geo = await geoFuture;
       final photo = SitePhoto(
         id: newId('ph'),
@@ -167,7 +181,7 @@ class _PhotoSectionState extends State<PhotoSection> {
   }
 
   Future<void> _addSample() async {
-    final label = await _pickLabel();
+    final label = _skipAnglePrompt ? _neutralLabel() : await _pickLabel();
     if (!mounted) return;
     context.read<AppController>().addPhoto(
       widget.shopId,

@@ -5,6 +5,8 @@ import '../../data/catalog/measurement_fields.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../drawing/signage_geometry.dart';
+import '../gsb/gsb_presentation.dart';
+import '../nlb/nlb_presentation.dart';
 import '../preview3d/scene3d.dart';
 import '../preview3d/signage_scene_builder.dart' show SceneColors;
 import 'parametric_model.dart';
@@ -228,7 +230,7 @@ const _logo = Color(0xFF263238);
 const _rubber = Color(0xFF2B2B2B);
 const _embedded = Color(0x808C939B);
 const _groundTint = Color(0x336B7A5A);
-const _perforation = Color(0xB3101418);
+const _studBody = Color(0xFF8F979F);
 const _highlight = Color(0xFFFFB300);
 
 const _componentFields = <String, List<SpecField>>{
@@ -597,16 +599,20 @@ class _Build {
     );
   }
 
-  static Face _tint(Face f) => Face(
-    f.points,
-    Color.lerp(f.color, _highlight, 0.45)!.withValues(alpha: f.color.a),
-    f.normal,
-    outline: true,
-    emissive: f.emissive,
-    label: f.label,
-    labelColor: f.labelColor,
-    layer: f.layer,
-  );
+  static Face _tint(Face f) =>
+      Face(
+          f.points,
+          Color.lerp(f.color, _highlight, 0.45)!.withValues(alpha: f.color.a),
+          f.normal,
+          outline: true,
+          emissive: f.emissive,
+          label: f.label,
+          labelColor: f.labelColor,
+          layer: f.layer,
+        )
+        ..glow = f.glow
+        ..perforationPitchFt = f.perforationPitchFt
+        ..perforationHole = f.perforationHole;
 
   static Solid _tinted(Solid s) {
     final copy = Solid(name: s.name, faces: s.faces.map(_tint).toList());
@@ -678,6 +684,75 @@ class _Build {
   /// GSB (lit) / Non-Lit board: box + perimeter frame (+ rear supports).
   void _boxBoard({required bool lit}) {
     final d = _ft(SpecField.depth, _mediaDepthMm, minMm: 5);
+    if (!lit && spec.mediaCode == SignageCatalog.nlb && spec.nlbSingleFrame) {
+      // NLB Single Frame: open steel frame with visible pipes.
+      for (final s in NlbSingleBoard.build(
+        NlbSinglePresentation(
+          widthFt: w,
+          heightFt: h,
+          bottomFt: b,
+          profileIn: d * 12,
+          brand: brand,
+        ),
+        memberName: _C.frame,
+        flexName: _C.frontFace,
+      )) {
+        _add(s);
+      }
+      env
+        ..zFront = 0
+        ..zBodyBack = -d
+        ..zBack = -d;
+      return;
+    }
+    if (!lit && spec.mediaCode == SignageCatalog.nlb && spec.nlbBoxFrame) {
+      // NLB Box Frame: six flex surfaces, frame hidden, not lit.
+      for (final s in NlbBoxBoard.build(
+        NlbBoxPresentation(
+          widthFt: w,
+          heightFt: h,
+          depthFt: d,
+          bottomFt: b,
+          brand: brand,
+        ),
+        bodyName: _n(_C.displayPanel),
+        frontName: _n(_C.frontFace),
+        rearName: _n(_C.backFace),
+      )) {
+        _add(s);
+      }
+      env
+        ..zFront = 0
+        ..zBodyBack = -d
+        ..zBack = -d;
+      return;
+    }
+    if (lit && spec.mediaCode == SignageCatalog.gsb) {
+      // Finished GSB exterior (same builder as Live Preview / AR). The
+      // fabrication structure stays in the engine; it is only drawn in the
+      // opt-in "Fabrication frame" view.
+      for (final s in GsbFinishedBoard.build(
+        GsbPresentation(
+          widthFt: w,
+          heightFt: h,
+          depthFt: d,
+          bottomFt: b,
+          isDouble: ds,
+          brand: brand,
+          ledOnRear: spec.gsbLedRear,
+        ),
+        bodyName: _n(_C.displayPanel),
+        frontName: _n(_C.frontFace),
+        rearName: _n(_C.backFace),
+      )) {
+        _add(s);
+      }
+      env
+        ..zFront = 0
+        ..zBodyBack = -d
+        ..zBack = -d;
+      return;
+    }
     final band = math.min(
       _ft(SpecField.frameThickness, 40),
       math.min(w, h) * 0.25,
@@ -839,26 +914,59 @@ class _Build {
       final small = math.min(w, h);
       final m = math.min(math.max(0.15, small * 0.1), small * 0.4);
       final r = math.min(0.04, small * 0.08);
+      const cap = 0.02; // cap stands ~6 mm proud of the sheet
+      // Four corner studs: low-poly cylinders (spacer behind the sheet,
+      // brushed-steel cap in front). Layout is derived from the board size
+      // (illustrative setback) – not a manufacturer-approved pattern.
       for (final x in [-w / 2 + m, w / 2 - m]) {
         for (final y in [b + m, t - m]) {
-          _beam(
-            _C.standoffs,
-            Vec3(x, y, -th),
-            Vec3(x, y, -th - s),
-            2 * r,
-            SceneColors.steel,
+          _add(
+            Shapes.zCylinder(
+              x,
+              y,
+              -th - s,
+              -th,
+              r * 0.7,
+              SceneColors.steel,
+              name: _n(_C.standoffs),
+            ),
           );
           _add(
-            _box(
-              _C.standoffs,
-              Vec3(x - r * 1.4, y - r * 1.4, 0),
-              Vec3(x + r * 1.4, y + r * 1.4, 0.03),
-              SceneColors.silver,
+            Shapes.zCylinder(
+              x,
+              y,
+              0,
+              cap,
+              r * 1.35,
+              _studBody,
+              sides: 12,
+              capColor: SceneColors.silver,
+              name: _n(_C.standoffs),
             ),
           );
         }
       }
-      env.zFront = 0.03;
+      env.zFront = cap;
+      _dim(
+        'stud_spacing_h',
+        'Stud c/c',
+        Vec3(-w / 2 + m, b + m, cap),
+        Vec3(w / 2 - m, b + m, cap),
+        Vec3(0, -off * 0.45, 0),
+      );
+      _dim(
+        'stud_spacing_v',
+        'Stud c/c',
+        Vec3(-w / 2 + m, b + m, cap),
+        Vec3(-w / 2 + m, t - m, cap),
+        Vec3(-off * 0.45, 0, 0),
+      );
+      _notes.add(
+        'Stud positions are illustrative (edge setback ${_fmt(m * kMmPerFoot)}); '
+        'stud size and spacing are not manufacturer-approved values.',
+      );
+    } else {
+      _notes.add('Standoff (wall gap) is Not specified: no studs drawn.');
     }
   }
 
@@ -877,34 +985,20 @@ class _Build {
       labels: {BoxSide.front: brand},
     );
     if (perforated) {
-      // Perforation approximated by a regular dot pattern (≈260 dots).
-      final pitch = math.max(math.sqrt(w * h / 260), 0.02);
-      final nx = math.max(1, (w / pitch).floor());
-      final ny = math.max(1, (h / pitch).floor());
-      final r = math.min(w / nx, h / ny) * 0.22;
-      for (var i = 0; i < nx; i++) {
-        for (var j = 0; j < ny; j++) {
-          final cx = -w / 2 + (i + 0.5) * w / nx;
-          final cy = b + (j + 0.5) * h / ny;
-          film.decals.add(
-            Face(
-              [
-                for (var k = 0; k < 6; k++)
-                  Vec3(
-                    cx + r * math.cos(math.pi / 3 * k),
-                    cy - r * math.sin(math.pi / 3 * k),
-                    0,
-                  ),
-              ],
-              _perforation,
-              const Vec3(0, 0, 1),
-              outline: false,
-              layer: 2,
-            ),
-          );
-        }
+      // Fine perforation as a see-through MASK on the film faces (holes
+      // are cleared by the painter, no mesh holes). The pitch is an
+      // illustrative display preset (~100 holes across the width, never
+      // finer than the 2.5 mm of typical film), NOT a manufacturing
+      // specification and never a BOM value.
+      final pitch = math.max(w / 100, 2.5 / kMmPerFoot);
+      for (final f in film.faces.where((f) => f.normal.z.abs() > 0.5)) {
+        f.perforationPitchFt = pitch;
+        f.perforationHole = 0.55;
       }
-      film.decalNormal = const Vec3(0, 0, 1);
+      _notes.add(
+        'Perforation is shown as an illustrative pattern: film pitch and '
+        'open-area ratio are not specified.',
+      );
     }
     _add(film);
     if (ds) {

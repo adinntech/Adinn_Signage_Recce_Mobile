@@ -4,7 +4,8 @@ import 'dart:ui' as ui;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-import '../preview_live/live_preview_render.dart' show kNightDisclaimer;
+import '../preview_live/live_preview_render.dart'
+    show kNightDisclaimer, kNightDoubleNote;
 import '../report/report_pdf.dart' show pdfSafe;
 
 /// A PNG / JPEG plus its pixel size (aspect ratio is always preserved).
@@ -305,6 +306,7 @@ Future<Uint8List> buildGsbComparisonPdf(GsbComparisonData d) async {
         style: const pw.TextStyle(fontSize: 8.5, color: _muted),
       ),
       note(kNightDisclaimer),
+      if (d.variantLabel.contains('Double')) note(kNightDoubleNote),
     ]),
   );
   doc.addPage(

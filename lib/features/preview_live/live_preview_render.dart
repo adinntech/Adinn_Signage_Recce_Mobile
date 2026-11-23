@@ -46,6 +46,12 @@ const kNightDisclaimer =
     'Night View is an illustrative visual simulation, not a measured '
     'lighting or illumination guarantee.';
 
+/// Extra line for GSB Double night renders.
+const kNightDoubleNote =
+    'GSB Double: both faces are shown softly lit for presentation. The board '
+    'has ONE physical LED set; two-face optical performance requires '
+    'confirmation (Requires Review).';
+
 /// Slightly darker sky: a navy gradient over the top of the photo.
 void paintNightSky(Canvas canvas, Size size) {
   final rect = Offset.zero & size;

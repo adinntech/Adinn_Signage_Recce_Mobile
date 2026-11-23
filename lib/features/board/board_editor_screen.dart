@@ -13,6 +13,8 @@ import '../drawing/drawing_2d_screen.dart';
 import '../gsb/gsb_board.dart';
 import '../gsb/gsb_rules.dart';
 import '../gsb/gsb_type_sheet.dart';
+import '../nlb/nlb_rules.dart';
+import '../nlb/nlb_type_sheet.dart';
 import '../notes/voice_notes_section.dart';
 import '../photos/photo_section.dart';
 import '../preview3d/preview_3d_screen.dart';
@@ -136,6 +138,10 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
   /// cancelling the sheet leaves the recce untouched. Other media are
   /// selected directly, exactly as before.
   Future<void> _onMediaTap(AppController c, Board b, MediaType m) async {
+    if (m.code == SignageCatalog.nlb) {
+      await _onNlbTap(c, b, m);
+      return;
+    }
     if (m.code != SignageCatalog.gsb) {
       _selectMedia(c, b, m);
       return;
@@ -155,6 +161,27 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
       c.setDoubleSided(widget.shopId, b, isDouble);
       setState(() => _step = 1);
     } else {
+      setState(() => _step = 1);
+    }
+  }
+
+  /// NLB asks for the frame type first (Single Frame = NON_LIT, Box Frame =
+  /// NON_LIT_BOX). Cancel leaves the recce untouched; legacy NLB records
+  /// without a subtype keep their behaviour until one is chosen.
+  Future<void> _onNlbTap(AppController c, Board b, MediaType m) async {
+    final initial = b.mediaCode == SignageCatalog.nlb
+        ? NlbVariantX.fromKey(b.nlbSubtype)
+        : null;
+    final picked = await showNlbTypeSheet(context, initial: initial);
+    if (picked == null || !mounted) return;
+    if (b.mediaCode != m.code) {
+      b.nlbSubtype = picked.key;
+      b.doubleSided = picked == NlbVariant.boxFrame;
+      _selectMedia(c, b, m);
+    } else {
+      if (b.nlbSubtype != picked.key) {
+        c.setNlbSubtype(widget.shopId, b, picked.key);
+      }
       setState(() => _step = 1);
     }
   }
@@ -257,6 +284,8 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
               ? 'Choose one of ${SignageCatalog.catalogCodes.length} media types'
               : GsbBoard.isExplicit(board)
               ? '${media.name} · ${GsbBoard.variantOf(board)!.label}'
+              : NlbVariantX.fromKey(board.nlbSubtype) != null && board.isNlb
+              ? '${media.name} · ${NlbVariantX.fromKey(board.nlbSubtype)!.label}'
               : media.name,
         ),
         state: _state(_mediaDone(board), 0, editable),
@@ -280,6 +309,12 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
             if (GsbBoard.isGsb(board))
               _GsbVariantSummary(
                 board: board,
+                enabled: editable,
+                onChange: () => _onMediaTap(c, board, media!),
+              )
+            else if (board.isNlb && board.nlbSubtype != null)
+              _NlbVariantSummary(
+                variant: NlbVariantX.fromKey(board.nlbSubtype)!,
                 enabled: editable,
                 onChange: () => _onMediaTap(c, board, media!),
               )
@@ -1157,6 +1192,53 @@ class _GsbVariantSummary extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Selected NLB frame type with a "Change" action (reopens the sheet).
+class _NlbVariantSummary extends StatelessWidget {
+  const _NlbVariantSummary({
+    required this.variant,
+    required this.enabled,
+    required this.onChange,
+  });
+
+  final NlbVariant variant;
+  final bool enabled;
+  final VoidCallback onChange;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const Key('nlb_variant_summary'),
+    margin: const EdgeInsets.only(top: 12),
+    padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+    decoration: BoxDecoration(
+      color: AdinnColors.redLight,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: AdinnColors.red),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          variant == NlbVariant.boxFrame
+              ? Icons.inventory_2_outlined
+              : Icons.crop_landscape,
+          color: AdinnColors.red,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            variant.label,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        TextButton(
+          key: const Key('nlb_variant_change'),
+          onPressed: enabled ? onChange : null,
+          child: const Text('Change'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Single / double-sided choice for Non-Lit boards (GSB uses the board

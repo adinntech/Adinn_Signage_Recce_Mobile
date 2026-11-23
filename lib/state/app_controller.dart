@@ -1566,6 +1566,47 @@ class AppController extends ChangeNotifier {
     return null;
   }
 
+  /// Sets the NLB fabrication subtype (`NLB_SINGLE_FRAME` = rulebook
+  /// NON_LIT, `NLB_BOX_FRAME` = NON_LIT_BOX). The box frame prints front and
+  /// rear, so it is stored as double-sided; measurements are untouched.
+  void setNlbSubtype(String shopId, Board b, String subtype) {
+    if (subtype != 'NLB_SINGLE_FRAME' && subtype != 'NLB_BOX_FRAME') return;
+    b.nlbSubtype = subtype;
+    b.doubleSided = subtype == 'NLB_BOX_FRAME';
+    touchBoard(
+      shopId,
+      b,
+      title: 'Board updated',
+      message:
+          '${b.name}: NLB ${subtype == 'NLB_BOX_FRAME' ? 'Box' : 'Single'} Frame.',
+    );
+  }
+
+  /// Records which side of the proposed GSB a site photo looks at. Only
+  /// presentation metadata: the photo file and measurements are untouched.
+  void setGsbPhotoView(String shopId, Board b, String photoId, String viewKey) {
+    final p = b.photos.where((e) => e.id == photoId).firstOrNull;
+    if (p == null || p.gsbView == viewKey) return;
+    p.gsbView = viewKey;
+    touchBoard(shopId, b);
+  }
+
+  /// GSB Double: side of the single physical LED set (`front` / `rear`).
+  /// Display only – LED quantity and BOM never change.
+  void setGsbLedSide(String shopId, Board b, String side) {
+    final s = shop(shopId);
+    if (s == null || !canEdit(s) || (side != 'front' && side != 'rear')) {
+      return;
+    }
+    b.gsbLedSide = side == 'front' ? null : side;
+    touchBoard(
+      shopId,
+      b,
+      title: 'GSB LED side',
+      message: '${b.name}: LED set on the $side side.',
+    );
+  }
+
   /// Reverts an override (history kept; the default applies again).
   void revertGsbOverride(String shopId, Board b, String overrideId) {
     final s = shop(shopId);

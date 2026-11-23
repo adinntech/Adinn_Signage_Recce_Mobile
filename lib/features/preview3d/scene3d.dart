@@ -77,6 +77,21 @@ class Face {
 
   /// Self-lit (e.g. the glowing face of a GSB) – ignores scene lighting.
   final bool emissive;
+
+  /// Night View only: whether this self-lit face actually glows. Null =
+  /// follows [emissive]. A self-lit face with `glow = false` looks normal
+  /// by day but is NOT lit at night (e.g. the rear flex of a GSB Double
+  /// whose single LED set faces the front).
+  bool? glow;
+  bool get glowsAtNight => glow ?? emissive;
+
+  /// One-way-vision film: physical pitch (feet) of the perforation grid
+  /// punched through this face (null = solid). Rendered as a see-through
+  /// mask by the painter – never as individual mesh holes.
+  double? perforationPitchFt;
+
+  /// Hole diameter as a fraction of the pitch (illustrative preset).
+  double perforationHole = 0.6;
   final String? label;
   final Color labelColor;
 
@@ -323,6 +338,66 @@ class Shapes {
         Face([b1, b4, b3, b2], color, u),
       ],
     );
+  }
+
+  /// Low-poly cylinder along the Z axis from [z0] to [z1] (studs, standoffs).
+  /// The cap at the larger z faces +Z (or the Z of the front cap colour
+  /// [capColor]); the smaller-z end faces −Z.
+  static Solid zCylinder(
+    double cx,
+    double cy,
+    double z0,
+    double z1,
+    double radius,
+    Color color, {
+    int sides = 10,
+    String name = 'stud',
+    Color? capColor,
+  }) {
+    final lo = math.min(z0, z1), hi = math.max(z0, z1);
+    final ring = <Vec3>[
+      for (var i = 0; i < sides; i++)
+        Vec3(
+          cx + radius * math.cos(2 * math.pi * i / sides),
+          cy + radius * math.sin(2 * math.pi * i / sides),
+          0,
+        ),
+    ];
+    final faces = <Face>[];
+    for (var i = 0; i < sides; i++) {
+      final j = (i + 1) % sides;
+      final mid = 2 * math.pi * (i + 0.5) / sides;
+      faces.add(
+        Face(
+          [
+            Vec3(ring[i].x, ring[i].y, hi),
+            Vec3(ring[j].x, ring[j].y, hi),
+            Vec3(ring[j].x, ring[j].y, lo),
+            Vec3(ring[i].x, ring[i].y, lo),
+          ],
+          color,
+          Vec3(math.cos(mid), math.sin(mid), 0),
+          outline: false,
+        ),
+      );
+    }
+    faces.add(
+      Face(
+        [for (final p in ring) Vec3(p.x, p.y, hi)],
+        capColor ?? color,
+        const Vec3(0, 0, 1),
+        outline: false,
+      ),
+    );
+    faces.add(
+      Face(
+        [for (final p in ring.reversed) Vec3(p.x, p.y, lo)],
+        color,
+        const Vec3(0, 0, -1),
+        outline: false,
+      ),
+    );
+    return Solid(name: name, faces: faces);
   }
 
   /// Vertical n-sided prism approximating a round pole.

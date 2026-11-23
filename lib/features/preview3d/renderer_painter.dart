@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
 
@@ -418,7 +419,7 @@ class Scene3DPainter extends CustomPainter {
     var fill = shade(face.color, k);
     final path = Path()..addPolygon(pts, true);
     if (night) {
-      if (face.emissive) {
+      if (face.emissive && face.glowsAtNight) {
         // Soft light spill around the lit face (render-only, no geometry).
         final b = path.getBounds();
         final sigma = math.max(2.0, b.shortestSide * 0.18);
@@ -437,6 +438,11 @@ class Scene3DPainter extends CustomPainter {
         fill = Color.lerp(fill, nightTone, 0.5)!.withValues(alpha: fill.a);
       }
     }
+    final perforated = face.perforationPitchFt != null && pts.length == 4;
+    if (perforated) {
+      // Own layer so the holes can be cleared back to the photo behind.
+      canvas.saveLayer(path.getBounds().inflate(1), Paint());
+    }
     canvas.drawPath(path, Paint()..color = fill);
     if (face.outline) {
       canvas.drawPath(
@@ -450,6 +456,66 @@ class Scene3DPainter extends CustomPainter {
     if (face.label != null && pts.length >= 4) {
       _paintFaceLabel(canvas, face, pts);
     }
+    if (perforated) {
+      _punchPerforation(canvas, face, pts, path);
+      canvas.restore();
+    }
+  }
+
+  /// Clears a repeating perforation grid out of the film layer (true
+  /// see-through holes) using the face's projective map, so the pattern
+  /// follows the film's perspective. When the holes are finer than ~1.6 px
+  /// (or too many) it falls back to a uniform open-area transparency, which
+  /// avoids moiré and flicker while zooming.
+  void _punchPerforation(
+    Canvas canvas,
+    Face face,
+    List<Offset> pts,
+    Path path,
+  ) {
+    final pitch = face.perforationPitchFt!;
+    final wWorld = (face.points[1] - face.points[0]).length;
+    final hWorld = (face.points[3] - face.points[0]).length;
+    if (pitch <= 0 || wWorld <= 0 || hWorld <= 0) return;
+    final nx = (wWorld / pitch).floor(), ny = (hWorld / pitch).floor();
+    final hole = face.perforationHole.clamp(0.2, 0.9).toDouble();
+    final open = math.pi / 4 * hole * hole; // open-area ratio
+    final screenPitch = math.min(
+      (pts[1] - pts[0]).distance / math.max(nx, 1),
+      (pts[3] - pts[0]).distance / math.max(ny, 1),
+    );
+    final hm = squareToQuad(pts);
+    if (nx < 1 || ny < 1 || hm == null || screenPitch < 1.6 || nx * ny > 9000) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = Color.fromRGBO(0, 0, 0, open)
+          ..blendMode = BlendMode.dstOut,
+      );
+      return;
+    }
+    final dots = <Offset>[];
+    for (var i = 0; i < nx; i++) {
+      for (var j = 0; j < ny; j++) {
+        final u = (i + 0.5) / nx, v = (j + 0.5) / ny;
+        final w = hm[6] * u + hm[7] * v + 1;
+        dots.add(
+          Offset(
+            (hm[0] * u + hm[1] * v + hm[2]) / w,
+            (hm[3] * u + hm[4] * v + hm[5]) / w,
+          ),
+        );
+      }
+    }
+    canvas.drawPoints(
+      PointMode.points,
+      dots,
+      Paint()
+        ..blendMode = BlendMode.clear
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = math.max(1.0, screenPitch * hole)
+        ..style = PaintingStyle.stroke,
+    );
   }
 
   /// Projective map of the unit square onto the quad [q] (TL, TR, BR, BL):

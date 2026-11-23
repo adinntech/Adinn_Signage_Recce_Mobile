@@ -138,7 +138,13 @@ void main() {
     test('templates are visibly distinct', () {
       Set<String> ids(String media) =>
           _ids(_build(_spec(media), context: false));
-      expect(ids(SignageCatalog.gsb), containsAll(['frame', 'rear_supports']));
+      // Finished exterior only: no internal frame / rear support pipes.
+      expect(
+        ids(SignageCatalog.gsb),
+        containsAll(['display_panel', 'front_face']),
+      );
+      expect(ids(SignageCatalog.gsb), isNot(contains('rear_supports')));
+      expect(ids(SignageCatalog.gsb), isNot(contains('frame')));
       expect(
         _build(
           _spec(SignageCatalog.gsb),
@@ -582,7 +588,13 @@ void main() {
       );
       final owv = _build(_spec(SignageCatalog.oneWayVision));
       final film = owv.solidsOf('vinyl_layer').single;
-      expect(film.decals.length, greaterThan(50));
+      // Perforation is a see-through mask on the film faces now (no mesh
+      // dots): front and rear carry the pattern.
+      expect(film.decals, isEmpty);
+      expect(
+        film.faces.where((f) => f.perforationPitchFt != null).length,
+        greaterThanOrEqualTo(2),
+      );
       expect(
         owv.solidsOf('glass_backing').single.faces.first.color.a,
         lessThan(1),
@@ -701,11 +713,11 @@ void main() {
       final plain = ParametricModelBuilder.build(s);
       final hidden = ParametricModelBuilder.build(
         s,
-        hiddenComponents: {'frame', 'poles'},
+        hiddenComponents: {'front_face', 'poles'},
       );
-      expect(_ids(hidden), isNot(contains('frame')));
+      expect(_ids(hidden), isNot(contains('front_face')));
       expect(_ids(hidden), isNot(contains('poles')));
-      expect(hidden.component('frame')!.visible, isFalse);
+      expect(hidden.component('front_face')!.visible, isFalse);
       expect(hidden.component('display_panel')!.visible, isTrue);
       expect(
         hidden.components.map((c) => c.id),
