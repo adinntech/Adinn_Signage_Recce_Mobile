@@ -1,12 +1,16 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_file_row.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../live_auth/presentation/live_auth_controller.dart';
 import '../data/recce_api.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import 'board_views_screen.dart';
 import 'capture_flow.dart';
 import 'live_widgets.dart';
 import 'rework_sheet.dart';
@@ -24,27 +28,36 @@ class PhotosTab extends StatelessWidget {
   Future<void> _capture(BuildContext context, PhotoCategoryDef cat, {ShopPhoto? replacing, String mediaKey = ''}) async {
     final shot = await captureGeoPhoto(context, label: cat.label);
     if (shot == null) return;
-    ctrl.queueSwap(
-      UploadItem(
-        id: newClientId(),
-        siteId: ctrl.siteId,
-        path: shot.path,
-        category: cat.key,
-        mediaKey: replacing?.mediaKey ?? mediaKey,
-        capturedAt: shot.capturedAt,
-        lat: shot.lat,
-        lng: shot.lng,
-        accuracy: shot.accuracy,
-        width: shot.width,
-        height: shot.height,
-        // A submitted photo is replaced through `replaces`. Retaking a draft that itself replaces an older photo keeps that link.
-        replaces: replacing == null ? null : (replacing.state != 'DRAFT' ? replacing.id : replacing.replaces),
-        device: deviceLabel(),
-      ),
-      stale: replacing,
+    final item = UploadItem(
+      id: newClientId(),
+      siteId: ctrl.siteId,
+      path: shot.path,
+      category: cat.key,
+      mediaKey: replacing?.mediaKey ?? mediaKey,
+      capturedAt: shot.capturedAt,
+      lat: shot.lat,
+      lng: shot.lng,
+      accuracy: shot.accuracy,
+      width: shot.width,
+      height: shot.height,
+      // A submitted photo is replaced through `replaces`. Retaking a draft that itself replaces an older photo keeps that link.
+      replaces: replacing == null ? null : (replacing.state != 'DRAFT' ? replacing.id : replacing.replaces),
+      device: deviceLabel(),
     );
-    if (context.mounted) showSnack(context, '${cat.label} saved on the phone and uploading.');
+    ctrl.queueSwap(item, stale: replacing);
+    // TESTING ONLY: the same picture for every other empty photo type of the checklist.
+    var copies = 0;
+    if (showPhotoTestTools && ctrl.useFirstPhotoForAll && replacing == null && mediaKey.isEmpty) {
+      copies = await ctrl.queueFirstPhotoForAll(item, _checklist(ctrl.detail!), keepPhotoCopy);
+    }
+    if (context.mounted) {
+      showSnack(context, copies == 0 ? '${cat.label} saved on the phone and uploading.' : '${cat.label} saved and also queued for $copies other photo types (testing).');
+    }
   }
+
+  /// The six live-flow photo types plus the extra ones the server requires for this shop.
+  List<PhotoCategoryDef> _checklist(ShopDetail d) =>
+      [...requiredPhotoCategories, for (final s in d.extraPhotoSlots) PhotoCategoryDef(s.category, s.label, Icons.add_a_photo_outlined)];
 
   /// Capture for a photo the reviewer asked for. A second take swaps the draft that already answers the request.
   void _captureRequested(BuildContext context, RequestedPhoto req, ShopPhoto? answer) {
@@ -223,8 +236,8 @@ class PhotosTab extends StatelessWidget {
     final d = ctrl.detail!;
     final pending = ctrl.pending;
     // The six are the checklist; the server may require more (progress.missing), each with its own tile.
-    final extras = [for (final s in d.extraPhotoSlots) PhotoCategoryDef(s.category, s.label, Icons.add_a_photo_outlined)];
-    final tiles = [...requiredPhotoCategories, ...extras];
+    final tiles = _checklist(d);
+    final extras = tiles.sublist(requiredPhotoCategories.length);
     final done = tiles.where((c) => d.photoFor(c.key) != null).length;
     final requested = d.requestedPhotos;
     return RefreshIndicator(
@@ -233,6 +246,7 @@ class PhotosTab extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          if (showPhotoTestTools && ctrl.canEdit) _UseFirstPhotoBox(value: ctrl.useFirstPhotoForAll, onChanged: ctrl.setUseFirstPhotoForAll),
           Row(children: [
             Expanded(child: Text('Required photos $done of ${tiles.length}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
             if (pending.isNotEmpty) TagChip('${pending.length} uploading', icon: Icons.cloud_upload_outlined, color: AdinnColors.info),
@@ -266,6 +280,15 @@ class PhotosTab extends StatelessWidget {
             _grid(context, d, extras),
           ],
           _FilesSection(ctrl: ctrl, onOpenRework: (p) => _openRework(context, p), onRemoveDraft: (p) => _confirmRemove(context, p)),
+          // Extra, shown only after photos are uploaded: the boards of this shop as a 2D drawing and a 3D model.
+          if (d.photos.any((p) => p.displayUrl != null)) ...[
+            const SizedBox(height: 16),
+            _BoardViewsCard(
+              onOpen: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => BoardViewsScreen(detail: d, boards: ctrl.boards, drawnBy: context.read<LiveAuthController>().user?.name ?? '-')),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -286,6 +309,60 @@ class PhotosTab extends StatelessWidget {
     if (yes != true) return;
     final err = await ctrl.deletePhoto(p);
     if (err != null && context.mounted) showSnack(context, err, error: true);
+  }
+}
+
+/// The testing tools of the Photos tab are for debug and profile builds only: a release build never shows them.
+const showPhotoTestTools = !kReleaseMode;
+
+/// TESTING ONLY. Ticked: the first picture taken is also saved for every other empty photo type of this shop.
+class _UseFirstPhotoBox extends StatelessWidget {
+  const _UseFirstPhotoBox({required this.value, required this.onChanged});
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AdinnColors.warning.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AdinnColors.warning.withValues(alpha: 0.45)),
+      ),
+      child: CheckboxListTile(
+        key: const Key('test-first-photo-for-all'),
+        value: value,
+        onChanged: (v) => onChanged(v ?? false),
+        controlAffinity: ListTileControlAffinity.leading,
+        activeColor: AdinnColors.warning,
+        dense: true,
+        title: const Text('Use the first photo for all types', style: TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: const Text('For testing only. The first photo you take is also saved for every empty photo type of this shop.', style: TextStyle(fontSize: 12.5)),
+      ),
+    );
+  }
+}
+
+/// Entry to the 2D drawing and 3D model of the shop's boards (see [BoardViewsScreen]).
+class _BoardViewsCard extends StatelessWidget {
+  const _BoardViewsCard({required this.onOpen});
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: AdinnColors.line)),
+      child: ListTile(
+        key: const Key('open-2d-3d-view'),
+        onTap: onOpen,
+        leading: const Icon(Icons.view_in_ar_outlined, color: AdinnColors.red, size: 30),
+        title: const Text('2D and 3D view', style: TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: const Text('See the boards of this shop as a drawing and a 3D model.'),
+        trailing: const Icon(Icons.chevron_right),
+      ),
+    );
   }
 }
 

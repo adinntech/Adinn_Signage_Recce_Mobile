@@ -35,6 +35,18 @@ void main() {
     expect(decoded.width / decoded.height, closeTo(1600 / 1200, 0.02)); // same shape, not cropped
   });
 
+  test('the file extension follows what the bytes really are', () {
+    Uint8List of(List<int> head) => Uint8List.fromList([...head, ...List.filled(40, 1)]);
+    expect(photoExtension(of([0xff, 0xd8, 0xff, 0xe0])), 'jpg');
+    expect(photoExtension(of([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'png'); // a PNG screenshot is not ".jpg"
+    expect(photoExtension(of([...'RIFF'.codeUnits, 0, 0, 0, 0, ...'WEBP'.codeUnits])), 'webp');
+    expect(photoExtension(of('GIF89a'.codeUnits)), 'gif');
+    expect(photoExtension(of([...'BM'.codeUnits, 0, 0, 0, 0, 0, 0, 0, 0])), 'bmp');
+    expect(photoExtension(of([0, 0, 0, 24, ...'ftypheic'.codeUnits])), 'heic');
+    expect(photoExtension(Uint8List.fromList(List.filled(50, 7))), 'jpg'); // unknown bytes: the server gives the answer
+    expect(photoExtension(Uint8List(0)), 'jpg');
+  });
+
   test('bytes that are not a picture are returned untouched (the server gives the answer)', () async {
     final junk = Uint8List.fromList(List.filled(1000, 7));
     expect(identical(await shrinkPhoto(junk, limit: 100), junk), isTrue);

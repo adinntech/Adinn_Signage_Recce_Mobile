@@ -3,7 +3,7 @@ import 'recce_models.dart';
 /// Local check before "Submit Version N". The server validates again and its error text is shown if it disagrees.
 /// Returns human-readable problems; an empty list means the shop can be submitted.
 ///
-/// Photos: the six live-flow categories are always required (the product owner's checklist). On top of them, whatever the SERVER
+/// Photos: the seven board categories ([boardPhotoCategories]) are required for EVERY board (the product owner's checklist). On top of them, whatever the SERVER
 /// reports as still missing ([serverMissing] = `detail.progress.missing`, e.g. a NAME_BOARD the office requires) is required too.
 /// Nothing else is: the phone never blocks on a photo the server does not need.
 ///
@@ -22,15 +22,20 @@ List<String> validateForSubmit({
 }) {
   final problems = <String>[];
 
-  for (final c in requiredPhotoCategories) {
-    final inCategory = photos.where((p) => p.category == c.key).toList();
-    if (inCategory.isEmpty) {
-      problems.add('${c.label} photo is missing');
-    } else if (!inCategory.any((p) => p.hasGps)) {
-      problems.add('${c.label} photo has no GPS location. Retake it with location on');
+  // Every physical board needs its own seven photos. A photo with no board (taken before boards had their own) counts for all.
+  // With one board the lines read "Front View photo is missing"; with several they name the board: "GSB-02: Front View photo is missing".
+  for (final b in boards) {
+    final prefix = boards.length > 1 ? '${b.label}: ' : '';
+    for (final c in boardPhotoCategories) {
+      final inCategory = photos.where((p) => p.category == c.key && (p.mediaKey == b.key || p.mediaKey.isEmpty)).toList();
+      if (inCategory.isEmpty) {
+        problems.add('$prefix${c.label} photo is missing');
+      } else if (!inCategory.any((p) => p.hasGps)) {
+        problems.add('$prefix${c.label} photo has no GPS location. Retake it with location on');
+      }
     }
   }
-  problems.addAll(missingExtraPhotos(serverMissing, photos));
+  problems.addAll(missingExtraPhotos(serverMissing, photos, boardLabels: {for (final b in boards) b.key: b.label}));
 
   if (boards.isEmpty) problems.add('Add at least one board');
   for (final b in boards) {
@@ -54,14 +59,16 @@ List<String> validateForSubmit({
   return problems;
 }
 
-/// The photos the server reports as missing that are NOT one of the six (those have their own lines), one line per category,
-/// unless a live photo of that category already exists. `DIMENSIONS` is not a photo and is checked with the boards.
-List<String> missingExtraPhotos(List<MissingEvidence> serverMissing, List<ShopPhoto> photos) {
+/// The photos the server reports as missing that are NOT a standard tile (those have their own lines), one line per category and
+/// board, unless a live photo of that category already exists for the board. `DIMENSIONS` is not a photo and is checked with the
+/// boards. [boardLabels] (board key to "GSB-02") names the board when the shop has more than one.
+List<String> missingExtraPhotos(List<MissingEvidence> serverMissing, List<ShopPhoto> photos, {Map<String, String> boardLabels = const {}}) {
   final out = <String>[];
   final seen = <String>{};
   for (final m in serverMissing) {
-    if (!m.isPhoto || isLiveFlowCategory(m.category) || m.satisfiedBy(photos) || !seen.add(m.category)) continue;
-    out.add('${m.label.isEmpty ? photoCategoryLabel(m.category) : m.label} photo is missing');
+    if (!m.isPhoto || isLiveFlowCategory(m.category) || m.satisfiedBy(photos) || !seen.add('${m.mediaKey}|${m.category}')) continue;
+    final board = boardLabels.length > 1 ? boardLabels[m.mediaKey] : null;
+    out.add('${board == null ? '' : '$board: '}${m.label.isEmpty ? photoCategoryLabel(m.category) : m.label} photo is missing');
   }
   return out;
 }

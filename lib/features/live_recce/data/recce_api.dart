@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -103,6 +104,25 @@ class UploadItem {
         device: device,
       );
 
+  /// The same picture and capture details for another photo place (the testing switch "use the first photo for all types").
+  /// [path] must be a file of its own: the queue deletes a file after it is uploaded.
+  UploadItem copyAs({required String id, required String path, required String category, required String mediaKey}) => UploadItem(
+        id: id,
+        siteId: siteId,
+        path: path,
+        category: category,
+        mediaKey: mediaKey,
+        caption: caption,
+        capturedAt: capturedAt,
+        lat: lat,
+        lng: lng,
+        accuracy: accuracy,
+        width: width,
+        height: height,
+        source: source,
+        device: device,
+      );
+
   /// One object of the multipart `meta` array.
   Json meta() => {
         'clientId': id,
@@ -199,16 +219,17 @@ class RecceApi {
       });
 
   /// The file part of one photo. A picture over the server's size limit is re-encoded smaller first (the server answers 413
-  /// to anything above it); a picture that already fits is sent exactly as it was taken.
+  /// to anything above it); a picture that already fits is sent exactly as it was taken. The file name carries the extension
+  /// of what the bytes really are (a PNG is `.png`, not `.jpg`).
   Future<MultipartFile> _photoPart(UploadItem u) async {
-    final name = 'photo_${u.id}.jpg';
+    MultipartFile of(Uint8List bytes) => MultipartFile.fromBytes(bytes, filename: 'photo_${u.id}.${photoExtension(bytes)}');
     if (kIsWeb) {
       // Browser: no dart:io File, send the bytes of the picked file.
-      return MultipartFile.fromBytes(await shrinkPhoto(await XFile(u.path).readAsBytes()), filename: name);
+      return of(await shrinkPhoto(await XFile(u.path).readAsBytes()));
     }
     final file = File(u.path);
     if (await file.length() <= serverPhotoLimitBytes) return MultipartFile.fromFile(u.path, filename: u.path.split(RegExp(r'[\\/]')).last);
-    return MultipartFile.fromBytes(await shrinkPhoto(await file.readAsBytes()), filename: name);
+    return of(await shrinkPhoto(await file.readAsBytes()));
   }
 
   Future<void> uploadPhoto(UploadItem u, {required void Function(double) onProgress, CancelToken? cancel}) => _run(() async {

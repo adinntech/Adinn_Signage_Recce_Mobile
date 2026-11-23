@@ -67,7 +67,7 @@ Future<CapturedPhoto?> captureGeoPhoto(BuildContext context, {required String la
     if (shot == null || !context.mounted) return null;
 
     final takenAt = wasRecovered ? await _shotTime(shot) : DateTime.now().toUtc();
-    final path = await _keepCopy(shot.path);
+    final path = await keepPhotoCopy(shot.path);
     final size = await _imageSize(path);
     final photo = CapturedPhoto(
       path: path,
@@ -238,8 +238,9 @@ Future<_LocationAction?> _askLocationAction(BuildContext context, LocationExcept
   );
 }
 
-/// The camera file lives in a temp folder; keep our own copy until the server has stored the photo.
-Future<String> _keepCopy(String source) async {
+/// The camera file lives in a temp folder; keep our own copy until the server has stored the photo. Also gives each extra
+/// copy of a picture (the testing switch on the Photos tab) a file of its own.
+Future<String> keepPhotoCopy(String source) async {
   if (kIsWeb) return source; // a browser has no app folder; the picked file address stays valid for this session
   try {
     final base = await getApplicationDocumentsDirectory();

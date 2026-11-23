@@ -219,7 +219,28 @@ const requiredPhotoCategories = <PhotoCategoryDef>[
   PhotoCategoryDef('ACCESS_PATH', 'Access Path', Icons.alt_route),
 ];
 
-bool isLiveFlowCategory(String key) => requiredPhotoCategories.any((c) => c.key == key);
+/// The photos EVERY physical board needs (2026-11-23), in capture order. The existing server categories are reused, none is
+/// renamed: Front View = `SHOP_FRONT`, Left View = `LEFT_SIDE`, Right View = `RIGHT_SIDE`. Each photo is sent with the board's
+/// key as its `mediaKey`, so one board's Front View never stands in for another board's.
+const boardPhotoCategories = <PhotoCategoryDef>[
+  PhotoCategoryDef('SHOP_FRONT', 'Front View', Icons.storefront_outlined),
+  PhotoCategoryDef('LEFT_SIDE', 'Left View', Icons.arrow_back),
+  PhotoCategoryDef('RIGHT_SIDE', 'Right View', Icons.arrow_forward),
+  PhotoCategoryDef('LONG_SHOT', 'Long Shot', Icons.panorama_horizontal_outlined),
+  PhotoCategoryDef('ANNOTATED_VIEW', 'Annotated View', Icons.draw_outlined),
+  PhotoCategoryDef('LOCATION_VIEW', 'Location View', Icons.place_outlined),
+  PhotoCategoryDef('ACCESS_PATH', 'Access Path', Icons.alt_route),
+];
+
+/// One photo place of one board: a category on a board (`mediaKey` = the board's key).
+class PhotoSlot {
+  const PhotoSlot(this.category, this.mediaKey);
+  final String category;
+  final String mediaKey;
+}
+
+/// A category that has its own standard tile (the six of the old shop checklist or the seven of a board).
+bool isLiveFlowCategory(String key) => requiredPhotoCategories.any((c) => c.key == key) || boardPhotoCategories.any((c) => c.key == key);
 
 /// One entry of `progress.missing`: a required photo category (or `DIMENSIONS`) that a board still lacks.
 class MissingEvidence {
@@ -403,9 +424,10 @@ class ShopPhoto {
       );
 }
 
-/// Label of a photo category: the six live-flow names, else the key written in words ("NAME_BOARD" -> "Name board").
+/// Label of a photo category: the live-flow names (the board's seven first, then the old six), else the key written in words
+/// ("NAME_BOARD" -> "Name board").
 String photoCategoryLabel(String key) {
-  for (final c in requiredPhotoCategories) {
+  for (final c in [...boardPhotoCategories, ...requiredPhotoCategories]) {
     if (c.key == key) return c.label;
   }
   if (key.isEmpty) return 'Photo';
@@ -419,11 +441,16 @@ const boardTypes = ['GSB', 'Acrylic', 'ACP', 'Vinyl', 'Flex', 'LED', 'Other'];
 const boardUnits = ['FT', 'IN', 'M', 'CM', 'MM'];
 const maxBoardItems = 12;
 
-/// One physical board line. Same size = one item with a quantity; a different size = a separate item with its own key.
+/// One physical board. Boards made with "Add boards" (from 2026-11-23) are always quantity 1, have their own permanent [key]
+/// (photos, reviews and rework point at it) and a number: [mediaType] + [seq] read "GSB-01". Older lines have no number and may
+/// stand for several identical boards ([quantity] above 1).
 class BoardItem {
   BoardItem({
     required this.key,
     this.name = 'GSB',
+    this.mediaType = '',
+    this.seq = 0,
+    this.requiredPhotos = const [],
     this.quantity = 1,
     this.width,
     this.height,
@@ -436,6 +463,15 @@ class BoardItem {
 
   String key;
   String name;
+
+  /// Short name of the media type the board was made from ("GSB", "ACP 2D"), as the person saw it. Empty on older lines.
+  String mediaType;
+
+  /// Number among the boards of the same media type (1 = "GSB-01"). 0 on older lines.
+  int seq;
+
+  /// Photo categories the SERVER requires for this board (`mediaItems[].required`). Read-only: never sent back.
+  final List<String> requiredPhotos;
   int quantity;
   double? width;
   double? height;
@@ -445,9 +481,18 @@ class BoardItem {
   String position;
   String notes;
 
+  /// A board that has its own number (made with "Add boards").
+  bool get isNumbered => mediaType.isNotEmpty && seq > 0;
+
+  /// "GSB-01" for a numbered board; an older line shows its name and key.
+  String get label => isNumbered ? '$mediaType-${seq.toString().padLeft(2, '0')}' : (name.trim().isEmpty ? key : '${name.trim()} ($key)');
+
   factory BoardItem.fromJson(Json j) => BoardItem(
         key: j['key'].toString(),
         name: (j['name'] ?? 'GSB').toString(),
+        mediaType: (j['mediaType'] ?? '').toString(),
+        seq: _i(j['seq']),
+        requiredPhotos: _sl(j['required']),
         quantity: _i(j['quantity'], 1),
         width: _d(j['width']),
         height: _d(j['height']),
@@ -462,6 +507,7 @@ class BoardItem {
   Json toJson() => {
         'key': key,
         'name': name.trim(),
+        if (isNumbered) ...{'mediaType': mediaType, 'seq': seq},
         'quantity': quantity,
         'width': ?width,
         'height': ?height,
@@ -472,9 +518,19 @@ class BoardItem {
         if (notes.trim().isNotEmpty) 'notes': notes.trim(),
       };
 
-  BoardItem copy() => BoardItem.fromJson(toJson());
+  BoardItem copy() => BoardItem.fromJson({...toJson(), 'required': requiredPhotos});
 
   bool get hasSize => (width ?? 0) > 0 && (height ?? 0) > 0;
+}
+
+/// The number the next board of [mediaType] gets: one above the highest number already used by that type (a removed board's
+/// number is not handed out again while a higher one exists).
+int nextBoardSeq(Iterable<BoardItem> boards, String mediaType) {
+  var top = 0;
+  for (final b in boards) {
+    if (b.mediaType == mediaType && b.seq > top) top = b.seq;
+  }
+  return top + 1;
 }
 
 /// Next free `b1, b2, ...` key.
@@ -827,8 +883,42 @@ class ShopDetail {
     return found;
   }
 
-  /// Name of a photo category: the live-flow name for the six, else the server's label ([fallback] when the list lacks it),
-  /// else the key written in words.
+  /// Newest photo of [category] for the board [boardKey]. A photo with no board (taken before boards had their own photos) stands
+  /// in for every board, the same rule as the server's `missingFor`; a photo of the board itself always wins.
+  ShopPhoto? photoOf(String category, String boardKey) {
+    ShopPhoto? own;
+    ShopPhoto? shared;
+    for (final p in photos) {
+      if (p.category != category) continue;
+      if (p.mediaKey == boardKey) {
+        own = p;
+      } else if (p.mediaKey.isEmpty) {
+        shared = p;
+      }
+    }
+    return own ?? shared;
+  }
+
+  /// Photo categories the server requires for [board] beyond the seven standard ones (for example NAME_BOARD): its own required
+  /// list plus anything `progress.missing` names for it. Each gets a capture tile in the board's section.
+  List<PhotoCategoryDef> extraTilesFor(BoardItem board) {
+    final out = <String, PhotoCategoryDef>{};
+    void add(String category, String? label) {
+      if (category.isEmpty || category == MissingEvidence.dimensions || isLiveFlowCategory(category) || out.containsKey(category)) return;
+      out[category] = PhotoCategoryDef(category, categoryLabel(category, fallback: label), Icons.add_a_photo_outlined);
+    }
+
+    for (final c in board.requiredPhotos) {
+      add(c, null);
+    }
+    for (final m in missing) {
+      if (m.isPhoto && m.mediaKey == board.key) add(m.category, m.label);
+    }
+    return out.values.toList();
+  }
+
+  /// Name of a photo category: the live-flow name for the standard ones, else the server's label ([fallback] when the list lacks
+  /// it), else the key written in words.
   String categoryLabel(String key, {String? fallback}) {
     if (isLiveFlowCategory(key)) return photoCategoryLabel(key);
     final name = categoryNames[key] ?? ((fallback ?? '').isNotEmpty ? fallback : null);

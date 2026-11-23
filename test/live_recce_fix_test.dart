@@ -358,6 +358,75 @@ void main() {
     });
   });
 
+  group('13. testing switch: the first photo is used for all types', () {
+    ShopDetail detailWith(List<Map<String, dynamic>> photos, {bool editable = true}) => ShopDetail.fromJson({..._detail(photos: photos), 'editable': editable});
+
+    UploadItem first() => UploadItem(
+          id: 'c-first-0001',
+          siteId: 's1',
+          path: '/shots/first.jpg',
+          category: 'SIDE_VIEW',
+          capturedAt: DateTime.utc(2026, 11, 23, 9),
+          lat: 13.04,
+          lng: 80.23,
+          accuracy: 7,
+          width: 1600,
+          height: 1200,
+          device: 'web / test',
+        );
+
+    test('queues one copy, with its own file and the same capture details, for every type that is still empty', () async {
+      final api = _FakeApi()..onDetail = () async => detailWith([_photo('ph-front', 'SHOP_FRONT')]);
+      final queue = UploadQueue(api, autoRetry: false);
+      final c = ShopDetailController(api, queue, 's1');
+      await c.load();
+      queue.add(UploadItem(id: 'c-wait-0001', siteId: 's1', path: '/shots/wait.jpg', category: 'LONG_SHOT')); // already waiting
+      final f = first();
+      queue.add(f);
+      var n = 0;
+      final copied = await c.queueFirstPhotoForAll(f, requiredPhotoCategories, (path) async => '$path.copy${++n}');
+      await Future<void>.delayed(Duration.zero);
+
+      // SHOP_FRONT has a stored photo, SIDE_VIEW is the one taken, LONG_SHOT already waits: three types remain.
+      expect(copied, 3);
+      final made = queue.forShop('s1').where((u) => u.id != 'c-wait-0001' && u.id != f.id).toList();
+      expect(made.map((u) => u.category).toSet(), {'ANNOTATED_VIEW', 'LOCATION_VIEW', 'ACCESS_PATH'});
+      expect(made.map((u) => u.path).toSet(), hasLength(3)); // a file each: the queue deletes a file once it is uploaded
+      expect(made.every((u) => u.path.startsWith('/shots/first.jpg.copy')), isTrue);
+      expect(made.map((u) => u.id).toSet(), hasLength(3)); // a client id each, so the server stores each one
+      expect(made.every((u) => u.lat == 13.04 && u.lng == 80.23 && u.accuracy == 7 && u.width == 1600 && u.capturedAt == f.capturedAt && u.device == 'web / test'), isTrue);
+      c.dispose();
+      queue.dispose();
+    });
+
+    test('nothing is queued for a locked shop', () async {
+      final api = _FakeApi()..onDetail = () async => detailWith(const [], editable: false);
+      final queue = UploadQueue(api, autoRetry: false);
+      final c = ShopDetailController(api, queue, 's1');
+      await c.load();
+      expect(await c.queueFirstPhotoForAll(first(), requiredPhotoCategories, (p) async => '$p.copy'), 0);
+      expect(queue.forShop('s1'), isEmpty);
+      c.dispose();
+      queue.dispose();
+    });
+
+    test('the switch is off at the start and tells listeners only when it changes', () async {
+      final api = _FakeApi()..onDetail = () async => detailWith(const []);
+      final queue = UploadQueue(api, autoRetry: false);
+      final c = ShopDetailController(api, queue, 's1');
+      await c.load();
+      expect(c.useFirstPhotoForAll, isFalse);
+      var calls = 0;
+      c.addListener(() => calls++);
+      c.setUseFirstPhotoForAll(true);
+      c.setUseFirstPhotoForAll(true);
+      expect(c.useFirstPhotoForAll, isTrue);
+      expect(calls, 1);
+      c.dispose();
+      queue.dispose();
+    });
+  });
+
   group('12. retake queues the new photo first', () {
     ShopDetail detailWith(List<Map<String, dynamic>> photos) => ShopDetail.fromJson(_detail(photos: photos));
 

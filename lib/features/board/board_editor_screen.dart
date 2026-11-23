@@ -15,6 +15,7 @@ import '../photos/photo_section.dart';
 import '../preview3d/preview_3d_screen.dart';
 import '../ar/camera_ar_screen.dart';
 import '../preview_live/preview_gallery.dart';
+import 'media_type_grid.dart';
 import 'quantity_size_section.dart';
 import 'site_questions_form.dart';
 
@@ -235,7 +236,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
                 editable: editable,
                 onMap: (code, sides) => _mapLegacy(c, board, code, sides),
               ),
-            _MediaGrid(
+            MediaTypeGrid(
               selected: board.mediaCode,
               enabled: editable,
               onSelect: (m) => _selectMedia(c, board, m),
@@ -607,120 +608,6 @@ class _Header extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MediaGrid extends StatelessWidget {
-  const _MediaGrid({
-    required this.selected,
-    required this.onSelect,
-    required this.enabled,
-  });
-
-  final String? selected;
-  final ValueChanged<MediaType> onSelect;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      padding: EdgeInsets.zero,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      childAspectRatio: 1.05,
-      children: [
-        for (final m in [
-          ...SignageCatalog.catalogMedia,
-          // A legacy type stays visible only on a group that already uses it.
-          if (SignageCatalog.isLegacy(selected))
-            SignageCatalog.media(selected)!,
-        ])
-          _MediaCard(
-            media: m,
-            selected: m.code == selected,
-            onTap: enabled ? () => onSelect(m) : null,
-          ),
-      ],
-    );
-  }
-}
-
-class _MediaCard extends StatelessWidget {
-  const _MediaCard({required this.media, required this.selected, this.onTap});
-
-  final MediaType media;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? AdinnColors.redLight : Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        key: Key('media_${media.code}'),
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? AdinnColors.red : AdinnColors.line,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(media.icon, color: media.color),
-                  const Spacer(),
-                  if (selected)
-                    const Icon(
-                      Icons.check_circle,
-                      color: AdinnColors.red,
-                      size: 18,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                media.shortName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                ),
-              ),
-              Text(
-                media.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Expanded(
-                child: Text(
-                  media.description,
-                  overflow: TextOverflow.fade,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    color: AdinnColors.muted,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

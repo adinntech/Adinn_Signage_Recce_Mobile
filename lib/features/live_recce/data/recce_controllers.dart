@@ -221,6 +221,60 @@ class ShopDetailController extends ChangeNotifier {
     return null;
   }
 
+  /// TESTING ONLY (the Photos tab offers the switch in debug and profile builds, never in a release build): while it is on, the
+  /// first picture taken is also queued for every other photo type that is still empty, so one shop is filled with one picture.
+  bool useFirstPhotoForAll = false;
+
+  void setUseFirstPhotoForAll(bool on) {
+    if (useFirstPhotoForAll == on) return;
+    useFirstPhotoForAll = on;
+    _notify();
+  }
+
+  /// Queues a copy of [first] for each of [slots] (a category on a board) that has no photo and nothing waiting to upload yet; the
+  /// slot of [first] itself is skipped. [copyFile] gives every copy a file of its own, because the queue deletes a file once it is
+  /// uploaded. Returns how many copies were queued.
+  Future<int> queueFirstPhotoForAll(UploadItem first, List<PhotoSlot> slots, Future<String> Function(String path) copyFile) async {
+    final d = detail;
+    if (d == null || !canEdit) return 0;
+    var queued = 0;
+    for (final s in slots) {
+      final isFirst = s.category == first.category && s.mediaKey == first.mediaKey;
+      if (isFirst || d.photoOf(s.category, s.mediaKey) != null || pending.any((u) => u.category == s.category && u.mediaKey == s.mediaKey)) continue;
+      queue.add(first.copyAs(id: newClientId(), path: await copyFile(first.path), category: s.category, mediaKey: s.mediaKey));
+      queued++;
+    }
+    return queued;
+  }
+
+  /// Every photo place of the saved boards: the seven standard categories plus what the server requires on top, per board.
+  List<PhotoSlot> photoSlots() {
+    final d = detail;
+    if (d == null) return const [];
+    return [
+      for (final b in d.mediaItems) ...[
+        for (final c in boardPhotoCategories) PhotoSlot(c.key, b.key),
+        for (final c in d.extraTilesFor(b)) PhotoSlot(c.key, b.key),
+      ],
+    ];
+  }
+
+  /// Whether the board has a live photo or an upload on its way (the server will not remove such a board).
+  bool boardHasPhotos(String key) => (detail?.photos.any((p) => p.mediaKey == key) ?? false) || pending.any((u) => u.mediaKey == key);
+
+  /// "Add boards": one board per physical unit, each with its own key and number (GSB-01, GSB-02 ...) and its own size. The
+  /// boards are saved at once, so their photos can be linked to them on the server. Returns the error text, or null.
+  Future<String?> addBoardsOfType({required String mediaType, required String name, required String unit, required List<({double width, double height})> sizes}) async {
+    if (sizes.isEmpty) return 'Choose how many boards to add.';
+    if (boards.length + sizes.length > maxBoardItems) return 'A shop can hold $maxBoardItems boards.';
+    for (final s in sizes) {
+      final key = nextBoardKey(boards.map((b) => b.key));
+      boards.add(BoardItem(key: key, name: name, mediaType: mediaType, seq: nextBoardSeq(boards, mediaType), unit: unit, width: s.width, height: s.height));
+    }
+    markDirty();
+    return saveDraft();
+  }
+
   /// Queues [item]. When it takes the place of an older DRAFT photo ([stale]) that draft is deleted from the server once the new
   /// photo has been stored there (never before). While both exist the server simply holds two drafts of the category (it has no
   /// one-per-category rule); [reapSwaps] removes the old one after the next reload, so the version never carries both.
