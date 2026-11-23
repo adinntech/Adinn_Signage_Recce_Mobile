@@ -42,17 +42,23 @@ class KpiCard extends StatelessWidget {
   }
 }
 
-/// A two-column grid of [KpiCard]s (fixed card height, so a longer line never overflows).
+/// Card height at the normal text size: 28 px padding + label row + the 28 px value + a one-line subtitle, with a few px to spare
+/// (102 was 2 px short and showed the "BOTTOM OVERFLOWED" stripes).
+const kpiCardHeight = 112.0;
+
+/// A two-column grid of [KpiCard]s. The card height is fixed, so a longer line never changes the layout, and it grows with the
+/// phone's text-size setting (up to 1.6 x) so a person with large text does not see an overflow either.
 class KpiGrid extends StatelessWidget {
   const KpiGrid({super.key, required this.cards});
   final List<Widget> cards;
 
   @override
   Widget build(BuildContext context) {
+    final scale = (MediaQuery.textScalerOf(context).scale(14) / 14).clamp(1.0, 1.6);
     return GridView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: 102),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: kpiCardHeight * scale),
       children: cards,
     );
   }

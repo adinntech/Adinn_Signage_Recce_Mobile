@@ -16,6 +16,119 @@
   },
   "item": [
     {
+      "name": "0 Admin one-time setup",
+      "item": [
+        {
+          "name": "0a Admin login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('adminToken', j.data.accessToken);",
+                  "pm.environment.set('adminRefresh', j.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Use your own Admin test account.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{adminIdentifier}}\",\n  \"mpin\": \"{{adminMpin}}\",\n  \"loginRole\": \"ADMIN\",\n  \"platform\": \"web\",\n  \"remember\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "0b Parallel review + six required angle photos",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "description": "sequential false = Operations and Client Servicing decide in any order. true = CS waits for Operations (409 if CS goes first).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sequential\": false,\n  \"requiredPhotos\": {\n    \"default\": [\n      \"SHOP_FRONT\",\n      \"SIDE_VIEW\",\n      \"LONG_SHOT\",\n      \"ANNOTATED_VIEW\",\n      \"LOCATION_VIEW\",\n      \"ACCESS_PATH\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/config",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "config"
+              ]
+            }
+          }
+        },
+        {
+          "name": "0c Read config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/config",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "config"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "1 Login",
       "item": [
         {
@@ -480,7 +593,7 @@
                 {
                   "key": "meta",
                   "type": "text",
-                  "value": "[{\"clientId\":\"c-{{$timestamp}}-front\",\"category\":\"SHOP_FRONT\",\"mediaKey\":\"b1\",\"caption\":\"Front view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0412,\"lng\":80.2345,\"gpsAccuracy\":8.2,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-front\",\"category\":\"SHOP_FRONT\",\"mediaKey\":\"\",\"caption\":\"Front view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0412,\"lng\":80.2345,\"gpsAccuracy\":8.2,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
                 }
               ]
             },
@@ -537,7 +650,7 @@
                 {
                   "key": "meta",
                   "type": "text",
-                  "value": "[{\"clientId\":\"c-{{$timestamp}}-side\",\"category\":\"SIDE_VIEW\",\"mediaKey\":\"b1\",\"caption\":\"Side view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04122,\"lng\":80.23455,\"gpsAccuracy\":7.5,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-side\",\"category\":\"SIDE_VIEW\",\"mediaKey\":\"\",\"caption\":\"Side view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04122,\"lng\":80.23455,\"gpsAccuracy\":7.5,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
                 }
               ]
             },
@@ -594,7 +707,7 @@
                 {
                   "key": "meta",
                   "type": "text",
-                  "value": "[{\"clientId\":\"c-{{$timestamp}}-long\",\"category\":\"LONG_SHOT\",\"mediaKey\":\"b1\",\"caption\":\"Long shot\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04105,\"lng\":80.2343,\"gpsAccuracy\":9,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-long\",\"category\":\"LONG_SHOT\",\"mediaKey\":\"\",\"caption\":\"Long shot\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04105,\"lng\":80.2343,\"gpsAccuracy\":9,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
                 }
               ]
             },
@@ -651,7 +764,7 @@
                 {
                   "key": "meta",
                   "type": "text",
-                  "value": "[{\"clientId\":\"c-{{$timestamp}}-annot\",\"category\":\"ANNOTATED_VIEW\",\"mediaKey\":\"b1\",\"caption\":\"Annotated view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04121,\"lng\":80.23448,\"gpsAccuracy\":6.8,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-annot\",\"category\":\"ANNOTATED_VIEW\",\"mediaKey\":\"\",\"caption\":\"Annotated view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04121,\"lng\":80.23448,\"gpsAccuracy\":6.8,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
                 }
               ]
             },
@@ -708,7 +821,7 @@
                 {
                   "key": "meta",
                   "type": "text",
-                  "value": "[{\"clientId\":\"c-{{$timestamp}}-loc\",\"category\":\"LOCATION_VIEW\",\"mediaKey\":\"b1\",\"caption\":\"Location view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04118,\"lng\":80.23451,\"gpsAccuracy\":5.9,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-loc\",\"category\":\"LOCATION_VIEW\",\"mediaKey\":\"\",\"caption\":\"Location view\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.04118,\"lng\":80.23451,\"gpsAccuracy\":5.9,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
                 }
               ]
             },
@@ -765,7 +878,7 @@
                 {
                   "key": "meta",
                   "type": "text",
-                  "value": "[{\"clientId\":\"c-{{$timestamp}}-access\",\"category\":\"ACCESS_PATH\",\"mediaKey\":\"b1\",\"caption\":\"Access path\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0409,\"lng\":80.2342,\"gpsAccuracy\":11,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-access\",\"category\":\"ACCESS_PATH\",\"mediaKey\":\"\",\"caption\":\"Access path\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0409,\"lng\":80.2342,\"gpsAccuracy\":11,\"width\":3000,\"height\":4000,\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
                 }
               ]
             },
@@ -1275,7 +1388,7 @@
                 {
                   "key": "meta",
                   "type": "text",
-                  "value": "[{\"clientId\":\"c-{{$timestamp}}-front2\",\"category\":\"SHOP_FRONT\",\"mediaKey\":\"b1\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0413,\"lng\":80.2346,\"gpsAccuracy\":6.1,\"replaces\":\"{{frontPhotoId}}\",\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
+                  "value": "[{\"clientId\":\"c-{{$timestamp}}-front2\",\"category\":\"SHOP_FRONT\",\"mediaKey\":\"\",\"capturedAt\":\"{{capturedAt}}\",\"lat\":13.0413,\"lng\":80.2346,\"gpsAccuracy\":6.1,\"replaces\":\"{{frontPhotoId}}\",\"source\":\"LIVE_CAMERA\",\"device\":\"Postman demo\"}]"
                 }
               ]
             }
@@ -1652,6 +1765,45 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"stage\": \"CS\",\n  \"decision\": \"APPROVE\",\n  \"versionNo\": 2,\n  \"comment\": \"V2 ok\",\n  \"checklist\": [\n    {\n      \"key\": \"correct_shop\",\n      \"passed\": true\n    },\n    {\n      \"key\": \"shop_front\",\n      \"passed\": true\n    },\n    {\n      \"key\": \"board_area\",\n      \"passed\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/recce-review/submissions/{{submissionId}}/decision",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "recce-review",
+                "submissions",
+                "{{submissionId}}",
+                "decision"
+              ]
+            }
+          }
+        },
+        {
+          "name": "9a2 OPS approves V2 (login as Operations via 6a first)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Order does not matter when sequential = false. Both approved = APPROVED.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{reviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"OPS\",\n  \"decision\": \"APPROVE\",\n  \"versionNo\": 2,\n  \"comment\": \"V2 ok\",\n  \"checklist\": [\n    {\n      \"key\": \"correct_shop\",\n      \"passed\": true\n    },\n    {\n      \"key\": \"shop_front\",\n      \"passed\": true\n    },\n    {\n      \"key\": \"board_area\",\n      \"passed\": true\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

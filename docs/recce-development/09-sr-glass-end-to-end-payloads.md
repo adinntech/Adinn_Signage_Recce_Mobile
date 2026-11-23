@@ -12,6 +12,18 @@ All values are **examples**: ids, tokens and signed file links are made up. Repl
 > The access token cannot be written here as a real value: it is signed by the backend (`JWT_ACCESS_SECRET`) when you log in. Call step 1, copy `data.accessToken`, and paste it into the `Authorization` header of the next calls.
 
 ---
+## 0. One-time Admin setup (needed for this flow)
+
+`PUT {BASE}/recce-review/config` with an **Admin** token:
+```json
+{ "sequential": false,
+  "requiredPhotos": { "default": ["SHOP_FRONT", "SIDE_VIEW", "LONG_SHOT", "ANNOTATED_VIEW", "LOCATION_VIEW", "ACCESS_PATH"] } }
+```
+- `sequential: false` = Operations and Client Servicing both get the shop at the same time and decide in any order (default for new databases since 2026-11-23). `true` = Client Servicing must wait for Operations (a CS approve first answers `409 An earlier review stage must approve first`). An existing database keeps its old value, so send this once.
+- `requiredPhotos.default` = the photos a shop must have before submit. Out of the box it is only `SHOP_FRONT` + `NAME_BOARD`, so the six angles are **not** required until this is set.
+- Both settings are tested in `tests/recce-19steps.test.ts`; the readable output of every step is in `10-flow-test-output.md`.
+
+---
 ## 1. Login (get the token)
 
 ### 1a. Vendor login with the vendor ID
@@ -113,9 +125,9 @@ For the demo, download any six pictures (for example from Unsplash) to `front.jp
 curl -X POST "{BASE}/recce/shops/67f0a0000000000000000a01/photos" \
   -H "Authorization: Bearer <accessToken>" \
   -F "photos=@front.jpg" \
-  --form-string 'meta=[{"clientId":"c-1732170000-front","category":"SHOP_FRONT","mediaKey":"b1","caption":"Front view","capturedAt":"2026-11-21T06:30:00Z","lat":13.0412,"lng":80.2345,"gpsAccuracy":8.2,"width":3000,"height":4000,"source":"LIVE_CAMERA","device":"Android 14 / Adinn Recce 1.0"}]'
+  --form-string 'meta=[{"clientId":"c-1732170000-front","category":"SHOP_FRONT","mediaKey":"","caption":"Front view","capturedAt":"2026-11-21T06:30:00Z","lat":13.0412,"lng":80.2345,"gpsAccuracy":8.2,"width":3000,"height":4000,"source":"LIVE_CAMERA","device":"Android 14 / Adinn Recce 1.0"}]'
 ```
-`meta` keys: `clientId` (8-80 chars, idempotency: same id stored once), `category` (required), `mediaKey` (ties the photo to a board), `caption`, `capturedAt`, `lat`, `lng`, `gpsAccuracy` (metres), `width`, `height`, `source` (`LIVE_CAMERA | GALLERY`), `device`, `replaces` (old photo id, for rework).
+`meta` keys: `clientId` (8-80 chars, idempotency: same id stored once), `category` (required), `mediaKey` (leave `""` for the six angle photos of the shop: they then count for **every** board. A photo with `"mediaKey":"b1"` counts only for board b1, so b2 would still show as missing and submit answers 422), `caption`, `capturedAt`, `lat`, `lng`, `gpsAccuracy` (metres), `width`, `height`, `source` (`LIVE_CAMERA | GALLERY`), `device`, `replaces` (old photo id, for rework).
 
 The other five photos use the same call with their category, own `clientId` and own lat/lng, for example:
 
@@ -217,7 +229,7 @@ Other photos stay `"review": { "status": "PENDING", "openRework": null }`. The r
 
 1. Replace only the flagged photo: `POST {BASE}/recce/shops/:siteId/photos` (multipart, new file in `photos`):
 ```json
-[ { "clientId": "c-1732260000-front2", "category": "SHOP_FRONT", "mediaKey": "b1", "capturedAt": "2026-11-22T07:00:00Z",
+[ { "clientId": "c-1732260000-front2", "category": "SHOP_FRONT", "mediaKey": "", "capturedAt": "2026-11-22T07:00:00Z",
     "lat": 13.0413, "lng": 80.2346, "gpsAccuracy": 6.1, "replaces": "6800a0000000000000000e01", "source": "LIVE_CAMERA", "device": "Android 14 / Adinn Recce 1.0" } ]
 ```
 The old photo becomes `SUPERSEDED` (stays in Version 1 history); the new one is `DRAFT` until resubmit.
