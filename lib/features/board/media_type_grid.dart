@@ -3,17 +3,24 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/catalog/signage_catalog.dart';
 
-/// The media type cards: one card per catalog media type (icon, short name, full name, description), two to a row. The ONE
-/// media type selector of the app: the legacy board editor and the live recce "Add boards" screen both use it.
+/// The media type cards: one card per media type (icon, short name, full name, description), two to a row. The ONE media type
+/// selector of the app: the legacy board editor and the live recce "Add boards" screen both use it.
+///
+/// One choice: pass [selected] and [onSelect]. Several choices: also pass [selectedCodes]; a tap then toggles that card (it calls
+/// [onSelect] with the card's media type either way, the caller decides whether it was ticked or unticked).
+/// [media] is the list to draw (the live flow passes the catalog the admin edits); null draws the built-in list.
 class MediaTypeGrid extends StatelessWidget {
-  const MediaTypeGrid({super.key, required this.selected, required this.onSelect, required this.enabled});
+  const MediaTypeGrid({super.key, required this.selected, required this.onSelect, required this.enabled, this.media, this.selectedCodes});
 
   final String? selected;
   final ValueChanged<MediaType> onSelect;
   final bool enabled;
+  final List<MediaType>? media;
+  final Set<String>? selectedCodes;
 
   @override
   Widget build(BuildContext context) {
+    final list = media ?? SignageCatalog.catalogMedia;
     return GridView.count(
       crossAxisCount: 2,
       padding: EdgeInsets.zero,
@@ -24,11 +31,15 @@ class MediaTypeGrid extends StatelessWidget {
       childAspectRatio: 1.05,
       children: [
         for (final m in [
-          ...SignageCatalog.catalogMedia,
+          ...list,
           // A legacy type stays visible only on a group that already uses it.
-          if (SignageCatalog.isLegacy(selected)) SignageCatalog.media(selected)!,
+          if (media == null && SignageCatalog.isLegacy(selected)) SignageCatalog.media(selected)!,
         ])
-          MediaTypeCard(media: m, selected: m.code == selected, onTap: enabled ? () => onSelect(m) : null),
+          MediaTypeCard(
+            media: m,
+            selected: selectedCodes != null ? selectedCodes!.contains(m.code) : m.code == selected,
+            onTap: enabled ? () => onSelect(m) : null,
+          ),
       ],
     );
   }

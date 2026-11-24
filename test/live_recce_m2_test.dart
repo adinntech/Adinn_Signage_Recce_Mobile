@@ -322,8 +322,8 @@ Map<String, dynamic> _detailJson({String status = 'REWORK_REQUIRED', bool editab
 
 Installation _answered() => Installation(ladderRequired: triYes, scaffoldingRequired: triNo, craneRequired: triNo, hydraRequired: triNo, manualInstallationPossible: triYes);
 
-List<ShopPhoto> _sixLive({List<Map<String, dynamic>> extra = const []}) => [
-      for (final c in requiredPhotoCategories) ShopPhoto.fromJson(_photo('ph-${c.key}', c.key)),
+List<ShopPhoto> _allBoardPhotosLive({List<Map<String, dynamic>> extra = const []}) => [
+      for (final c in boardPhotoCategories) ShopPhoto.fromJson(_photo('ph-${c.key}', c.key)),
       for (final e in extra) ShopPhoto.fromJson(e),
     ];
 
@@ -668,18 +668,18 @@ void main() {
     final board = [BoardItem(key: 'b1', width: 8, height: 4)];
 
     test('already stored photos (approved, pending or flagged) count as present: nothing unrelated is asked again', () {
-      final live = _sixLive(); // all six exist from V1, one of them is the flagged one
+      final live = _allBoardPhotosLive(); // all seven exist from V1, one of them is the flagged one
       final p = validateForSubmit(photos: live, boards: board, installation: _answered(), reworks: const []);
       expect(p, isEmpty);
     });
 
     test('a flagged photo with no replacement blocks submit with a clear line', () {
-      final p = validateForSubmit(photos: _sixLive(), boards: board, installation: _answered(), reworks: reworks);
+      final p = validateForSubmit(photos: _allBoardPhotosLive(), boards: board, installation: _answered(), reworks: reworks);
       expect(p, ['Replace the Full Shop Front View the reviewer marked']);
     });
 
     test('an uploaded draft that replaces the flagged photo answers the request', () {
-      final live = _sixLive(extra: [_photo('p1b', 'SHOP_FRONT', state: 'DRAFT', version: null, replaces: 'ph-SHOP_FRONT')]);
+      final live = _allBoardPhotosLive(extra: [_photo('p1b', 'SHOP_FRONT', state: 'DRAFT', version: null, replaces: 'ph-SHOP_FRONT')]);
       final rw = [
         ReworkEntry.fromJson({
           'id': 'rw1',
@@ -699,7 +699,7 @@ void main() {
 
     test('a replacement still uploading is reported once, as "still uploading"', () {
       final p = validateForSubmit(
-        photos: _sixLive(),
+        photos: _allBoardPhotosLive(),
         boards: board,
         installation: _answered(),
         reworks: reworks,
@@ -722,8 +722,8 @@ void main() {
           ],
         }),
       ];
-      expect(validateForSubmit(photos: _sixLive(), boards: board, installation: _answered(), reworks: rw), ['Add the Shop Name Board photo the reviewer asked for']);
-      final withNew = _sixLive(extra: [_photo('n1', 'NAME_BOARD', state: 'DRAFT', version: null)]);
+      expect(validateForSubmit(photos: _allBoardPhotosLive(), boards: board, installation: _answered(), reworks: rw), ['Add the Shop Name Board photo the reviewer asked for']);
+      final withNew = _allBoardPhotosLive(extra: [_photo('n1', 'NAME_BOARD', state: 'DRAFT', version: null)]);
       expect(validateForSubmit(photos: withNew, boards: board, installation: _answered(), reworks: rw), isEmpty);
     });
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Adinn brand red -->
-    <color name="ic_launcher_background">#D71920</color>
+    <!-- White: the Adinn "A" mark is black and red, so it needs a light plate -->
+    <color name="ic_launcher_background">#FFFFFF</color>
 </resources>

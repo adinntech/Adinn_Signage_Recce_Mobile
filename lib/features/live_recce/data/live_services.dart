@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,6 +8,7 @@ import '../../../core/network/token_manager.dart';
 import '../../../core/storage/session_store.dart';
 import '../../live_auth/data/auth_repository.dart';
 import '../../live_auth/presentation/live_auth_controller.dart';
+import 'catalog_controller.dart';
 import 'chat_controller.dart';
 import 'dashboard_controller.dart';
 import 'notifications_controller.dart';
@@ -24,6 +27,7 @@ class LiveServices {
     required this.chat,
     required this.dashboard,
     required this.notifications,
+    required this.catalog,
   }) {
     // The thread read in a shop also reads that shop's message notifications; new "shops added" news reads the shop list again.
     chat.onThreadRead ??= notifications.markSiteMessagesRead;
@@ -50,6 +54,7 @@ class LiveServices {
     ChatHub? chat,
     FieldDashboardController? dashboard,
     NotificationsController? notifications,
+    CatalogController? catalog,
   }) : this._(
           auth: auth,
           api: api,
@@ -58,6 +63,7 @@ class LiveServices {
           chat: chat ?? ChatHub(api),
           dashboard: dashboard ?? FieldDashboardController(api),
           notifications: notifications ?? NotificationsController(api),
+          catalog: catalog ?? CatalogController(api),
         );
 
   final LiveAuthController auth;
@@ -69,6 +75,10 @@ class LiveServices {
   final ChatHub chat;
   final FieldDashboardController dashboard;
   final NotificationsController notifications;
+
+  /// The media catalog (media types, installation methods, site questions): the server's copy, saved on the phone, with the copy
+  /// built into the app as the last resort. Not tied to a person, so it survives a sign out.
+  final CatalogController catalog;
 
   static const _lastUserKey = 'live_last_user_id';
   String? _lastUser;
@@ -82,6 +92,7 @@ class LiveServices {
     auth.addListener(_onAuth);
     await auth.restore();
     await queue.load();
+    await catalog.init();
   }
 
   Future<void> _onAuth() async {
@@ -103,7 +114,9 @@ class LiveServices {
       // storage unavailable: keep going
     }
     _lastUser = id;
-    if (_activeUser == id) shops.load(); // skipped when the person signed out while the queue was being cleared
+    unawaited(catalog.refresh()); // the admin may have changed it since the last sign in
+    // The administrator has no shops (the phone shows only the Media catalog for that login), so nothing is read for them.
+    if (_activeUser == id && auth.user?.isAdmin != true) shops.load(); // skipped when the person signed out while the queue was being cleared
   }
 
   /// Everything of the signed-in person is dropped: shops, open chats (their timers stop), unread counts, dashboard numbers and

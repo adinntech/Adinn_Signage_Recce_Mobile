@@ -62,10 +62,10 @@ class NotificationsScreen extends StatelessWidget {
         ..showSnackBar(const SnackBar(content: Text('That shop is not on your list any more.')));
       return;
     }
-    final tab = switch (n.kind) {
+    final int? tab = switch (n.kind) {
       NotificationType.recceMessage => ShopTab.chat,
       NotificationType.recceReviewed => ShopTab.review,
-      _ => ShopTab.photos,
+      _ => null, // the shop opens on the step the person is at
     };
     navigator.push(MaterialPageRoute<void>(builder: (_) => LiveShopScreen(siteId: siteId, initialTab: tab)));
   }

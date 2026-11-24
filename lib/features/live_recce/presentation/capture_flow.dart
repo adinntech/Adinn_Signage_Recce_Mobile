@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:image_picker/image_picker.dart';
@@ -18,7 +18,7 @@ import '../data/recce_models.dart';
 
 /// A photo taken with the camera together with the GPS fix read just before the shutter.
 class CapturedPhoto {
-  const CapturedPhoto({required this.path, required this.lat, required this.lng, required this.accuracy, required this.capturedAt, this.width, this.height});
+  const CapturedPhoto({required this.path, required this.lat, required this.lng, required this.accuracy, required this.capturedAt, this.width, this.height, this.alsoFor = const []});
 
   final String path;
   final double lat;
@@ -28,6 +28,11 @@ class CapturedPhoto {
   final int? width;
   final int? height;
 
+  /// Photo categories (of the same board) the person chose to use this same picture for as well. Empty = this angle only.
+  final List<String> alsoFor;
+
+  CapturedPhoto withAlsoFor(List<String> categories) => CapturedPhoto(path: path, lat: lat, lng: lng, accuracy: accuracy, capturedAt: capturedAt, width: width, height: height, alsoFor: categories);
+
   /// Accuracy worse than 50 m: shown as "location unverified" (still uploaded; the server flags it too).
   bool get unverified => accuracy > gpsAccuracyLimitM;
 }
@@ -35,7 +40,11 @@ class CapturedPhoto {
 /// Gets a FRESH GPS fix first (clear message + Retry when permission is denied, location is off or no fresh fix arrives),
 /// then opens the camera, then shows a preview with lat/lng/accuracy/time. Returns null when the person cancels.
 /// A camera error (permission denied) is explained with Try again / Open settings, never thrown at the caller.
-Future<CapturedPhoto?> captureGeoPhoto(BuildContext context, {required String label}) async {
+///
+/// [otherAngles] are the other photo places of the same board that are still empty. The preview then offers "Use this photo for
+/// other angles too": the person ticks the angles and they come back in [CapturedPhoto.alsoFor] (one good view often serves more
+/// than one angle, so the same picture is allowed for them).
+Future<CapturedPhoto?> captureGeoPhoto(BuildContext context, {required String label, List<PhotoCategoryDef> otherAngles = const []}) async {
   var recovered = await _recoverLostShot();
   while (true) {
     if (!context.mounted) {
@@ -79,12 +88,12 @@ Future<CapturedPhoto?> captureGeoPhoto(BuildContext context, {required String la
       height: size?.$2,
     );
     if (!context.mounted) return null;
-    final choice = await Navigator.of(context).push<_PreviewChoice>(
-      MaterialPageRoute(fullscreenDialog: true, builder: (_) => _PhotoPreview(photo: photo, label: label, recovered: wasRecovered)),
+    final pick = await Navigator.of(context).push<_PreviewPick>(
+      MaterialPageRoute(fullscreenDialog: true, builder: (_) => _PhotoPreview(photo: photo, label: label, recovered: wasRecovered, otherAngles: otherAngles)),
     );
-    if (choice == _PreviewChoice.use) return photo;
+    if (pick?.choice == _PreviewChoice.use) return photo.withAlsoFor(pick!.alsoFor);
     _discard(path);
-    if (choice != _PreviewChoice.retake) return null;
+    if (pick?.choice != _PreviewChoice.retake) return null;
   }
 }
 
@@ -273,16 +282,79 @@ Future<(int, int)?> _imageSize(String path) async {
   }
 }
 
+/// The preview screen on its own: tests cannot run the camera. It pops with what the person decided (`choice`, `alsoFor`), or null.
+@visibleForTesting
+Widget capturePreviewForTest({required CapturedPhoto photo, required String label, List<PhotoCategoryDef> otherAngles = const []}) =>
+    _PhotoPreview(photo: photo, label: label, otherAngles: otherAngles);
+
 enum _PreviewChoice { use, retake }
 
-class _PhotoPreview extends StatelessWidget {
-  const _PhotoPreview({required this.photo, required this.label, this.recovered = false});
+/// What the person decided on the preview: use or retake, and which other angles get the same picture.
+class _PreviewPick {
+  const _PreviewPick(this.choice, [this.alsoFor = const []]);
+  final _PreviewChoice choice;
+  final List<String> alsoFor;
+}
+
+class _PhotoPreview extends StatefulWidget {
+  const _PhotoPreview({required this.photo, required this.label, this.recovered = false, this.otherAngles = const []});
 
   final CapturedPhoto photo;
   final String label;
 
   /// The picture was taken before the app was closed by the phone; the location was read just now.
   final bool recovered;
+
+  /// Empty photo places of the same board this picture may also be used for.
+  final List<PhotoCategoryDef> otherAngles;
+
+  @override
+  State<_PhotoPreview> createState() => _PhotoPreviewState();
+}
+
+class _PhotoPreviewState extends State<_PhotoPreview> {
+  var _showAngles = false;
+  final _also = <String>{};
+
+  CapturedPhoto get photo => widget.photo;
+  String get label => widget.label;
+  bool get recovered => widget.recovered;
+
+  /// "Use this photo for other angles too": a switch row, then one chip per empty angle. Optional; nothing is ticked by default.
+  Widget _otherAnglesBox() {
+    final angles = widget.otherAngles;
+    final all = _also.length == angles.length;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      TextButton.icon(
+        key: const Key('also-toggle'),
+        style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+        onPressed: () => setState(() => _showAngles = !_showAngles),
+        icon: Icon(_showAngles ? Icons.expand_less : Icons.copy_all_outlined),
+        label: Text(_also.isEmpty ? 'Use this photo for other angles too' : 'Also used for ${_also.length} other angle${_also.length == 1 ? '' : 's'}'),
+      ),
+      if (_showAngles) ...[
+        Wrap(spacing: 8, runSpacing: 4, children: [
+          for (final c in angles)
+            FilterChip(
+              key: Key('also-${c.key}'),
+              label: Text(c.label),
+              selected: _also.contains(c.key),
+              onSelected: (on) => setState(() => on ? _also.add(c.key) : _also.remove(c.key)),
+            ),
+          ActionChip(
+            key: const Key('also-all'),
+            avatar: Icon(all ? Icons.deselect : Icons.select_all, size: 18),
+            label: Text(all ? 'Clear' : 'Select all'),
+            onPressed: () => setState(() => all ? _also.clear() : _also.addAll(angles.map((c) => c.key))),
+          ),
+        ]),
+        const Padding(
+          padding: EdgeInsets.only(top: 4),
+          child: Text('The same picture is saved for each angle you tick, with this location and time.', style: TextStyle(color: AdinnColors.muted, fontSize: 12)),
+        ),
+      ],
+    ]);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -332,11 +404,22 @@ class _PhotoPreview extends StatelessWidget {
                       padding: EdgeInsets.only(top: 6),
                       child: Text('You can still use this photo, but the reviewer will see the weak location. Retake in an open area for a better fix.', style: TextStyle(color: AdinnColors.muted, fontSize: 12)),
                     ),
+                  if (widget.otherAngles.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    _otherAnglesBox(),
+                  ],
                   const SizedBox(height: 12),
                   Row(children: [
-                    Expanded(child: OutlinedButton.icon(onPressed: () => Navigator.pop(context, _PreviewChoice.retake), icon: const Icon(Icons.refresh), label: const Text('Retake'))),
+                    Expanded(child: OutlinedButton.icon(onPressed: () => Navigator.pop(context, const _PreviewPick(_PreviewChoice.retake)), icon: const Icon(Icons.refresh), label: const Text('Retake'))),
                     const SizedBox(width: 12),
-                    Expanded(child: FilledButton.icon(onPressed: () => Navigator.pop(context, _PreviewChoice.use), icon: const Icon(Icons.check), label: const Text('Use photo'))),
+                    Expanded(
+                      child: FilledButton.icon(
+                        key: const Key('preview-use'),
+                        onPressed: () => Navigator.pop(context, _PreviewPick(_PreviewChoice.use, [for (final c in widget.otherAngles) if (_also.contains(c.key)) c.key])),
+                        icon: const Icon(Icons.check),
+                        label: Text(_also.isEmpty ? 'Use photo' : 'Use for ${_also.length + 1} angles'),
+                      ),
+                    ),
                   ]),
                 ],
               ),

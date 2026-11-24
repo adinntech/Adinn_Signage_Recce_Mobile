@@ -11,6 +11,7 @@ import '../data/chat_controller.dart';
 import '../data/live_services.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import 'add_boards_screen.dart';
 import 'boards_tab.dart';
 import 'chat_tab.dart';
 import 'installation_tab.dart';
@@ -18,26 +19,38 @@ import 'live_widgets.dart';
 import 'photos_tab.dart';
 import 'review_tab.dart';
 
-/// The tabs of the shop screen, in order.
+/// The tabs of the shop screen, in the order the work is done: the boards first (their type and size), then the photos of each
+/// board, then the installation answers, then the review.
 abstract final class ShopTab {
-  static const photos = 0;
-  static const boards = 1;
+  static const boards = 0;
+  static const photos = 1;
   static const install = 2;
   static const review = 3;
   static const chat = 4;
   static const count = 5;
 }
 
-/// Shop Recce Details: header + Photos / Boards / Installation / Review / Chat tabs and the Save Draft / Submit bar.
+/// Where the guided flow takes the person next: a tab, and on it a board (and the part of its card), [boardWork] when some board still has
+/// something to do.
+class _Work {
+  const _Work(this.tab, {this.board, this.section, this.boardWork = false});
+  final int tab;
+  final String? board;
+  final BoardSection? section;
+  final bool boardWork;
+}
+
+/// Shop Recce Details: header + Boards / Photos / Install / Review / Chat tabs and the Save Draft / Submit bar.
 class LiveShopScreen extends StatefulWidget {
   /// [assignedAt] is the "assigned on" time of the list row this screen was opened from (the shop detail the server sends does
   /// not carry it). When it is null the screen looks the row up in the shop list; with no row the "Assigned" line is hidden.
-  /// [initialTab] is one of [ShopTab] (a notification about a message opens the Chat tab).
-  const LiveShopScreen({super.key, required this.siteId, this.assignedAt, this.initialTab = ShopTab.photos});
+  /// [initialTab] is one of [ShopTab] (a notification about a message opens the Chat tab). Null = the screen picks: the first step
+  /// that is not done yet (Boards, Photos, Install, then Review), or Photos when the shop is locked or in rework.
+  const LiveShopScreen({super.key, required this.siteId, this.assignedAt, this.initialTab});
 
   final String siteId;
   final DateTime? assignedAt;
-  final int initialTab;
+  final int? initialTab;
 
   @override
   State<LiveShopScreen> createState() => _LiveShopScreenState();
@@ -50,17 +63,157 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
   late final DateTime? _assignedAt;
   var _onChatTab = false;
 
+  // Guided flow, board by board: add boards (media types, sizes), then for each board its photos and its installation requirement
+  // (installation method and site questions), then the site installation, then review. The screen moves on by itself when the person
+  // finishes a photo step, and on "Next" at the end of a board card.
+  Timer? _advanceTimer;
+  var _stepsSeeded = false; // the first read of the shop only records where it stands: it never moves the person
+  final _announced = <String>{}; // boards whose photos were complete when seen: each is announced once, never again
+
   @override
   void initState() {
     super.initState();
     final s = context.read<LiveServices>();
     _assignedAt = widget.assignedAt ?? _rowAssignedAt(s.shops);
-    _ctrl = ShopDetailController(s.api, s.queue, widget.siteId)..load();
-    _tabs = TabController(length: ShopTab.count, vsync: this, initialIndex: widget.initialTab.clamp(0, ShopTab.count - 1))..addListener(_onTab);
+    _ctrl = ShopDetailController(s.api, s.queue, widget.siteId, catalog: s.catalog);
+    unawaited(s.catalog.refresh()); // the admin may have changed the media types or questions since the phone last asked
+    _tabs = TabController(length: ShopTab.count, vsync: this, initialIndex: (widget.initialTab ?? ShopTab.boards).clamp(0, ShopTab.count - 1))..addListener(_onTab);
+    _ctrl.addListener(_watchSteps);
+    unawaited(_ctrl.load().then((_) => _landOnFirstStep()));
     _chat = s.chat.open(widget.siteId, myId: context.read<LiveAuthController>().user?.id ?? '')..start();
     _onChatTab = _tabs.index == ShopTab.chat;
     if (_onChatTab) _chat.setVisible(true);
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// What the person does next, in the order of the work: the boards' sizes, then board by board its photos and its installation
+  /// requirement, then the site installation, then the review. `board` / `section` say where on that tab; `boardWork` is true while
+  /// some board still has something to do.
+  _Work _nextWork() {
+    final c = _ctrl;
+    for (final b in c.boards) {
+      if (!b.hasSize || b.name.trim().isEmpty) return _Work(ShopTab.boards, board: b.key, section: BoardSection.size);
+    }
+    if (c.boards.isEmpty) return const _Work(ShopTab.boards, boardWork: true);
+    for (final b in c.boards) {
+      if (c.isSaved(b.key) && !c.boardPhotosDone(b.key)) return _Work(ShopTab.photos, board: b.key);
+      if (!c.boardInstallDone(b)) return _Work(ShopTab.boards, board: b.key, section: BoardSection.installation);
+    }
+    if (!c.installDone) return const _Work(ShopTab.install, boardWork: false);
+    return const _Work(ShopTab.review, boardWork: false);
+  }
+
+  /// Takes the person to [w]: the tab, with the board opened (and its section in view) where that applies.
+  void _go(_Work w) {
+    final key = w.board;
+    if (key != null && w.tab == ShopTab.photos) _ctrl.focusBoard(key);
+    if (key != null && w.tab == ShopTab.boards) _ctrl.openBoardCard(key, section: w.section);
+    _tabs.animateTo(w.tab);
+  }
+
+  /// Opens on the step the person is at (see [_nextWork]). A locked shop or one in rework opens on Photos (the flagged ones). A tab
+  /// asked for (a notification) stays.
+  void _landOnFirstStep() {
+    if (!mounted || widget.initialTab != null || _ctrl.detail == null) return;
+    if (!_ctrl.canEdit || _ctrl.inRework) {
+      _tabs.index = ShopTab.photos;
+      return;
+    }
+    final w = _nextWork();
+    final key = w.board;
+    if (key != null && w.tab == ShopTab.photos) _ctrl.focusBoard(key);
+    if (key != null && w.tab == ShopTab.boards) _ctrl.openBoardCard(key, section: w.section);
+    _tabs.index = w.tab;
+  }
+
+  /// Watches the shop for the moment the last photo of ONE board is taken (stored or uploading) and then moves on.
+  void _watchSteps() {
+    final d = _ctrl.detail;
+    if (!mounted || d == null) return;
+    final done = {for (final b in d.mediaItems) if (_ctrl.boardPhotosDone(b.key)) b.key};
+    final fresh = done.difference(_announced);
+    _announced.addAll(done);
+    final seeded = _stepsSeeded;
+    _stepsSeeded = true;
+    // Rework only fixes what the reviewer flagged: the person is not pushed around the steps then.
+    if (seeded && fresh.isNotEmpty && _ctrl.canEdit && !_ctrl.inRework && _tabs.index == ShopTab.photos) _boardPhotosFinished(fresh.first);
+  }
+
+  /// A short pause (the person sees the last tile fill up), then: that board's installation requirement when it has one to fill, or
+  /// the next board's photos, or, when every board is complete, the question whether there is another board.
+  void _boardPhotosFinished(String key) {
+    if (_advanceTimer?.isActive ?? false) return;
+    _advanceTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted || _tabs.index != ShopTab.photos) return; // the person already went somewhere else
+      final label = _ctrl.boards.where((b) => b.key == key).firstOrNull?.label ?? 'Board';
+      _continueFrom(label, 'photos done.', 'photos complete');
+    });
+  }
+
+  /// "Next" at the end of a board card: saves what was typed (so nothing is lost if the app closes), then goes on.
+  Future<void> _afterBoard(BoardItem b) async {
+    if (_ctrl.dirty) {
+      final err = await _ctrl.saveDraft();
+      if (!mounted) return;
+      if (err != null) {
+        showSnack(context, err, error: true);
+        return;
+      }
+    }
+    _continueFrom(b.label, 'done.', 'complete');
+  }
+
+  /// Goes to what comes next after a board's step. While some board still has work it goes there with a short message; when every
+  /// board is complete it asks whether there is another board ([doneWhat] names what was just completed in the question).
+  void _continueFrom(String label, String said, String doneWhat) {
+    final w = _nextWork();
+    if (w.boardWork || w.board != null) {
+      final b = _ctrl.boards.where((x) => x.key == w.board).firstOrNull;
+      final who = b?.label ?? 'the board';
+      final what = w.tab == ShopTab.photos ? 'photos of $who' : (w.section == BoardSection.installation ? 'installation of $who' : 'size of $who');
+      _go(w);
+      showSnack(context, '$label $said Next: $what.');
+      return;
+    }
+    unawaited(_askWhatNext(label, doneWhat));
+  }
+
+  /// Every board is complete: add another board (media types, sizes, then its photos) or go on to the installation.
+  Future<void> _askWhatNext(String label, String doneWhat) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      // A small window (or a big font) must never cut the buttons off: the sheet may use the whole height and scrolls when needed.
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(Icons.check_circle, color: AdinnColors.success, size: 40),
+              const SizedBox(height: 8),
+              Text('$label $doneWhat', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              const Text('Every board is complete. Is there another board in this shop?', textAlign: TextAlign.center, style: TextStyle(color: AdinnColors.muted)),
+              const SizedBox(height: 16),
+              FilledButton.icon(key: const Key('photos-add-another'), onPressed: () => Navigator.pop(ctx, 'add'), icon: const Icon(Icons.add), label: const Text('Add another board')),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(key: const Key('photos-continue'), onPressed: () => Navigator.pop(ctx, 'next'), icon: const Icon(Icons.arrow_forward), label: const Text('No more boards. Continue')),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return; // closed without choosing: the person stays where they are
+    if (choice == 'add') {
+      final added = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => AddBoardsScreen(ctrl: _ctrl)));
+      if (added == true && mounted) _tabs.animateTo(ShopTab.photos); // the controller already opened the first new board's photos
+    } else {
+      _go(_nextWork());
+    }
   }
 
   /// The Chat tab in front reads the thread and marks it read; leaving it goes back to reading only the unread count.
@@ -93,6 +246,8 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _advanceTimer?.cancel();
+    _ctrl.removeListener(_watchSteps);
     _tabs.dispose();
     _chat.dispose();
     _ctrl.dispose();
@@ -117,8 +272,10 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
       await showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
+        isScrollControlled: true, // several boards make a long list (seven photo lines each): it scrolls instead of overflowing
+        useSafeArea: true,
         builder: (_) => SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -222,7 +379,7 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
               labelPadding: const EdgeInsets.symmetric(horizontal: 2),
               labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
               unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              tabs: [const Tab(text: 'Photos'), const Tab(text: 'Boards'), const Tab(text: 'Install'), const Tab(text: 'Review'), Tab(child: ChatTabLabel(chat: _chat))],
+              tabs: [const Tab(text: 'Boards'), const Tab(text: 'Photos'), const Tab(text: 'Install'), const Tab(text: 'Review'), Tab(child: ChatTabLabel(chat: _chat))],
             ),
           ),
         ),
@@ -230,9 +387,17 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
       body: TabBarView(
         controller: _tabs,
         children: [
-          PhotosTab(ctrl: _ctrl),
-          BoardsTab(ctrl: _ctrl),
-          InstallationTab(ctrl: _ctrl),
+          BoardsTab(
+            ctrl: _ctrl,
+            onBoardsAdded: () => _tabs.animateTo(ShopTab.photos), // the controller already opened the first new board's photos
+            onNextBoard: _afterBoard,
+            onOpenPhotos: (b) {
+              _ctrl.focusBoard(b.key);
+              _tabs.animateTo(ShopTab.photos);
+            },
+          ),
+          PhotosTab(ctrl: _ctrl, onAddBoards: () => _tabs.animateTo(ShopTab.boards)),
+          InstallationTab(ctrl: _ctrl, onNext: () => _tabs.animateTo(ShopTab.review)),
           ReviewTab(ctrl: _ctrl),
           ChatTab(shop: _ctrl, chat: _chat, onOpenBoards: () => _tabs.animateTo(ShopTab.boards)),
         ],

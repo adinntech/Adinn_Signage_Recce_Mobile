@@ -19,6 +19,7 @@ List<String> validateForSubmit({
   Set<String> pendingReplaces = const {},
   Set<String> pendingCategories = const {},
   List<MissingEvidence> serverMissing = const [],
+  List<String> installationProblems = const [],
 }) {
   final problems = <String>[];
 
@@ -45,6 +46,9 @@ List<String> validateForSubmit({
     if ((b.width ?? 0) <= 0) problems.add('$who: enter the width');
     if ((b.height ?? 0) <= 0) problems.add('$who: enter the height');
   }
+
+  // Each board's own installation requirement (its installation method and the site questions of its media type), first submit only.
+  problems.addAll(installationProblems);
 
   final open = installation.unanswered;
   if (open.isNotEmpty) problems.add('Installation not answered: ${open.join(', ')}');

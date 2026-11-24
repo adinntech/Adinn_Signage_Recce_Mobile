@@ -41,7 +41,7 @@ class LiveAuthController extends ChangeNotifier {
   Future<void> restore() async {
     try {
       final s = await _repo.restore();
-      if (s != null && s.user.role.isFieldStaff) {
+      if (s != null && s.user.role.signsInOnPhone) {
         _user = s.user;
         _offlineSession = s.offline;
       }
@@ -74,7 +74,7 @@ class LiveAuthController extends ChangeNotifier {
     notifyListeners();
     try {
       final user = await call();
-      if (!user.role.isFieldStaff) {
+      if (!user.role.signsInOnPhone) {
         await _repo.logout();
         _error = const AuthFailure('PLATFORM_NOT_ALLOWED');
         return false;

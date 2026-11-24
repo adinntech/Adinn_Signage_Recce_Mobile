@@ -278,7 +278,10 @@ class ExtraPhotoSlot {
 const gpsAccuracyLimitM = 50.0;
 
 class ReworkNote {
-  const ReworkNote({this.reason = '', this.note = '', this.instructions = '', this.by, this.role, this.at, this.reworkId, this.itemId});
+  const ReworkNote({this.reason = '', this.note = '', this.instructions = '', this.by, this.role, this.at, this.reworkId, this.itemId, this.rejected = false});
+
+  /// The reviewer REJECTED this photo (not just "rework"): [reason] is the reason for rejection.
+  final bool rejected;
 
   /// The text to show first: an explicit reason, else the note on this photo, else the overall instructions.
   final String reason;
@@ -310,6 +313,7 @@ class ReworkNote {
       at: _dt(j['requestedAt'] ?? j['at'] ?? j['createdAt']),
       reworkId: _s(j['reworkId']),
       itemId: _s(j['itemId']),
+      rejected: j['rejected'] == true,
     );
   }
 }
@@ -393,6 +397,12 @@ class ShopPhoto {
   /// Shown as "location unverified": no usable GPS, weak accuracy, or the server did not verify it.
   bool get locationUnverified => !hasGps || weakGps || !gpsVerified;
   bool get needsRework => review.status == 'REWORK_REQUIRED';
+
+  /// The reviewer rejected this photo (it also [needsRework]: it has to be retaken, and the reason is `review.openRework`).
+  bool get isRejected => needsRework && review.openRework?.rejected == true;
+
+  /// What the photo is called while it waits for a new picture: "Rejected" or "Rework required".
+  String get attentionLabel => isRejected ? 'Rejected' : 'Rework required';
   String? get displayUrl => editedUrl ?? url;
 
   factory ShopPhoto.fromJson(Json j) => ShopPhoto(
@@ -450,6 +460,9 @@ class BoardItem {
     this.name = 'GSB',
     this.mediaType = '',
     this.seq = 0,
+    this.mediaCode = '',
+    this.installationType,
+    Map<String, dynamic>? answers,
     this.requiredPhotos = const [],
     this.quantity = 1,
     this.width,
@@ -459,7 +472,7 @@ class BoardItem {
     this.condition = 'PROPOSED',
     this.position = '',
     this.notes = '',
-  });
+  }) : answers = answers ?? {};
 
   String key;
   String name;
@@ -469,6 +482,13 @@ class BoardItem {
 
   /// Number among the boards of the same media type (1 = "GSB-01"). 0 on older lines.
   int seq;
+
+  /// Catalog code of the media type the board was made from (empty on older lines): it finds the installation methods and questions.
+  String mediaCode;
+
+  /// Catalog code of the installation method chosen for THIS board, and the answers to the site questions of this board, by key.
+  String? installationType;
+  final Map<String, dynamic> answers;
 
   /// Photo categories the SERVER requires for this board (`mediaItems[].required`). Read-only: never sent back.
   final List<String> requiredPhotos;
@@ -492,6 +512,9 @@ class BoardItem {
         name: (j['name'] ?? 'GSB').toString(),
         mediaType: (j['mediaType'] ?? '').toString(),
         seq: _i(j['seq']),
+        mediaCode: (j['mediaCode'] ?? '').toString(),
+        installationType: (j['installationType'] ?? '').toString().isEmpty ? null : j['installationType'].toString(),
+        answers: j['answers'] is Map ? Map<String, dynamic>.from(j['answers'] as Map) : null,
         requiredPhotos: _sl(j['required']),
         quantity: _i(j['quantity'], 1),
         width: _d(j['width']),
@@ -508,6 +531,9 @@ class BoardItem {
         'key': key,
         'name': name.trim(),
         if (isNumbered) ...{'mediaType': mediaType, 'seq': seq},
+        if (mediaCode.isNotEmpty) 'mediaCode': mediaCode,
+        if (installationType != null) 'installationType': installationType,
+        if (answers.isNotEmpty) 'answers': answers,
         'quantity': quantity,
         'width': ?width,
         'height': ?height,
@@ -673,8 +699,11 @@ class ReworkItem {
     this.note = '',
     this.resolved = false,
     this.resolvedInVersion,
+    this.rejected = false,
   });
 
+  /// A REPLACE_PHOTO the reviewer rejected: [note] is the reason for rejection.
+  final bool rejected;
   final String type; // REPLACE_PHOTO | ADDITIONAL_PHOTO | FIX_MEASUREMENT | OTHER
   final String id;
   final String? category;
@@ -702,6 +731,7 @@ class ReworkItem {
         photo: _s(j['photo']),
         note: (j['note'] ?? '').toString(),
         resolved: j['resolved'] == true,
+        rejected: j['rejected'] == true,
       );
 }
 
@@ -742,6 +772,7 @@ class ReworkEntry {
         at: requestedAt,
         reworkId: id,
         itemId: i.id.isEmpty ? null : i.id,
+        rejected: i.rejected,
       );
 
   factory ReworkEntry.fromJson(Json j) => ReworkEntry(

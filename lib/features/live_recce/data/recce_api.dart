@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 import '../../../core/network/api_config.dart';
 import '../../../core/network/api_exception.dart';
 import 'photo_shrink.dart';
+import 'catalog_data.dart';
 import 'recce_models.dart';
 
 String newClientId() => 'c${DateTime.now().microsecondsSinceEpoch}${Random().nextInt(1 << 31)}';
@@ -195,6 +196,44 @@ class RecceApi {
           if (p.items.length < 200 || items.length >= p.total) break;
         }
         return ShopListPage(items: items, total: total == 0 ? items.length : total, summary: summary);
+      });
+
+  /// The media catalog. With [version] (the one the phone holds) the server answers "unchanged" and this returns null.
+  Future<CatalogData?> catalog({int? version}) => _run(() async {
+        final j = _data(await _dio.get<dynamic>('/catalog', queryParameters: {'version': ?version}));
+        return j['unchanged'] == true ? null : CatalogData.fromJson(j);
+      });
+
+  /* ---- media catalog admin: SUPER_ADMIN only (`catalog:manage`); `kind` is "media", "installations" or "questions" ---- */
+
+  /// The whole catalog as it is on the server right now (no version check): the admin edits what is stored, not the saved copy.
+  Future<CatalogData> catalogFull() => _run(() async => CatalogData.fromJson(_data(await _dio.get<dynamic>('/catalog'))));
+
+  /// How many boards use each media type and installation method (a used entry cannot be deleted, only made inactive).
+  Future<CatalogUsage> catalogUsage() => _run(() async => CatalogUsage.fromJson(_data(await _dio.get<dynamic>('/catalog/usage'))));
+
+  Future<void> catalogCreate(String kind, Map<String, dynamic> body) => _run(() async {
+        await _dio.post<dynamic>('/catalog/$kind', data: body);
+      });
+
+  /// [id] is the media / installation code, or the question's `uid`. [body] holds ONLY the fields that changed (the server fills nothing in).
+  Future<void> catalogUpdate(String kind, String id, Map<String, dynamic> body) => _run(() async {
+        await _dio.put<dynamic>('/catalog/$kind/${Uri.encodeComponent(id)}', data: body);
+      });
+
+  Future<void> catalogDelete(String kind, String id) => _run(() async {
+        await _dio.delete<dynamic>('/catalog/$kind/${Uri.encodeComponent(id)}');
+      });
+
+  /// [ids] are the codes in the new order, or the uids of the questions of ONE group.
+  Future<void> catalogReorder(String kind, List<String> ids) => _run(() async {
+        await _dio.post<dynamic>('/catalog/reorder', data: {'kind': kind, 'ids': ids});
+      });
+
+  /// Adds back every built-in entry that was deleted; returns how many came back: `{media, installations, questions}`.
+  Future<Map<String, int>> catalogLoadDefaults() => _run(() async {
+        final j = _data(await _dio.post<dynamic>('/catalog/defaults', data: <String, dynamic>{}));
+        return {for (final e in j.entries) e.key: e.value is num ? (e.value as num).toInt() : 0};
       });
 
   Future<ShopDetail> detail(String siteId) => _run(() async => ShopDetail.fromJson(_data(await _dio.get<dynamic>('/recce/shops/$siteId'))));

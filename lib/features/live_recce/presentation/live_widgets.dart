@@ -140,7 +140,8 @@ class ReworkBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final n = note;
     final who = [if (n?.by != null) n!.by!, if (n?.role != null) '(${n!.role})'].join(' ');
-    final main = n == null || n.reason.isEmpty ? fallback : n.reason;
+    final rejected = n?.rejected == true;
+    final main = n == null || n.reason.isEmpty ? (rejected ? 'The reviewer rejected this photo.' : fallback) : n.reason;
     final extra = n != null && n.note.isNotEmpty && n.instructions.isNotEmpty && n.instructions != n.note ? n.instructions : null;
     return Container(
       width: double.infinity,
@@ -149,9 +150,11 @@ class ReworkBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // A rejected photo says so first, then the reason the reviewer wrote.
+          if (rejected) const Padding(padding: EdgeInsets.only(bottom: 4), child: Text('Reason for rejection', style: TextStyle(color: AdinnColors.redDark, fontWeight: FontWeight.w800, fontSize: 12))),
           Text(main, style: const TextStyle(color: AdinnColors.redDark, fontWeight: FontWeight.w600)),
           if (extra != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Instructions: $extra', style: const TextStyle(color: AdinnColors.redDark, fontSize: 13))),
-          if (who.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Requested by $who', style: const TextStyle(fontSize: 12, color: AdinnColors.muted))),
+          if (who.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('${rejected ? 'Rejected' : 'Requested'} by $who', style: const TextStyle(fontSize: 12, color: AdinnColors.muted))),
           if (n?.at != null) Text(fmtDateTime(n!.at!), style: const TextStyle(fontSize: 12, color: AdinnColors.muted)),
         ],
       ),

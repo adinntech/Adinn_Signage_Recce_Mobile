@@ -15,18 +15,23 @@ import 'capture_flow.dart';
 import 'live_widgets.dart';
 import 'rework_sheet.dart';
 
-/// Photos: the six live-flow categories as a checklist grid, then the extra categories the server requires, and the photos a
+/// Photos: one section per physical board (GSB-01, GSB-02, Acrylic-01 ...), each with its own seven photo tiles (Front, Left,
+/// Right, Long Shot, Annotated, Location, Access Path) plus any extra the server requires for that board, and the photos a
 /// reviewer asked for. Tap a box to capture (GPS first, then camera). Pull down to read the shop again (fresh photo links).
 class PhotosTab extends StatelessWidget {
-  const PhotosTab({super.key, required this.ctrl});
+  const PhotosTab({super.key, required this.ctrl, this.onAddBoards});
 
   final ShopDetailController ctrl;
 
+  /// Opens the Boards tab. Photos belong to a board, so a shop with no board shows a button to it instead of an empty list.
+  final VoidCallback? onAddBoards;
+
   /// GPS first, then the camera, then the picture is queued. Retaking a DRAFT photo queues the new picture FIRST: the old draft
   /// is deleted from the server only after the new one is stored there (see [ShopDetailController.queueSwap]), so a failed delete
-  /// or no network can never lose the new photo. [mediaKey] ties a requested photo to its board (empty = the whole shop).
-  Future<void> _capture(BuildContext context, PhotoCategoryDef cat, {ShopPhoto? replacing, String mediaKey = ''}) async {
-    final shot = await captureGeoPhoto(context, label: cat.label);
+  /// or no network can never lose the new photo. [mediaKey] is the key of the board the photo belongs to. [fromTile] is true for a
+  /// first take on a board's own tile (the only take the testing switch copies to the other places).
+  Future<void> _capture(BuildContext context, PhotoCategoryDef cat, {ShopPhoto? replacing, String mediaKey = '', bool fromTile = false}) async {
+    final shot = await captureGeoPhoto(context, label: cat.label, otherAngles: fromTile && replacing == null ? _emptyAnglesOf(mediaKey, except: cat.key) : const []);
     if (shot == null) return;
     final item = UploadItem(
       id: newClientId(),
@@ -45,19 +50,42 @@ class PhotosTab extends StatelessWidget {
       device: deviceLabel(),
     );
     ctrl.queueSwap(item, stale: replacing);
-    // TESTING ONLY: the same picture for every other empty photo type of the checklist.
     var copies = 0;
-    if (showPhotoTestTools && ctrl.useFirstPhotoForAll && replacing == null && mediaKey.isEmpty) {
-      copies = await ctrl.queueFirstPhotoForAll(item, _checklist(ctrl.detail!), keepPhotoCopy);
+    // The person ticked other angles of this board on the preview: the same picture is saved for each of them.
+    if (shot.alsoFor.isNotEmpty && replacing == null) {
+      copies = await ctrl.queueFirstPhotoForAll(item, [for (final k in shot.alsoFor) PhotoSlot(k, mediaKey)], keepPhotoCopy);
+    }
+    // TESTING ONLY: the same picture for every other empty photo place of every board.
+    var testCopies = 0;
+    if (showPhotoTestTools && ctrl.useFirstPhotoForAll && replacing == null && fromTile) {
+      testCopies = await ctrl.queueFirstPhotoForAll(item, ctrl.photoSlots(), keepPhotoCopy);
     }
     if (context.mounted) {
-      showSnack(context, copies == 0 ? '${cat.label} saved on the phone and uploading.' : '${cat.label} saved and also queued for $copies other photo types (testing).');
+      showSnack(
+        context,
+        testCopies > 0
+            ? '${cat.label} saved and also queued for ${copies + testCopies} other photo places (testing).'
+            : copies > 0
+                ? '${cat.label} saved and also used for $copies other angle${copies == 1 ? '' : 's'}. Uploading.'
+                : '${cat.label} saved on the phone and uploading.',
+      );
     }
   }
 
-  /// The six live-flow photo types plus the extra ones the server requires for this shop.
-  List<PhotoCategoryDef> _checklist(ShopDetail d) =>
-      [...requiredPhotoCategories, for (final s in d.extraPhotoSlots) PhotoCategoryDef(s.category, s.label, Icons.add_a_photo_outlined)];
+  /// The other photo places of board [mediaKey] that are still empty (no photo, nothing uploading): the angles the same picture
+  /// may also be used for.
+  List<PhotoCategoryDef> _emptyAnglesOf(String mediaKey, {required String except}) {
+    final d = ctrl.detail;
+    final board = d?.mediaItems.where((b) => b.key == mediaKey).firstOrNull;
+    if (d == null || board == null) return const [];
+    return [
+      for (final c in _tilesOf(d, board))
+        if (c.key != except && d.photoOf(c.key, board.key) == null && !ctrl.pending.any((u) => u.category == c.key && u.mediaKey == board.key)) c,
+    ];
+  }
+
+  /// The tiles of one board: its seven standard photos, then the extra ones the server requires for it (for example NAME_BOARD).
+  List<PhotoCategoryDef> _tilesOf(ShopDetail d, BoardItem b) => [...boardPhotoCategories, ...d.extraTilesFor(b)];
 
   /// Capture for a photo the reviewer asked for. A second take swaps the draft that already answers the request.
   void _captureRequested(BuildContext context, RequestedPhoto req, ShopPhoto? answer) {
@@ -65,12 +93,12 @@ class PhotosTab extends StatelessWidget {
     _capture(context, PhotoCategoryDef(req.category, req.label, Icons.add_a_photo_outlined), replacing: answer, mediaKey: req.mediaKey);
   }
 
-  void _openTile(BuildContext context, PhotoCategoryDef cat, ShopPhoto? photo, UploadItem? pending) {
+  void _openTile(BuildContext context, PhotoCategoryDef cat, BoardItem board, ShopPhoto? photo, UploadItem? pending) {
     if (pending != null) return _pendingSheet(context, cat, pending);
     if (photo != null && photo.needsRework) return _openRework(context, photo);
     if (photo != null) return _photoSheet(context, cat, photo);
     if (ctrl.canEdit) {
-      _capture(context, cat);
+      _capture(context, cat, mediaKey: board.key, fromTile: true);
     } else {
       showSnack(context, 'This shop is locked. Photos cannot be added now.');
     }
@@ -208,24 +236,52 @@ class PhotosTab extends StatelessWidget {
     );
   }
 
-  Widget _grid(BuildContext context, ShopDetail d, List<PhotoCategoryDef> cats) {
-    final pending = ctrl.pending;
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      childAspectRatio: 0.92,
+  /// A board that is not the one being photographed: one line with its count; a tap makes it the open one.
+  Widget _closedBoard(ShopDetail d, BoardItem b) {
+    final saved = d.mediaItems.any((m) => m.key == b.key);
+    final tiles = _tilesOf(d, b);
+    final done = saved ? tiles.where((c) => d.photoOf(c.key, b.key) != null).length : 0;
+    return KeyedSubtree(
+      key: ValueKey('board-row-${b.key}'),
+      child: _BoardPhotoHeader(board: b, done: done, total: tiles.length, open: false, onToggle: () => ctrl.focusBoard(b.key)),
+    );
+  }
+
+  /// The photo tiles of ONE board. A board that is not saved on the server yet cannot take photos (the server links a photo to a
+  /// saved board), so it shows a note instead of tiles.
+  Widget _boardSection(BuildContext context, ShopDetail d, BoardItem b, {bool foldable = false}) {
+    final saved = d.mediaItems.any((m) => m.key == b.key);
+    final tiles = _tilesOf(d, b);
+    final pending = ctrl.pending.where((u) => u.mediaKey == b.key).toList();
+    final done = tiles.where((c) => d.photoOf(c.key, b.key) != null).length;
+    return Column(
+      key: ValueKey('board-photos-${b.key}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final c in cats)
-          _CategoryTile(
-            cat: c,
-            photo: d.photoFor(c.key),
-            pending: pending.where((u) => u.category == c.key).fold<UploadItem?>(null, (_, u) => u),
-            onTap: (photo, pend) => _openTile(context, c, photo, pend),
-            onFlag: (photo) => _openRework(context, photo),
-            onImageError: ctrl.imageFailed,
+        _BoardPhotoHeader(board: b, done: saved ? done : 0, total: tiles.length, onToggle: foldable ? ctrl.closePhotoBoards : null),
+        const SizedBox(height: 10),
+        if (!saved)
+          const Text('Save the draft first. This board takes photos after it is saved.', style: TextStyle(color: AdinnColors.warning, fontWeight: FontWeight.w600))
+        else
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 0.92,
+            children: [
+              for (final c in tiles)
+                _CategoryTile(
+                  key: ValueKey('tile-${b.key}-${c.key}'),
+                  cat: c,
+                  photo: d.photoOf(c.key, b.key),
+                  pending: pending.where((u) => u.category == c.key).fold<UploadItem?>(null, (_, u) => u),
+                  onTap: (photo, pend) => _openTile(context, c, b, photo, pend),
+                  onFlag: (photo) => _openRework(context, photo),
+                  onImageError: ctrl.imageFailed,
+                ),
+            ],
           ),
       ],
     );
@@ -235,11 +291,20 @@ class PhotosTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final d = ctrl.detail!;
     final pending = ctrl.pending;
-    // The six are the checklist; the server may require more (progress.missing), each with its own tile.
-    final tiles = _checklist(d);
-    final extras = tiles.sublist(requiredPhotoCategories.length);
-    final done = tiles.where((c) => d.photoFor(c.key) != null).length;
+    final boards = ctrl.boards;
+    // Every board needs its own seven photos, and the server may require more for it (progress.missing).
+    var total = 0;
+    var done = 0;
+    for (final b in boards) {
+      final tiles = _tilesOf(d, b);
+      total += tiles.length;
+      if (d.mediaItems.any((m) => m.key == b.key)) done += tiles.where((c) => d.photoOf(c.key, b.key) != null).length;
+    }
     final requested = d.requestedPhotos;
+    // Board by board: with several boards only the one being photographed is open, the others are one line each. When it is complete
+    // the screen opens the next one. Rework and locked shops show every board open (flagged photos can sit on any board).
+    final byBoard = boards.length > 1 && ctrl.canEdit && !ctrl.inRework;
+    final current = byBoard ? ctrl.photoBoard : null;
     return RefreshIndicator(
       onRefresh: ctrl.refreshAll,
       child: ListView(
@@ -248,12 +313,35 @@ class PhotosTab extends StatelessWidget {
         children: [
           if (showPhotoTestTools && ctrl.canEdit) _UseFirstPhotoBox(value: ctrl.useFirstPhotoForAll, onChanged: ctrl.setUseFirstPhotoForAll),
           Row(children: [
-            Expanded(child: Text('Required photos $done of ${tiles.length}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
+            Expanded(child: Text('Required photos $done of $total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
             if (pending.isNotEmpty) TagChip('${pending.length} uploading', icon: Icons.cloud_upload_outlined, color: AdinnColors.info),
           ]),
           const SizedBox(height: 4),
-          const Text('Tap a box to capture. Your location is read first, then the camera opens.', style: TextStyle(color: AdinnColors.muted, fontSize: 13)),
+          Text(
+            current != null
+                ? 'Photos of ${current.label} now. When they are all taken the next board opens by itself. Tap a box to capture; your location is read first, then the camera opens.'
+                : boards.length > 1
+                    ? 'Every board has its own photos. Tap a box to capture. Your location is read first, then the camera opens.'
+                    : 'Tap a box to capture. Your location is read first, then the camera opens.',
+            key: const Key('photos-hint'),
+            style: const TextStyle(color: AdinnColors.muted, fontSize: 13),
+          ),
           const SizedBox(height: 12),
+          if (boards.isEmpty && ctrl.canEdit) ...[
+            Container(
+              key: const Key('photos-need-boards'),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: AdinnColors.redLight, borderRadius: BorderRadius.circular(12), border: Border.all(color: AdinnColors.red.withValues(alpha: 0.4))),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const Text('Add the boards first. Every board has its own photos.', style: TextStyle(fontWeight: FontWeight.w700)),
+                if (onAddBoards != null) ...[
+                  const SizedBox(height: 10),
+                  FilledButton.icon(key: const Key('photos-go-boards'), onPressed: onAddBoards, icon: const Icon(Icons.add), label: const Text('Add boards')),
+                ],
+              ]),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (requested.isNotEmpty) ...[
             for (final r in requested) ...[
               _RequestedCard(
@@ -270,14 +358,9 @@ class PhotosTab extends StatelessWidget {
             ],
             const SizedBox(height: 2),
           ],
-          _grid(context, d, requiredPhotoCategories),
-          if (extras.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const Text('Also required for this shop', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-            const SizedBox(height: 2),
-            const Text('The office needs these photos before the shop can be submitted.', style: TextStyle(color: AdinnColors.muted, fontSize: 13)),
-            const SizedBox(height: 10),
-            _grid(context, d, extras),
+          for (final b in boards) ...[
+            if (byBoard && b.key != current?.key) _closedBoard(d, b) else _boardSection(context, d, b, foldable: byBoard),
+            SizedBox(height: byBoard && b.key != current?.key ? 10 : 18),
           ],
           _FilesSection(ctrl: ctrl, onOpenRework: (p) => _openRework(context, p), onRemoveDraft: (p) => _confirmRemove(context, p)),
           // Extra, shown only after photos are uploaded: the boards of this shop as a 2D drawing and a 3D model.
@@ -330,15 +413,19 @@ class _UseFirstPhotoBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AdinnColors.warning.withValues(alpha: 0.45)),
       ),
-      child: CheckboxListTile(
-        key: const Key('test-first-photo-for-all'),
-        value: value,
-        onChanged: (v) => onChanged(v ?? false),
-        controlAffinity: ListTileControlAffinity.leading,
-        activeColor: AdinnColors.warning,
-        dense: true,
-        title: const Text('Use the first photo for all types', style: TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: const Text('For testing only. The first photo you take is also saved for every empty photo type of this shop.', style: TextStyle(fontSize: 12.5)),
+      // A ListTile paints its ink on the nearest Material: inside this coloured box it needs its own, or Flutter asserts (debug builds).
+      child: Material(
+        type: MaterialType.transparency,
+        child: CheckboxListTile(
+          key: const Key('test-first-photo-for-all'),
+          value: value,
+          onChanged: (v) => onChanged(v ?? false),
+          controlAffinity: ListTileControlAffinity.leading,
+          activeColor: AdinnColors.warning,
+          dense: true,
+          title: const Text('Use the first photo for all types', style: TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: const Text('For testing only. The first photo you take is also saved for every empty photo type of this shop.', style: TextStyle(fontSize: 12.5)),
+        ),
       ),
     );
   }
@@ -373,8 +460,49 @@ String _reviewLabel(String s) => switch (s) {
       _ => 'Pending review',
     };
 
+/// Title of one board's photo section: "GSB-01", its size and how many of its photos are taken.
+class _BoardPhotoHeader extends StatelessWidget {
+  const _BoardPhotoHeader({required this.board, required this.done, required this.total, this.onToggle, this.open = true});
+  final BoardItem board;
+  final int done;
+  final int total;
+
+  /// Set when the shop has several boards: the header is then an accordion row and a tap folds ([open]) or opens it.
+  final VoidCallback? onToggle;
+  final bool open;
+
+  @override
+  Widget build(BuildContext context) {
+    final complete = total > 0 && done >= total;
+    final size = board.hasSize ? '${_trim(board.width!)} x ${_trim(board.height!)} ${board.unit.toLowerCase()}' : 'size not entered';
+    final box = Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: complete ? AdinnColors.success.withValues(alpha: 0.08) : AdinnColors.redLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: complete ? AdinnColors.success.withValues(alpha: 0.5) : AdinnColors.red.withValues(alpha: 0.3)),
+      ),
+      child: Row(children: [
+        Icon(Icons.view_in_ar_outlined, color: complete ? AdinnColors.success : AdinnColors.red),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(board.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            Text(onToggle != null && !open ? '$size  |  tap to open the photos' : size, style: const TextStyle(fontSize: 12.5, color: AdinnColors.muted)),
+          ]),
+        ),
+        TagChip('$done / $total', icon: complete ? Icons.check_circle : Icons.photo_camera_outlined, color: complete ? AdinnColors.success : AdinnColors.red),
+        if (onToggle != null) Icon(open ? Icons.expand_less : Icons.expand_more, color: AdinnColors.muted),
+      ]),
+    );
+    return onToggle == null ? box : InkWell(key: ValueKey('board-toggle-${board.key}'), borderRadius: BorderRadius.circular(12), onTap: onToggle, child: box);
+  }
+
+  static String _trim(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+}
+
 class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.cat, required this.photo, required this.pending, required this.onTap, required this.onFlag, this.onImageError});
+  const _CategoryTile({super.key, required this.cat, required this.photo, required this.pending, required this.onTap, required this.onFlag, this.onImageError});
 
   final PhotoCategoryDef cat;
   final ShopPhoto? photo;
@@ -423,7 +551,7 @@ class _CategoryTile extends StatelessWidget {
                     Positioned(
                       top: 6,
                       left: 6,
-                      child: GestureDetector(onTap: () => onFlag(p), child: const _Badge(icon: Icons.flag, color: AdinnColors.red)),
+                      child: GestureDetector(onTap: () => onFlag(p), child: _Badge(icon: p.isRejected ? Icons.cancel : Icons.flag, color: AdinnColors.red)),
                     ),
                 ],
               ),
@@ -462,7 +590,7 @@ class _CategoryTile extends StatelessWidget {
     }
     final p = photo;
     if (p == null) return 'Tap to capture';
-    if (p.needsRework) return 'Rework required';
+    if (p.needsRework) return p.attentionLabel;
     if (p.locationUnverified) return 'Location unverified';
     return _reviewLabel(p.review.status);
   }
@@ -667,6 +795,16 @@ class _FilesSectionState extends State<_FilesSection> {
 
   ShopDetailController get ctrl => widget.ctrl;
 
+  /// "GSB-02 · Front View" when the shop has several boards and the photo belongs to one; else just the category name.
+  String _name(String category, String mediaKey) {
+    final label = photoCategoryLabel(category);
+    if (ctrl.boards.length < 2 || mediaKey.isEmpty) return label;
+    for (final b in ctrl.boards) {
+      if (b.key == mediaKey) return '${b.label} · $label';
+    }
+    return label;
+  }
+
   int _count(PhotoFilter f, ShopDetail d) {
     if (f == PhotoFilter.previous) return ctrl.previousPhotos.length;
     return d.photos.where((p) => p.displayUrl != null && f.matches(p)).length + (f.includesUploads ? ctrl.pending.length : 0);
@@ -713,7 +851,7 @@ class _FilesSectionState extends State<_FilesSection> {
             for (final u in pending)
               AppFileRow(
                 key: ValueKey('up-${u.id}'),
-                name: photoCategoryLabel(u.category),
+                name: _name(u.category, u.mediaKey),
                 subtitle: u.replaces != null ? 'Replacement' : null,
                 localPath: u.path,
                 state: switch (u.status) {
@@ -740,18 +878,21 @@ class _FilesSectionState extends State<_FilesSection> {
 
   Widget _row(ShopPhoto p) {
     final hasNew = p.needsRework && (ctrl.draftReplacementOf(p) != null || ctrl.pendingReplacementOf(p) != null);
+    // A rejected photo shows the reason for rejection under its name (the full note opens with a tap).
+    final why = p.isRejected ? (ctrl.detail?.reworkNoteFor(p)?.reason ?? '') : '';
     final subtitle = [
       if (p.isDraft) 'Draft' else if (p.version != null) 'V${p.version}',
       if (p.replaces != null) 'Replacement',
+      if (why.isNotEmpty) 'Reason: $why',
     ].join(' | ');
     return AppFileRow(
       key: ValueKey('ph-${p.id}'),
-      name: photoCategoryLabel(p.category),
+      name: _name(p.category, p.mediaKey),
       url: p.displayUrl,
       subtitle: subtitle.isEmpty ? null : subtitle,
       flagged: p.needsRework,
       badge: p.needsRework
-          ? (hasNew ? const TagChip('New photo ready', icon: Icons.check_circle, color: AdinnColors.success) : const ReworkTag())
+          ? (hasNew ? const TagChip('New photo ready', icon: Icons.check_circle, color: AdinnColors.success) : ReworkTag(text: p.attentionLabel))
           : (p.isApproved ? const TagChip('Approved', icon: Icons.check_circle, color: AdinnColors.success) : null),
       onTap: p.needsRework ? () => widget.onOpenRework(p) : null,
       onRemove: ctrl.canEdit && p.isDraft ? () => widget.onRemoveDraft(p) : null,
@@ -782,7 +923,7 @@ class _FilesSectionState extends State<_FilesSection> {
       for (final pp in previous)
         AppFileRow(
           key: ValueKey('prev-${pp.photo.id}'),
-          name: photoCategoryLabel(pp.photo.category),
+          name: _name(pp.photo.category, pp.photo.mediaKey),
           url: pp.photo.displayUrl,
           subtitle: '${pp.versionText} | ${pp.photo.supersededBy != null ? 'replaced' : pp.photo.removedAt != null ? 'removed' : 'earlier version'}',
         ),

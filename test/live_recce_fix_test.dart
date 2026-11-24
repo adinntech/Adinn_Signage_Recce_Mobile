@@ -69,7 +69,7 @@ Map<String, dynamic> _rework(List<Map<String, dynamic>> items, {String status = 
       'items': items,
     };
 
-List<ShopPhoto> _six({String state = 'SUBMITTED'}) => [for (final c in requiredPhotoCategories) ShopPhoto.fromJson(_photo('ph-${c.key}', c.key, state: state))];
+List<ShopPhoto> _allBoardPhotos({String state = 'SUBMITTED'}) => [for (final c in boardPhotoCategories) ShopPhoto.fromJson(_photo('ph-${c.key}', c.key, state: state))];
 
 Installation _answered() => Installation(ladderRequired: triYes, scaffoldingRequired: triNo, craneRequired: triNo, hydraRequired: triNo, manualInstallationPossible: triYes);
 
@@ -129,18 +129,18 @@ void main() {
       expect(ShopDetail.fromJson(_detail(required: ['SHOP_FRONT'])).extraPhotoSlots, isEmpty);
     });
 
-    test('validator requires the six PLUS what the server reports missing, and nothing else', () {
+    test('validator requires the seven photos of each board PLUS what the server reports missing, and nothing else', () {
       final missing = [MissingEvidence.fromJson(_missing('NAME_BOARD', label: 'Shop Name Board')), MissingEvidence.fromJson(_missing('DIMENSIONS'))];
       final boards = [BoardItem(key: 'b1', width: 6, height: 4)];
-      expect(validateForSubmit(photos: _six(), boards: boards, installation: _answered(), serverMissing: missing), ['Shop Name Board photo is missing']);
-      expect(validateForSubmit(photos: _six(), boards: boards, installation: _answered()), isEmpty); // server needs nothing more
-      final withNameBoard = [..._six(), ShopPhoto.fromJson(_photo('n1', 'NAME_BOARD'))];
+      expect(validateForSubmit(photos: _allBoardPhotos(), boards: boards, installation: _answered(), serverMissing: missing), ['Shop Name Board photo is missing']);
+      expect(validateForSubmit(photos: _allBoardPhotos(), boards: boards, installation: _answered()), isEmpty); // server needs nothing more
+      final withNameBoard = [..._allBoardPhotos(), ShopPhoto.fromJson(_photo('n1', 'NAME_BOARD'))];
       expect(validateForSubmit(photos: withNameBoard, boards: boards, installation: _answered(), serverMissing: missing), isEmpty);
     });
 
     test('a server-missing entry of one of the six is not repeated', () {
       final missing = [MissingEvidence.fromJson(_missing('SHOP_FRONT'))];
-      final photos = _six().where((p) => p.category != 'SHOP_FRONT').toList();
+      final photos = _allBoardPhotos().where((p) => p.category != 'SHOP_FRONT').toList();
       final p = validateForSubmit(photos: photos, boards: [BoardItem(key: 'b1', width: 6, height: 4)], installation: _answered(), serverMissing: missing);
       expect(p, ['Front View photo is missing']);
     });
@@ -198,7 +198,7 @@ void main() {
     test('above 500 ft is a problem for save and submit; 500 is fine', () {
       expect(Installation(installationHeightFt: 500).heightProblem, isNull);
       expect(Installation(installationHeightFt: 500.5).heightProblem, contains('500'));
-      final p = validateForSubmit(photos: _six(), boards: [BoardItem(key: 'b1', width: 6, height: 4)], installation: _answered()..installationHeightFt = 900);
+      final p = validateForSubmit(photos: _allBoardPhotos(), boards: [BoardItem(key: 'b1', width: 6, height: 4)], installation: _answered()..installationHeightFt = 900);
       expect(p, hasLength(1));
       expect(p.single, contains('500'));
     });
@@ -359,13 +359,22 @@ void main() {
   });
 
   group('13. testing switch: the first photo is used for all types', () {
-    ShopDetail detailWith(List<Map<String, dynamic>> photos, {bool editable = true}) => ShopDetail.fromJson({..._detail(photos: photos), 'editable': editable});
+    // Two boards (GSB-01 = b1, GSB-02 = b2). The server asks for nothing beyond the seven standard photos.
+    ShopDetail detailWith(List<Map<String, dynamic>> photos, {bool editable = true}) => ShopDetail.fromJson({
+          ..._detail(photos: photos),
+          'editable': editable,
+          'mediaItems': [
+            {'key': 'b1', 'name': 'GSB', 'mediaType': 'GSB', 'seq': 1, 'quantity': 1, 'width': 6, 'height': 4, 'unit': 'FT', 'required': ['SHOP_FRONT']},
+            {'key': 'b2', 'name': 'GSB', 'mediaType': 'GSB', 'seq': 2, 'quantity': 1, 'width': 8, 'height': 4, 'unit': 'FT', 'required': ['SHOP_FRONT']},
+          ],
+        });
 
     UploadItem first() => UploadItem(
           id: 'c-first-0001',
           siteId: 's1',
           path: '/shots/first.jpg',
-          category: 'SIDE_VIEW',
+          category: 'LEFT_SIDE',
+          mediaKey: 'b1',
           capturedAt: DateTime.utc(2026, 11, 23, 9),
           lat: 13.04,
           lng: 80.23,
@@ -375,25 +384,27 @@ void main() {
           device: 'web / test',
         );
 
-    test('queues one copy, with its own file and the same capture details, for every type that is still empty', () async {
-      final api = _FakeApi()..onDetail = () async => detailWith([_photo('ph-front', 'SHOP_FRONT')]);
+    test('queues one copy, with its own file and the same capture details, for every board place that is still empty', () async {
+      final api = _FakeApi()..onDetail = () async => detailWith([_photo('ph-front', 'SHOP_FRONT', mediaKey: 'b1')]);
       final queue = UploadQueue(api, autoRetry: false);
       final c = ShopDetailController(api, queue, 's1');
       await c.load();
-      queue.add(UploadItem(id: 'c-wait-0001', siteId: 's1', path: '/shots/wait.jpg', category: 'LONG_SHOT')); // already waiting
+      queue.add(UploadItem(id: 'c-wait-0001', siteId: 's1', path: '/shots/wait.jpg', category: 'LONG_SHOT', mediaKey: 'b1')); // already waiting
       final f = first();
       queue.add(f);
       var n = 0;
-      final copied = await c.queueFirstPhotoForAll(f, requiredPhotoCategories, (path) async => '$path.copy${++n}');
+      final copied = await c.queueFirstPhotoForAll(f, c.photoSlots(), (path) async => '$path.copy${++n}');
       await Future<void>.delayed(Duration.zero);
 
-      // SHOP_FRONT has a stored photo, SIDE_VIEW is the one taken, LONG_SHOT already waits: three types remain.
-      expect(copied, 3);
+      // GSB-01: Front is stored, Left is the one taken, Long Shot waits, so 4 places remain. GSB-02 has nothing: all 7.
+      expect(copied, 11);
       final made = queue.forShop('s1').where((u) => u.id != 'c-wait-0001' && u.id != f.id).toList();
-      expect(made.map((u) => u.category).toSet(), {'ANNOTATED_VIEW', 'LOCATION_VIEW', 'ACCESS_PATH'});
-      expect(made.map((u) => u.path).toSet(), hasLength(3)); // a file each: the queue deletes a file once it is uploaded
+      Set<String> placesOf(String board) => {for (final u in made.where((u) => u.mediaKey == board)) u.category};
+      expect(placesOf('b1'), {'RIGHT_SIDE', 'ANNOTATED_VIEW', 'LOCATION_VIEW', 'ACCESS_PATH'});
+      expect(placesOf('b2'), {for (final c in boardPhotoCategories) c.key});
+      expect(made.map((u) => u.path).toSet(), hasLength(11)); // a file each: the queue deletes a file once it is uploaded
       expect(made.every((u) => u.path.startsWith('/shots/first.jpg.copy')), isTrue);
-      expect(made.map((u) => u.id).toSet(), hasLength(3)); // a client id each, so the server stores each one
+      expect(made.map((u) => u.id).toSet(), hasLength(11)); // a client id each, so the server stores each one
       expect(made.every((u) => u.lat == 13.04 && u.lng == 80.23 && u.accuracy == 7 && u.width == 1600 && u.capturedAt == f.capturedAt && u.device == 'web / test'), isTrue);
       c.dispose();
       queue.dispose();
@@ -404,7 +415,7 @@ void main() {
       final queue = UploadQueue(api, autoRetry: false);
       final c = ShopDetailController(api, queue, 's1');
       await c.load();
-      expect(await c.queueFirstPhotoForAll(first(), requiredPhotoCategories, (p) async => '$p.copy'), 0);
+      expect(await c.queueFirstPhotoForAll(first(), c.photoSlots(), (p) async => '$p.copy'), 0);
       expect(queue.forShop('s1'), isEmpty);
       c.dispose();
       queue.dispose();

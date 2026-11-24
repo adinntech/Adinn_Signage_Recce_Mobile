@@ -10,9 +10,13 @@ const _restrictionChoices = ['Narrow lane', 'Heavy traffic', 'Permission needed'
 
 /// Installation feasibility: Yes / No / Not assessed for each question. Not assessed is never read as No.
 class InstallationTab extends StatefulWidget {
-  const InstallationTab({super.key, required this.ctrl});
+  const InstallationTab({super.key, required this.ctrl, this.onNext});
 
   final ShopDetailController ctrl;
+
+  /// "Continue": opens the next step (Review). The tab has optional fields below the five questions, so it does not jump away by
+  /// itself the moment the fifth answer is given; the person taps this when done.
+  final VoidCallback? onNext;
 
   @override
   State<InstallationTab> createState() => _InstallationTabState();
@@ -118,6 +122,20 @@ class _InstallationTabState extends State<InstallationTab> {
             ],
           ),
         ),
+        if (widget.onNext != null) ...[
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            key: const Key('install-next'),
+            onPressed: _i.unanswered.isEmpty ? widget.onNext : null,
+            icon: const Icon(Icons.arrow_forward),
+            label: const Text('Continue to Review'),
+          ),
+          if (_i.unanswered.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('Still to answer: ${_i.unanswered.join(', ')}', key: const Key('install-open'), textAlign: TextAlign.center, style: const TextStyle(color: AdinnColors.muted, fontSize: 12.5)),
+            ),
+        ],
       ],
     );
   }

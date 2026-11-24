@@ -11,8 +11,9 @@ import '../data/recce_models.dart';
 import 'live_shop_screen.dart';
 import 'live_widgets.dart';
 
-/// Opens one shop; [tab] is one of [ShopTab] (a notification about a message opens the Chat tab).
-void openShop(BuildContext context, String siteId, {int tab = ShopTab.photos}) {
+/// Opens one shop; [tab] is one of [ShopTab] (a notification about a message opens the Chat tab). Null: the shop opens on the step
+/// the person is at (see [LiveShopScreen.initialTab]).
+void openShop(BuildContext context, String siteId, {int? tab}) {
   Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LiveShopScreen(siteId: siteId, initialTab: tab)));
 }
 

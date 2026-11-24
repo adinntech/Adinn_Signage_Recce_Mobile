@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../../../data/catalog/signage_catalog.dart' show SiteQuestion;
+import 'catalog_controller.dart';
+import 'catalog_data.dart';
 import 'recce_api.dart';
 import 'recce_models.dart';
 import 'submit_validator.dart';
@@ -112,10 +115,39 @@ class SubmitOutcome {
   bool get ok => problems.isEmpty && serverError == null;
 }
 
+/// What the person chose for ONE media type on "Add boards": one board is made for each size (the quantity), each with its own number.
+class NewBoards {
+  const NewBoards({
+    required this.mediaCode,
+    required this.mediaType,
+    required this.name,
+    required this.unit,
+    required this.sizes,
+    this.sided = 'SINGLE',
+    this.installationType,
+    this.answers = const {},
+  });
+
+  final String mediaCode;
+  final String mediaType;
+  final String name;
+  final String unit;
+  final List<({double width, double height})> sizes;
+  final String sided;
+  final String? installationType;
+  final Map<String, dynamic> answers;
+}
+
+/// The parts of a board card on the Boards tab, top to bottom.
+enum BoardSection { size, installation }
+
 /// Everything the shop recce screen edits: server detail plus the local board / installation / notes edits.
 class ShopDetailController extends ChangeNotifier {
-  ShopDetailController(this._api, this.queue, this.siteId, {DateTime Function()? clock}) : _clock = clock ?? DateTime.now {
+  ShopDetailController(this._api, this.queue, this.siteId, {DateTime Function()? clock, CatalogController? catalog})
+      : _clock = clock ?? DateTime.now,
+        _catalogCtl = catalog {
     queue.addListener(_onQueue);
+    _catalogCtl?.addListener(_onCatalog);
     _sub = queue.uploaded.listen((s) {
       if (s == siteId) unawaited(refresh());
     });
@@ -130,7 +162,14 @@ class ShopDetailController extends ChangeNotifier {
   final UploadQueue queue;
   final String siteId;
   final DateTime Function() _clock;
+  final CatalogController? _catalogCtl;
   StreamSubscription<String>? _sub;
+
+  static final CatalogData _builtIn = CatalogData.builtIn();
+
+  /// The media catalog the boards are made from: the server's copy, or the one built into the app when none was given or read.
+  CatalogData get catalog => _catalogCtl?.data ?? _builtIn;
+  void _onCatalog() => _notify();
 
   ShopDetail? detail;
   String? loadError;
@@ -247,16 +286,213 @@ class ShopDetailController extends ChangeNotifier {
     return queued;
   }
 
-  /// Every photo place of the saved boards: the seven standard categories plus what the server requires on top, per board.
-  List<PhotoSlot> photoSlots() {
+  /// Every photo place of ONE saved board: the seven standard categories plus what the server requires on top for it.
+  List<PhotoSlot> photoSlotsOf(BoardItem b) {
     final d = detail;
     if (d == null) return const [];
     return [
-      for (final b in d.mediaItems) ...[
-        for (final c in boardPhotoCategories) PhotoSlot(c.key, b.key),
-        for (final c in d.extraTilesFor(b)) PhotoSlot(c.key, b.key),
-      ],
+      for (final c in boardPhotoCategories) PhotoSlot(c.key, b.key),
+      for (final c in d.extraTilesFor(b)) PhotoSlot(c.key, b.key),
     ];
+  }
+
+  /// Every photo place of the saved boards, board after board.
+  List<PhotoSlot> photoSlots() => [for (final b in detail?.mediaItems ?? const <BoardItem>[]) ...photoSlotsOf(b)];
+
+  /// One saved board has all its photos: each place has a live photo, or a picture that is uploading (it is on the phone and on its
+  /// way, so the person has nothing left to take for it). A board the server does not know yet is never done.
+  bool boardPhotosDone(String key) {
+    final d = detail;
+    if (d == null) return false;
+    final board = d.mediaItems.where((b) => b.key == key).firstOrNull;
+    if (board == null) return false;
+    return photoSlotsOf(board).every((s) => d.photoOf(s.category, s.mediaKey) != null || pending.any((u) => u.category == s.category && u.mediaKey == s.mediaKey));
+  }
+
+  /// Whether the server holds board [key] (a board made on the phone is saved at once; photos need that).
+  bool isSaved(String key) => detail?.mediaItems.any((m) => m.key == key) ?? false;
+
+  /// Photos of board [key] that are stored on the server, out of the places it has (0 / 0 for a board the server does not hold).
+  ({int done, int total}) boardPhotoProgress(String key) {
+    final d = detail;
+    final board = d?.mediaItems.where((b) => b.key == key).firstOrNull;
+    if (d == null || board == null) return (done: 0, total: 0);
+    final slots = photoSlotsOf(board);
+    return (done: slots.where((s) => d.photoOf(s.category, s.mediaKey) != null).length, total: slots.length);
+  }
+
+  /// The first saved board (in order) that still lacks photos, or null when every board has them.
+  BoardItem? get firstBoardWithoutPhotos => (detail?.mediaItems ?? const <BoardItem>[]).where((b) => !boardPhotosDone(b.key)).firstOrNull;
+
+  /// The board the person picked (or the flow moved to) as the one being photographed now.
+  String? _focusBoard;
+
+  static const _allClosed = '';
+
+  /// The board whose photos are open on the Photos tab: the one picked or moved to, else the first board that still lacks photos,
+  /// else the last board. Null when the shop has no board, or when the person closed every board.
+  BoardItem? get photoBoard {
+    if (boards.isEmpty || _focusBoard == _allClosed) return null;
+    final picked = boards.where((b) => b.key == _focusBoard).firstOrNull;
+    if (picked != null) return picked;
+    final open = firstBoardWithoutPhotos;
+    return boards.where((b) => b.key == open?.key).firstOrNull ?? boards.last;
+  }
+
+  void focusBoard(String key) {
+    if (_focusBoard == key) return;
+    _focusBoard = key;
+    _notify();
+  }
+
+  /// Folds the open board too, so every board shows as one line (a tap on a line opens it).
+  void closePhotoBoards() {
+    if (_focusBoard == _allClosed) return;
+    _focusBoard = _allClosed;
+    _notify();
+  }
+
+  /* ---- the guided steps: Boards, then Photos, then Install, then Review (the shop screen moves on by itself when one is done) ---- */
+
+  /// Boards step: at least one board, and every board has its media type and its size.
+  bool get boardsDone => boards.isNotEmpty && boards.every((b) => b.name.trim().isNotEmpty && b.quantity >= 1 && b.hasSize);
+
+  /// Photos step: every saved board has all its photos (see [boardPhotosDone]).
+  bool get photosDone {
+    final d = detail;
+    if (d == null || d.mediaItems.isEmpty) return false;
+    return d.mediaItems.every((b) => boardPhotosDone(b.key));
+  }
+
+  /// Install step: the five required answers are given (the rest of the tab is optional).
+  bool get installDone => installation.unanswered.isEmpty && installation.heightProblem == null;
+
+  /// A board changes its media type from the cards. A single older line (no number yet) becomes a numbered board of the new type
+  /// (GSB-01 ...); a line that stands for several boards only takes the name, because one number cannot name several boards.
+  void changeBoardType(BoardItem b, {required String mediaType, required String name, String mediaCode = ''}) {
+    if (b.isNumbered) return; // a numbered board keeps its type: its number and its photos depend on it
+    b.name = name;
+    if (b.quantity == 1) {
+      b.mediaType = mediaType;
+      b.mediaCode = mediaCode;
+      b.seq = nextBoardSeq(boards.where((x) => !identical(x, b)), mediaType);
+    }
+    markDirty();
+  }
+
+  /* ---- per-board installation requirement: the installation method and the site questions of ONE board ---- */
+
+  /// The catalog media type of [b]: by its code, else (a numbered board made before codes were stored) by its name.
+  CatalogMedia? mediaOf(BoardItem b) => catalog.mediaByCode(b.mediaCode) ?? (b.isNumbered ? catalog.mediaByName(b.name) : null);
+
+  /// The installation methods offered for [b] (active ones, in the admin's order).
+  List<CatalogInstallation> installationsOf(BoardItem b) => catalog.installationsFor(mediaOf(b)?.code);
+
+  /// The site questions asked for [b] with the installation it has now.
+  List<SiteQuestion> questionsOf(BoardItem b) => catalog.questionsFor(mediaOf(b)?.code, b.installationType);
+
+  /// Whether [b] must have an installation requirement before the FIRST submit. Not asked again for a resubmission (rework asks only
+  /// for what the reviewer flagged) and not for an older line that was never made from the catalog.
+  bool needsInstallation(BoardItem b) {
+    if ((detail?.version ?? 0) > 0) return false;
+    if (!b.isNumbered && b.mediaCode.isEmpty) return false;
+    return installationsOf(b).isNotEmpty;
+  }
+
+  /// What is still missing of [b]'s installation requirement, as sentences ("GSB-01: choose the installation type"). Empty = done.
+  List<String> installationProblems(BoardItem b) {
+    if (!needsInstallation(b)) return const [];
+    final who = boards.length > 1 ? '${b.label}: ' : '';
+    final chosen = b.installationType;
+    if (chosen == null || chosen.isEmpty) return ['${who}choose the installation type'];
+    return [for (final q in catalog.missingAnswers(mediaOf(b)?.code, chosen, b.answers)) '${who}answer "${q.label}"'];
+  }
+
+  bool boardInstallDone(BoardItem b) => installationProblems(b).isEmpty;
+
+  /// Choosing another installation method keeps the answers (the questions they belong to may come back); they are tidied at save.
+  void setInstallation(BoardItem b, String code) {
+    if (b.installationType == code) return;
+    b.installationType = code;
+    markDirty();
+  }
+
+  void setAnswer(BoardItem b, String id, Object? value) {
+    if (value == null) {
+      b.answers.remove(id);
+    } else {
+      b.answers[id] = value;
+    }
+    markDirty();
+  }
+
+  /// Before a save: an answer to a question this catalog knows but that no longer applies to the board's installation is dropped
+  /// (the server holds at most 60 answers per board). An answer whose key this phone does not know is kept as it is.
+  void _pruneAnswers() {
+    final known = {for (final q in catalog.questions) q.id};
+    for (final b in boards) {
+      final media = mediaOf(b);
+      if (media == null) continue;
+      final applicable = {for (final q in catalog.questionsFor(media.code, b.installationType)) q.id};
+      b.answers.removeWhere((k, _) => known.contains(k) && !applicable.contains(k));
+    }
+  }
+
+  /* ---- the Boards tab: which card is open, and quantity per media type ---- */
+
+  String? _openCard; // null = automatic (a shop with one board shows it open); '' = every card closed
+  BoardSection? cardSection;
+
+  bool boardCardOpen(String key) => _openCard == null ? boards.length == 1 : _openCard == key;
+
+  void toggleBoardCard(String key) {
+    _openCard = boardCardOpen(key) ? '' : key;
+    cardSection = null;
+    _notify();
+  }
+
+  /// Opens the card of [key] (one at a time) and, with [section], asks it to bring that section into view.
+  void openBoardCard(String key, {BoardSection? section}) {
+    _openCard = key;
+    cardSection = section;
+    _notify();
+  }
+
+  /// The section a card was asked to show, once: the card reads it when it opens and the request is forgotten.
+  BoardSection? takeCardSection(String key) {
+    if (_openCard != key) return null;
+    final s = cardSection;
+    cardSection = null;
+    return s;
+  }
+
+  /// The numbered boards of one media type, in number order ("quantity" of that type).
+  List<BoardItem> boardsOfType(String mediaType) => [for (final b in boards) if (b.isNumbered && b.mediaType == mediaType) b]..sort((a, b) => a.seq.compareTo(b.seq));
+
+  /// "+" on a media type: one more board like the last one of its type (same size, installation and answers, its own number and
+  /// photos). Saved at once (its photos need a saved board).
+  Future<String?> addBoardLike(BoardItem like) => addBoards([
+        NewBoards(
+          mediaCode: like.mediaCode,
+          mediaType: like.mediaType,
+          name: like.name,
+          unit: like.unit,
+          sided: like.sided,
+          sizes: [(width: like.width ?? 0, height: like.height ?? 0)],
+          installationType: like.installationType,
+          answers: Map<String, dynamic>.of(like.answers),
+        ),
+      ]);
+
+  /// "-" on a media type: the board with the highest number of that type goes (it must have no photos). Saved with the draft.
+  /// Returns the reason when it cannot, else null.
+  String? removeLastOfType(String mediaType) {
+    final list = boardsOfType(mediaType);
+    if (list.length <= 1) return 'A media type keeps at least one board. Use the bin to remove it.';
+    final last = list.last;
+    if (boardHasPhotos(last.key)) return '${last.label} has photos, so it cannot be removed. Delete its draft photos first.';
+    removeBoard(last);
+    return null;
   }
 
   /// Whether the board has a live photo or an upload on its way (the server will not remove such a board).
@@ -264,15 +500,57 @@ class ShopDetailController extends ChangeNotifier {
 
   /// "Add boards": one board per physical unit, each with its own key and number (GSB-01, GSB-02 ...) and its own size. The
   /// boards are saved at once, so their photos can be linked to them on the server. Returns the error text, or null.
-  Future<String?> addBoardsOfType({required String mediaType, required String name, required String unit, required List<({double width, double height})> sizes}) async {
-    if (sizes.isEmpty) return 'Choose how many boards to add.';
-    if (boards.length + sizes.length > maxBoardItems) return 'A shop can hold $maxBoardItems boards.';
-    for (final s in sizes) {
-      final key = nextBoardKey(boards.map((b) => b.key));
-      boards.add(BoardItem(key: key, name: name, mediaType: mediaType, seq: nextBoardSeq(boards, mediaType), unit: unit, width: s.width, height: s.height));
+  Future<String?> addBoardsOfType({
+    required String mediaType,
+    required String name,
+    required String unit,
+    required List<({double width, double height})> sizes,
+    String sided = 'SINGLE',
+    String mediaCode = '',
+  }) =>
+      addBoards([NewBoards(mediaCode: mediaCode, mediaType: mediaType, name: name, unit: unit, sizes: sizes, sided: sided)]);
+
+  /// Several media types in ONE save (the multi-select "Add boards"): each spec makes one board per size, numbered after the boards
+  /// of its type the shop already has. Nothing is kept when the save is refused. Returns the error text, or null.
+  Future<String?> addBoards(List<NewBoards> specs) async {
+    if (!canEdit) return 'This shop is locked. Boards cannot be added now.';
+    final total = specs.fold<int>(0, (n, s) => n + s.sizes.length);
+    if (total == 0) return 'Choose how many boards to add.';
+    if (specs.any((s) => s.sizes.any((z) => z.width <= 0 || z.height <= 0))) return 'Enter the width and height of every board.';
+    if (boards.length + total > maxBoardItems) return 'A shop can hold $maxBoardItems boards.';
+    final before = boards.length;
+    final wasDirty = dirty;
+    final newKeys = <String>[];
+    for (final spec in specs) {
+      for (final s in spec.sizes) {
+        final key = nextBoardKey(boards.map((b) => b.key));
+        newKeys.add(key);
+        boards.add(BoardItem(
+          key: key,
+          name: spec.name,
+          mediaType: spec.mediaType,
+          mediaCode: spec.mediaCode,
+          seq: nextBoardSeq(boards, spec.mediaType),
+          unit: spec.unit,
+          width: s.width,
+          height: s.height,
+          sided: spec.sided,
+          installationType: spec.installationType,
+          answers: Map<String, dynamic>.of(spec.answers),
+        ));
+      }
     }
     markDirty();
-    return saveDraft();
+    final err = await saveDraft();
+    if (err != null) {
+      boards.removeRange(before, boards.length); // not saved: do not keep boards the server does not know
+      dirty = wasDirty;
+      _notify();
+    } else {
+      focusBoard(newKeys.first); // the photos of the first board just added come next
+      openBoardCard(newKeys.first);
+    }
+    return err;
   }
 
   /// Queues [item]. When it takes the place of an older DRAFT photo ([stale]) that draft is deleted from the server once the new
@@ -485,6 +763,7 @@ class ShopDetailController extends ChangeNotifier {
     if (boards.isEmpty) return noBoardsSaveMessage;
     final tooTall = installation.heightProblem;
     if (tooTall != null) return tooTall;
+    _pruneAnswers();
     busy = true;
     _notify();
     try {
@@ -505,6 +784,7 @@ class ShopDetailController extends ChangeNotifier {
         photos: detail?.photos ?? const [],
         boards: boards,
         installation: installation,
+        installationProblems: [for (final b in boards) ...installationProblems(b)],
         pendingUploads: pending.length,
         reworks: detail?.reworks ?? const [],
         pendingReplaces: {for (final u in pending) ?u.replaces},
@@ -567,6 +847,7 @@ class ShopDetailController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     queue.removeListener(_onQueue);
+    _catalogCtl?.removeListener(_onCatalog);
     _sub?.cancel();
     super.dispose();
   }

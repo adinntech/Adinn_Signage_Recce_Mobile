@@ -1461,6 +1461,359 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       rig.dispose();
     });
+
+    // Guided flow: Boards, then Photos, then Install, then Review. The screen moves on when a step is finished.
+    List<Map<String, dynamic>> sevenPhotos(int take) => [for (final c in boardPhotoCategories.take(take)) _photoJson('p_${c.key}', c.key)];
+
+    testWidgets('a shop with no board opens on Boards (photos need a board), not on an empty Photos list', (tester) async {
+      _phone(tester, height: 6000); // a tall screen: the test font is wide, so the texts run to many lines
+      final api = _M3Api()..detailJson = {..._detailJson(photos: const []), 'mediaItems': <Map<String, dynamic>>[]};
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('add-boards')), findsOneWidget); // the Boards tab
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('the tabs follow the work: Boards first, then Photos, Install, Review, Chat', (tester) async {
+      _phone(tester);
+      final rig = _Rig(_M3Api()..detailJson = _detailJson(photos: sevenPhotos(3)));
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      final x = [for (final t in ['Boards', 'Photos', 'Install', 'Review', 'Chat']) tester.getTopLeft(find.text(t)).dx];
+      expect(x, orderedEquals([...x]..sort()));
+      expect(x.toSet(), hasLength(5));
+      expect(ShopTab.boards, 0);
+      expect(ShopTab.photos, 1);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('a shop opens on the step the person is at: boards done, photos missing = Photos', (tester) async {
+      _phone(tester);
+      final rig = _Rig(_M3Api()..detailJson = _detailJson(photos: sevenPhotos(3)));
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Required photos 3 of 7'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('a shop with all photos taken opens on Installation, the next step; a tab that is asked for stays', (tester) async {
+      _phone(tester);
+      final api = _M3Api()..detailJson = _detailJson(photos: sevenPhotos(7));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('Installation feasibility'), findsOneWidget);
+      expect(find.text('Required photos 7 of 7'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+
+      // opened on Photos on purpose (a deep link): it stays there, nothing moves by itself
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1', initialTab: ShopTab.photos)));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('Required photos 7 of 7'), findsOneWidget);
+      expect(find.text('Installation feasibility'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('a shop with every step done opens on Review', (tester) async {
+      _phone(tester);
+      final api = _M3Api()
+        ..detailJson = {
+          ..._detailJson(photos: sevenPhotos(7)),
+          'installation': {'ladderRequired': 'YES', 'scaffoldingRequired': 'NO', 'craneRequired': 'NO', 'hydraRequired': 'NO', 'manualInstallationPossible': 'YES'},
+        };
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Installation feasibility'), findsNothing);
+      expect(find.text('Required photos 7 of 7'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('"another board?" fits a small window: nothing is cut off and nothing overflows', (tester) async {
+      _phone(tester, height: 1500); // 500 logical px high: the old sheet (9/16 of the height) overflowed here
+      final api = _M3Api()..detailJson = _detailJson(photos: sevenPhotos(6));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      api.detailJson = _detailJson(photos: sevenPhotos(7));
+      unawaited(tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('photos-add-another')), findsOneWidget);
+      expect(find.byKey(const Key('photos-continue')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('the last photo of the only board asks "another board?"; "No more boards" goes on to Installation', (tester) async {
+      _phone(tester);
+      final api = _M3Api()..detailJson = _detailJson(photos: sevenPhotos(6));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Required photos 6 of 7'), findsOneWidget);
+
+      api.detailJson = _detailJson(photos: sevenPhotos(7)); // the seventh picture arrived on the server
+      await tester.drag(find.text('Required photos 6 of 7'), const Offset(0, 500)); // pull down: read the shop again
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1)); // the shop is read again
+      await tester.pump(const Duration(seconds: 1)); // the short pause is over, the question comes up
+      await tester.pumpAndSettle();
+      expect(find.text('GSB (b1) photos complete'), findsOneWidget);
+      expect(find.byKey(const Key('photos-add-another')), findsOneWidget);
+      expect(find.text('Installation feasibility'), findsNothing); // it asks first
+
+      await tester.tap(find.byKey(const Key('photos-continue')));
+      await tester.pumpAndSettle();
+      expect(find.text('Installation feasibility'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('"Add another board" opens the media type cards; closing the question leaves the person on Photos', (tester) async {
+      _phone(tester);
+      final api = _M3Api()..detailJson = _detailJson(photos: sevenPhotos(6));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      api.detailJson = _detailJson(photos: sevenPhotos(7));
+      await tester.drag(find.text('Required photos 6 of 7'), const Offset(0, 500));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('photos-add-another')));
+      await tester.pumpAndSettle();
+      expect(find.text('Add boards'), findsWidgets);
+      expect(find.byKey(const Key('media_GSB')), findsOneWidget); // the same cards as everywhere
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    // Two boards: only the one being photographed is open; when it is complete the next one opens by itself.
+    Map<String, dynamic> boardPhoto(String board, String category) => {..._photoJson('${board}_$category', category), 'mediaKey': board};
+    Map<String, dynamic> twoBoards(int firstBoardPhotos) => {
+          ..._detailJson(photos: [for (final c in boardPhotoCategories.take(firstBoardPhotos)) boardPhoto('b1', c.key)]),
+          'mediaItems': [
+            {'key': 'b1', 'name': 'GSB', 'quantity': 1, 'width': 6, 'height': 4, 'unit': 'FT', 'required': <String>[]},
+            {'key': 'b2', 'name': 'GSB', 'quantity': 1, 'width': 8, 'height': 4, 'unit': 'FT', 'required': <String>[]},
+          ],
+        };
+
+    testWidgets('with two boards only the first one is open; its last photo opens the second one by itself and says so', (tester) async {
+      _phone(tester, height: 9000);
+      tester.view.physicalSize = const Size(1320, 9000); // a wider test screen: the test font is wider than the real one, so the uploaded-file rows fit
+      final api = _M3Api()..detailJson = twoBoards(6);
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tile-b1-SHOP_FRONT')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tile-b2-SHOP_FRONT')), findsNothing);
+      expect(find.byKey(const ValueKey('board-row-b2')), findsOneWidget); // the second board is one closed line
+      expect(find.byKey(const ValueKey('board-row-b1')), findsNothing);
+
+      api.detailJson = twoBoards(7); // the seventh picture of the first board arrived
+      unawaited(tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show()); // the same read a pull down makes
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('Required photos 7 of 14'), findsOneWidget); // the shop was read again
+      expect(find.byKey(const ValueKey('tile-b2-SHOP_FRONT')), findsOneWidget);
+      expect(find.text('GSB (b1) photos done. Next: photos of GSB (b2).'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tile-b1-SHOP_FRONT')), findsNothing);
+      expect(find.byKey(const ValueKey('board-row-b1')), findsOneWidget); // the finished one folded into a line
+      expect(find.byKey(const Key('photos-add-another')), findsNothing); // it does not ask while a board still lacks photos
+
+      // a tap on a closed line opens that board again
+      await tester.tap(find.byKey(const ValueKey('board-row-b1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tile-b1-SHOP_FRONT')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tile-b2-SHOP_FRONT')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('every board folds into one line, the open one too; a tap on a line opens that board', (tester) async {
+      _phone(tester, height: 9000);
+      tester.view.physicalSize = const Size(1320, 9000); // a wider test screen, see the test above
+      final api = _M3Api()..detailJson = twoBoards(2);
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tile-b1-SHOP_FRONT')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('board-toggle-b1'))); // the open board's own line folds it
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tile-b1-SHOP_FRONT')), findsNothing);
+      expect(find.byKey(const ValueKey('tile-b2-SHOP_FRONT')), findsNothing);
+      expect(find.byKey(const ValueKey('board-row-b1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('board-row-b2')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('board-row-b2')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tile-b2-SHOP_FRONT')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tile-b1-SHOP_FRONT')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    // ---- per-board installation requirement in the flow: photos, then the board's installation, then the next board ----
+    Map<String, dynamic> gsbBoard(String key, int seq, {Map<String, dynamic> extra = const {}}) =>
+        {'key': key, 'name': 'GSB Board (Glow Sign Board)', 'mediaType': 'GSB', 'seq': seq, 'mediaCode': 'GSB', 'quantity': 1, 'width': 6, 'height': 4, 'unit': 'FT', 'required': <String>[], ...extra};
+    const fascia = <String, dynamic>{
+      'installationType': 'shop_fascia',
+      'answers': {
+        'fascia_material': 'Concrete',
+        'shutter_height': 9,
+        'neighbour_clearance': true,
+        'power_available': true,
+        'light_type': 'LED modules',
+        'existing_board': false,
+        'access_method': 'Ladder',
+        'owner_permission': true,
+      },
+    };
+    List<Map<String, dynamic>> photosOf(String board, [int n = 7]) => [for (final c in boardPhotoCategories.take(n)) {..._photoJson('${board}_${c.key}', c.key), 'mediaKey': board}];
+    Map<String, dynamic> shopWith(List<Map<String, dynamic>> boards, List<Map<String, dynamic>> photos) => {..._detailJson(photos: photos), 'mediaItems': boards};
+    void wide(WidgetTester tester) {
+      _phone(tester, height: 9000);
+      tester.view.physicalSize = const Size(1320, 21000); // a wider and taller test screen: an open board card with its questions is long
+    }
+
+    Future<void> readAgain(WidgetTester tester) async {
+      unawaited(tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show()); // the same read a pull down makes
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the last photo of a board whose installation is still open takes the person to THAT board\'s installation', (tester) async {
+      wide(tester);
+      final api = _M3Api()..detailJson = shopWith([gsbBoard('b1', 1)], photosOf('b1', 6));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Required photos 6 of 7'), findsOneWidget); // opens on the photos: the board's size is in, photos are missing
+
+      api.detailJson = shopWith([gsbBoard('b1', 1)], photosOf('b1', 7)); // the seventh picture arrived
+      await readAgain(tester);
+      expect(find.byKey(const Key('inst_b1_shop_fascia')), findsOneWidget); // the Boards tab, the card open on its installation
+      expect(find.text('GSB-01 photos done. Next: installation of GSB-01.'), findsOneWidget);
+      expect(find.byKey(const Key('photos-add-another')), findsNothing); // the board is not complete yet: no "another board?"
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('when the installation is already complete the last photo asks "another board?" as before', (tester) async {
+      wide(tester);
+      final api = _M3Api()..detailJson = shopWith([gsbBoard('b1', 1, extra: fascia)], photosOf('b1', 6));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      api.detailJson = shopWith([gsbBoard('b1', 1, extra: fascia)], photosOf('b1', 7));
+      await readAgain(tester);
+      expect(find.text('GSB-01 photos complete'), findsOneWidget);
+      expect(find.byKey(const Key('photos-continue')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('a shop with all photos taken but an open installation opens on that board\'s installation (not on the site Install tab)', (tester) async {
+      wide(tester);
+      final api = _M3Api()..detailJson = shopWith([gsbBoard('b1', 1)], photosOf('b1'));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('inst_b1_shop_fascia')), findsOneWidget);
+      expect(find.text('Installation feasibility'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('Next on a finished board goes to the photos of the next board that has none, and says so', (tester) async {
+      wide(tester);
+      final api = _M3Api()..detailJson = shopWith([gsbBoard('b1', 1, extra: fascia), gsbBoard('b2', 2)], photosOf('b1'));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1', initialTab: ShopTab.boards)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('bcard-b1')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(find.byKey(const Key('bnext-b1'))).onPressed, isNotNull);
+      await tester.tap(find.byKey(const Key('bnext-b1')));
+      await tester.pumpAndSettle();
+      expect(find.text('GSB-01 done. Next: photos of GSB-02.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tile-b2-SHOP_FRONT')), findsOneWidget); // the Photos tab, GSB-02 open
+      expect(find.byKey(const ValueKey('tile-b1-SHOP_FRONT')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('Next goes to the open installation of another board, board by board', (tester) async {
+      wide(tester);
+      final api = _M3Api()..detailJson = shopWith([gsbBoard('b1', 1, extra: fascia), gsbBoard('b2', 2)], [...photosOf('b1'), ...photosOf('b2')]);
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1', initialTab: ShopTab.boards)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('bcard-b1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('bnext-b1')));
+      await tester.pumpAndSettle();
+      expect(find.text('GSB-01 done. Next: installation of GSB-02.'), findsOneWidget);
+      expect(find.byKey(const Key('inst_b2_shop_fascia')), findsOneWidget); // GSB-02 opened on its installation
+      expect(find.byKey(const Key('inst_b1_shop_fascia')), findsNothing); // GSB-01 folded
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('Next on the last complete board asks "another board?"; Continue goes to the site Install tab', (tester) async {
+      wide(tester);
+      final api = _M3Api()..detailJson = shopWith([gsbBoard('b1', 1, extra: fascia)], photosOf('b1'));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1', initialTab: ShopTab.boards)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('bnext-b1'))); // one board: its card is open
+      await tester.pumpAndSettle();
+      expect(find.text('GSB-01 complete'), findsOneWidget);
+      expect(find.byKey(const Key('photos-add-another')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('photos-continue')));
+      await tester.pumpAndSettle();
+      expect(find.text('Installation feasibility'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
+
+    testWidgets('a person who already left the Photos tab is not pulled back or forward when the last photo lands', (tester) async {
+      _phone(tester, height: 6000); // a tall screen: the test font is wide, so the texts run to many lines
+      tester.view.physicalSize = const Size(1320, 6000); // wider too: the uploaded-file rows fit
+      final api = _M3Api()..detailJson = _detailJson(photos: sevenPhotos(6));
+      final rig = _Rig(api);
+      await tester.pumpWidget(rig.host(const LiveShopScreen(siteId: 's1')));
+      await tester.pumpAndSettle();
+
+      api.detailJson = _detailJson(photos: sevenPhotos(7));
+      await tester.drag(find.text('Required photos 6 of 7'), const Offset(0, 500));
+      await tester.pump();
+      await tester.tap(find.text('Boards')); // goes to Boards within the pause
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.byKey(const Key('add-boards')), findsOneWidget); // still on the Boards tab
+      expect(find.text('Installation feasibility'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      rig.dispose();
+    });
   });
 
   group('notifications screen', () {

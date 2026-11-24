@@ -13,9 +13,11 @@ import 'live_register_screen.dart';
 const _roleCards = [
   (role: LiveRole.recceExecutive, key: 'RECCE', label: 'Recce', hint: 'Field execution', icon: Icons.travel_explore),
   (role: LiveRole.vendor, key: 'VENDOR', label: 'Vendor', hint: 'Field vendors', icon: Icons.storefront_outlined),
+  (role: LiveRole.admin, key: 'ADMIN', label: 'Admin', hint: 'Media catalog', icon: Icons.admin_panel_settings_outlined),
 ];
 
-/// Live sign in: Recce card (email / employee ID + MPIN or password) and Vendor card (vendor ID digits).
+/// Live sign in: Recce and Admin cards (email / employee ID + MPIN or password) and Vendor card (vendor ID digits).
+/// The Admin card is for the administrator, who manages the media catalog on the phone.
 class LiveLoginScreen extends StatefulWidget {
   const LiveLoginScreen({super.key});
 
@@ -30,6 +32,7 @@ class _LiveLoginScreenState extends State<LiveLoginScreen> {
   String? _identifierError;
 
   bool get _isVendor => _role == LiveRole.vendor;
+  bool get _isAdmin => _role == LiveRole.admin;
 
   @override
   void dispose() {
@@ -79,7 +82,11 @@ class _LiveLoginScreenState extends State<LiveLoginScreen> {
     final error = auth.error;
     return LiveAuthScaffold(
       title: 'Welcome back',
-      subtitle: _isVendor ? 'Enter the last 4 digits of your vendor ID' : 'Sign in with your password or MPIN',
+      subtitle: _isVendor
+          ? 'Enter the last 4 digits of your vendor ID'
+          : _isAdmin
+              ? 'Administrator sign in: manage the media catalog'
+              : 'Sign in with your password or MPIN',
       child: AutofillGroup(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -138,18 +145,20 @@ class _LiveLoginScreenState extends State<LiveLoginScreen> {
                 ),
               ),
               AuthButton(label: 'Login', busy: busy, onPressed: _submit),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('New here?'),
-                  TextButton(
-                    onPressed: busy
-                        ? null
-                        : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LiveRegisterScreen())),
-                    child: const Text('Create an account'),
-                  ),
-                ],
-              ),
+              // An administrator account is made on the web, never from the phone.
+              if (!_isAdmin)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('New here?'),
+                    TextButton(
+                      onPressed: busy
+                          ? null
+                          : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LiveRegisterScreen())),
+                      child: const Text('Create an account'),
+                    ),
+                  ],
+                ),
             ],
             const Divider(height: 28),
             Center(

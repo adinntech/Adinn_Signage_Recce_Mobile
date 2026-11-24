@@ -85,9 +85,9 @@ class _ReworkSheetState extends State<ReworkSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  const Icon(Icons.flag, color: AdinnColors.red),
+                  Icon(p.isRejected || (note?.rejected ?? false) ? Icons.cancel : Icons.flag, color: AdinnColors.red),
                   const SizedBox(width: 8),
-                  const Expanded(child: Text('Rework required', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AdinnColors.red))),
+                  Expanded(child: Text(p.isRejected || (note?.rejected ?? false) ? 'Rejected' : 'Rework required', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AdinnColors.red))),
                   TagChip(photoCategoryLabel(p.category), icon: Icons.photo_camera_outlined),
                 ]),
                 const SizedBox(height: 12),

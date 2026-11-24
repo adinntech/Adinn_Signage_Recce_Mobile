@@ -1,7 +1,9 @@
 /// Roles that sign in on the mobile app. Others (BD, Operations, ...) use the web CRM.
+/// The administrator (SUPER_ADMIN) signs in on the phone only to manage the media catalog: see [AdminHomeShell].
 enum LiveRole {
   recceExecutive('RECCE_EXECUTIVE', 'Recce Executive'),
   vendor('VENDOR', 'Vendor'),
+  admin('SUPER_ADMIN', 'Administrator'),
   other('OTHER', 'Other');
 
   const LiveRole(this.code, this.label);
@@ -11,7 +13,11 @@ enum LiveRole {
   static LiveRole parse(String? code) =>
       LiveRole.values.firstWhere((r) => r.code == code, orElse: () => LiveRole.other);
 
-  bool get isFieldStaff => this != LiveRole.other;
+  /// Recce executives and vendors: the people who do the field work (shops, photos, chat).
+  bool get isFieldStaff => this == LiveRole.recceExecutive || this == LiveRole.vendor;
+
+  /// Every role the phone accepts at sign in: the field staff and the administrator.
+  bool get signsInOnPhone => this != LiveRole.other;
 }
 
 /// The signed-in person as the backend returns it.
@@ -35,6 +41,9 @@ class LiveUser {
 
   /// Vendor login made by the office with a default MPIN: a new MPIN must be set first.
   final bool mustChangeMpin;
+
+  /// The administrator: the phone shows the Media catalog screens instead of the field screens.
+  bool get isAdmin => role == LiveRole.admin;
 
   factory LiveUser.fromJson(Map<String, dynamic> j) {
     final vendor = j['vendor'];

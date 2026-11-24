@@ -5,10 +5,12 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/splash_screen.dart';
 import 'data/services/location_service.dart';
 import 'features/auth/login_screen.dart';
+import 'features/catalog_admin/admin_home_shell.dart';
 import 'features/home/home_shell.dart';
 import 'features/live_auth/presentation/live_auth_controller.dart';
 import 'features/live_auth/presentation/live_change_mpin_screen.dart';
 import 'features/live_auth/presentation/live_login_screen.dart';
+import 'features/live_recce/data/catalog_controller.dart';
 import 'features/live_recce/data/chat_controller.dart';
 import 'features/live_recce/data/dashboard_controller.dart';
 import 'features/live_recce/data/live_services.dart';
@@ -58,6 +60,7 @@ class _AdinnRecceAppState extends State<AdinnRecceApp> {
           ChangeNotifierProvider<ChatHub>.value(value: widget.live!.chat),
           ChangeNotifierProvider<FieldDashboardController>.value(value: widget.live!.dashboard),
           ChangeNotifierProvider<NotificationsController>.value(value: widget.live!.notifications),
+          ChangeNotifierProvider<CatalogController>.value(value: widget.live!.catalog),
         ],
       ],
       child: MaterialApp(
@@ -92,6 +95,8 @@ class RootGate extends StatelessWidget {
     final user = auth.user;
     if (user != null) {
       if (user.mustChangeMpin) return const LiveChangeMpinScreen();
+      // The administrator gets the Media catalog screens only; the field screens are for Recce and Vendor logins.
+      if (user.isAdmin) return AdminHomeShell(key: ValueKey(user.id));
       return LiveHomeShell(key: ValueKey(user.id));
     }
     if (c.isLoggedIn) return HomeShell(key: ValueKey(c.currentUser!.id));

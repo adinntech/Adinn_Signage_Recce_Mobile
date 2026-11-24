@@ -92,8 +92,8 @@ Map<String, dynamic> _detail({List<Map<String, dynamic>>? photos, List<Map<Strin
       'reworks': reworks ?? <Map<String, dynamic>>[],
     };
 
-List<ShopPhoto> _allSix({Map<String, double?> lat = const {}}) => [
-      for (final c in requiredPhotoCategories) ShopPhoto.fromJson(_photo('ph-${c.key}', c.key, lat: lat.containsKey(c.key) ? lat[c.key] : 13.04)),
+List<ShopPhoto> _allBoardPhotos({Map<String, double?> lat = const {}}) => [
+      for (final c in boardPhotoCategories) ShopPhoto.fromJson(_photo('ph-${c.key}', c.key, lat: lat.containsKey(c.key) ? lat[c.key] : 13.04)),
     ];
 
 Installation _answered() => Installation(
@@ -377,19 +377,19 @@ void main() {
 
   group('submit validator', () {
     test('passes when everything is present', () {
-      final p = validateForSubmit(photos: _allSix(), boards: [BoardItem(key: 'b1', width: 6, height: 4)], installation: _answered());
+      final p = validateForSubmit(photos: _allBoardPhotos(), boards: [BoardItem(key: 'b1', width: 6, height: 4)], installation: _answered());
       expect(p, isEmpty);
     });
 
     test('lists missing photos by name', () {
-      final photos = _allSix().where((p) => p.category != 'SIDE_VIEW' && p.category != 'ACCESS_PATH').toList();
+      final photos = _allBoardPhotos().where((p) => p.category != 'LEFT_SIDE' && p.category != 'ACCESS_PATH').toList();
       final p = validateForSubmit(photos: photos, boards: [BoardItem(key: 'b1', width: 6, height: 4)], installation: _answered());
-      expect(p, containsAll(['Side View photo is missing', 'Access Path photo is missing']));
+      expect(p, containsAll(['Left View photo is missing', 'Access Path photo is missing']));
       expect(p, hasLength(2));
     });
 
     test('a photo without GPS blocks submit', () {
-      final photos = _allSix(lat: {'LONG_SHOT': null});
+      final photos = _allBoardPhotos(lat: {'LONG_SHOT': null});
       final p = validateForSubmit(photos: photos, boards: [BoardItem(key: 'b1', width: 6, height: 4)], installation: _answered());
       expect(p.single, contains('Long Shot'));
       expect(p.single, contains('GPS'));
@@ -397,7 +397,7 @@ void main() {
 
     test('a weak-accuracy photo with coordinates is still allowed (the server flags it)', () {
       final photos = [
-        for (final c in requiredPhotoCategories) ShopPhoto.fromJson(_photo('x${c.key}', c.key, acc: 300, verified: false)),
+        for (final c in boardPhotoCategories) ShopPhoto.fromJson(_photo('x${c.key}', c.key, acc: 300, verified: false)),
       ];
       final p = validateForSubmit(photos: photos, boards: [BoardItem(key: 'b1', width: 6, height: 4)], installation: _answered());
       expect(p, isEmpty);
@@ -405,7 +405,7 @@ void main() {
 
     test('every board needs width, height and quantity', () {
       final p = validateForSubmit(
-        photos: _allSix(),
+        photos: _allBoardPhotos(),
         boards: [BoardItem(key: 'b1', width: 6, height: 4), BoardItem(key: 'b2', quantity: 0, width: null, height: 0)],
         installation: _answered(),
       );
@@ -416,7 +416,7 @@ void main() {
     });
 
     test('no boards, unanswered installation and pending uploads are reported', () {
-      final p = validateForSubmit(photos: _allSix(), boards: const [], installation: Installation(ladderRequired: triYes), pendingUploads: 2);
+      final p = validateForSubmit(photos: _allBoardPhotos(), boards: const [], installation: Installation(ladderRequired: triYes), pendingUploads: 2);
       expect(p, contains('Add at least one board'));
       expect(p.any((e) => e.startsWith('Installation not answered') && e.contains('Scaffolding') && !e.contains('Ladder')), isTrue);
       expect(p, contains('2 photos are still uploading'));

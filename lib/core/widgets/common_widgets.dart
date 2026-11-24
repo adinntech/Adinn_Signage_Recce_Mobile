@@ -1,10 +1,34 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/models/enums.dart';
 import '../theme/app_theme.dart';
 
-/// Text-based Adinn wordmark (no image assets needed).
+/// Path of the original Adinn logo: the same artwork as the website sidebar (`Adinn_Logo.svg`), rendered to PNG.
+const adinnLogoAsset = 'assets/images/adinn_logo.png';
+
+/// Loads and decodes the logo into the image cache BEFORE the first screen is drawn, so the start-up screen has it in its very first
+/// frame (an image that is loaded when first drawn appears a moment late, most visibly on Chrome). Gives up after two seconds: the
+/// logo then simply loads the usual way, nothing waits for it longer than that. Never throws.
+Future<void> preloadAdinnLogo() async {
+  final done = Completer<void>();
+  final stream = const AssetImage(adinnLogoAsset).resolve(ImageConfiguration.empty);
+  late final ImageStreamListener listener;
+  void finish() {
+    if (!done.isCompleted) done.complete();
+    stream.removeListener(listener);
+  }
+
+  listener = ImageStreamListener((_, _) => finish(), onError: (_, _) => finish());
+  stream.addListener(listener);
+  await done.future.timeout(const Duration(seconds: 2), onTimeout: () {});
+}
+
+/// The original Adinn logo (the website's own artwork, not a redrawn one). [size] sets the scale (the logo is about 1.45 x [size]
+/// high and keeps its shape). On a coloured background pass [light]: the logo then sits on a white rounded plate, so its own red
+/// and black stay exactly as designed.
 class AdinnLogo extends StatelessWidget {
   const AdinnLogo({super.key, this.size = 34, this.light = false});
 
@@ -13,39 +37,27 @@ class AdinnLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = light ? Colors.white : AdinnColors.red;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: size * 1.05,
-          height: size * 1.05,
-          decoration: BoxDecoration(
-            color: light ? Colors.white : AdinnColors.red,
-            borderRadius: BorderRadius.circular(size * 0.28),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            'a',
-            style: TextStyle(
-              color: light ? AdinnColors.red : Colors.white,
-              fontSize: size * 0.78,
-              fontWeight: FontWeight.w900,
-              height: 1.0,
-            ),
-          ),
-        ),
-        SizedBox(width: size * 0.25),
-        Text(
-          'adinn',
-          style: TextStyle(
-            color: fg,
-            fontSize: size * 0.9,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.5,
-          ),
-        ),
-      ],
+    final h = size * 1.45;
+    // The box has the logo's own shape (125 x 47) from the first frame, so nothing shifts when the picture arrives; a picture that
+    // had to be loaded fades in (one that was preloaded is simply there).
+    final logo = SizedBox(
+      width: h * 125 / 47,
+      height: h,
+      child: Image.asset(
+        adinnLogoAsset,
+        height: h,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        semanticLabel: 'Adinn Advertising Services',
+        frameBuilder: (_, child, frame, loadedAtOnce) =>
+            loadedAtOnce ? child : AnimatedOpacity(opacity: frame == null ? 0 : 1, duration: const Duration(milliseconds: 200), child: child),
+      ),
+    );
+    if (!light) return logo;
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: size * 0.4, vertical: size * 0.2),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(size * 0.45)),
+      child: logo,
     );
   }
 }

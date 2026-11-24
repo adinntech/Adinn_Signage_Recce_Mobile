@@ -87,7 +87,7 @@ class _ChatRefPickerSheetState extends State<ChatRefPickerSheet> {
                           _tile(
                             ChatRef(ChatRefType.photo, p.id),
                             title: Text(d!.categoryLabel(p.category)),
-                            subtitle: [if (p.isDraft) 'Draft' else if (p.version != null) 'V${p.version}', if (p.needsRework) 'Rework required'].join(' | '),
+                            subtitle: [if (p.isDraft) 'Draft' else if (p.version != null) 'V${p.version}', if (p.needsRework) p.attentionLabel].join(' | '),
                             leading: SizedBox(width: 44, height: 44, child: ClipRRect(borderRadius: BorderRadius.circular(8), child: AppFileRow.image(p.displayUrl, null, cacheWidth: 120))),
                           ),
                         if (boards.isNotEmpty) _heading('Boards'),

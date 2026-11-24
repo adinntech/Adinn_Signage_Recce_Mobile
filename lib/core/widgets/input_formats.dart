@@ -22,6 +22,20 @@ List<TextInputFormatter> decimalFormat({int places = 2, int maxLength = 9}) => [
       LengthLimitingTextInputFormatter(maxLength),
     ];
 
+/// A code or key the administrator types (media code GSB_2D, installation code wall_mount, question key fascia_material): letters,
+/// digits and `_` only, at most [max], changed to capitals ([upper]) or small letters as it is typed.
+List<TextInputFormatter> codeFormat({required int max, bool upper = false}) => [
+      FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9_]')),
+      TextInputFormatter.withFunction((o, n) => n.copyWith(text: upper ? n.text.toUpperCase() : n.text.toLowerCase())),
+      LengthLimitingTextInputFormatter(max),
+    ];
+
+/// Free text the administrator types (a name, a label, an option): no `<` or `>` and no control characters, at most [max].
+List<TextInputFormatter> safeTextFormat(int max) => [
+      FilteringTextInputFormatter.deny(RegExp(r'[<>\u0000-\u001f]')),
+      LengthLimitingTextInputFormatter(max),
+    ];
+
 /// The country code shown inside every mobile number box (not typed, not part of the value).
 const String phonePrefix = '+91 ';
 

@@ -486,11 +486,15 @@ class PhotoRework {
     this.instructions = '',
     this.resolved = false,
     this.resolvedInVersion,
+    this.rejected = false,
   });
 
   final String reworkId;
   final String itemId;
   final String photoId;
+
+  /// The reviewer rejected this photo: [note] is the reason for rejection.
+  final bool rejected;
   final String stage;
   final String stageLabel;
   final String? requestedBy;
@@ -512,6 +516,7 @@ class PhotoRework {
         instructions: (j['instructions'] ?? '').toString(),
         resolved: j['resolved'] == true,
         resolvedInVersion: j['resolvedInVersion'] is num ? (j['resolvedInVersion'] as num).toInt() : null,
+        rejected: j['rejected'] == true,
       );
 }
 
@@ -567,7 +572,7 @@ class PhotoHistory {
       out.add(PhotoHistoryLine(
         at: w.requestedAt,
         kind: 'rework',
-        title: '${w.stageLabel} requested rework${w.resolved ? ' (done${w.resolvedInVersion != null ? ' in V${w.resolvedInVersion}' : ''})' : ''}',
+        title: '${w.stageLabel} ${w.rejected ? 'rejected this photo' : 'requested rework'}${w.resolved ? ' (done${w.resolvedInVersion != null ? ' in V${w.resolvedInVersion}' : ''})' : ''}',
         detail: [if (w.note.isNotEmpty) w.note, if (w.instructions.isNotEmpty && w.instructions != w.note) w.instructions].join('\n'),
         who: w.requestedBy ?? '',
       ));
@@ -745,7 +750,7 @@ enum PhotoFilter {
 /// What one rework item asks for, in words: "Replace Front View: Board not clear", "Correct the size of b1: Width is 8 ft".
 String reworkItemText(ReworkItem i) {
   final what = switch (i.type) {
-    'REPLACE_PHOTO' => 'Replace ${i.categoryLabel ?? 'the marked photo'}',
+    'REPLACE_PHOTO' => i.rejected ? 'Rejected: retake ${i.categoryLabel ?? 'the marked photo'}' : 'Replace ${i.categoryLabel ?? 'the marked photo'}',
     'ADDITIONAL_PHOTO' => 'Add ${i.categoryLabel ?? 'a photo'}',
     'FIX_MEASUREMENT' => 'Correct the size of ${i.mediaKey.isEmpty ? 'a board' : i.mediaKey}',
     _ => 'Other',
