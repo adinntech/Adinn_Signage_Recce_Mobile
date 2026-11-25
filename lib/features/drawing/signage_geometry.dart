@@ -198,18 +198,27 @@ class SignageGeometry {
     double? recFt(String id) => rec[id] == null ? null : rec[id]! / 304.8;
     final selectedMedia = SignageCatalog.media(b.mediaCode);
     final media = selectedMedia ?? SignageCatalog.mediaTypes.first;
-    var inst = b.installationCode;
+    // The unit's own installation (override, else the group's).
+    var inst = mu != null ? b.installationOf(mu) : b.installationCode;
     final installationSelected =
         inst != null && SignageCatalog.installation(inst) != null;
-    if (!installationSelected) inst = media.installations.first;
+    if (!installationSelected) inst = media.installations.isEmpty
+          ? SignageCatalog.shopFascia
+          : media.installations.first;
     final installation = inst;
-    final a = b.answers;
+    // This physical board's own answers (group map for the first unit).
+    final a = SignageCatalog.answersOf(b, mu);
 
-    final hasSize = b.hasSize;
-    final w = (widthFt ?? (hasSize ? b.widthFt : defaultWidthFt))
+    // An explicitly requested unit uses its OWN size (different sizes);
+    // without a unit the historical group size is used as before.
+    final unitSized = unit != null && b.unitHasSize(unit);
+    final hasSize = unitSized || b.hasSize;
+    final ownW = unitSized ? b.unit.toFeet(b.widthOf(unit)!) : b.widthFt;
+    final ownH = unitSized ? b.unit.toFeet(b.heightOf(unit)!) : b.heightFt;
+    final w = (widthFt ?? (hasSize ? ownW : defaultWidthFt))
         .clamp(0.1, 2000.0)
         .toDouble();
-    final h = (heightFt ?? (hasSize ? b.heightFt : defaultHeightFt))
+    final h = (heightFt ?? (hasSize ? ownH : defaultHeightFt))
         .clamp(0.1, 2000.0)
         .toDouble();
 

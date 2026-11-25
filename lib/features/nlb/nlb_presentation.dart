@@ -9,9 +9,9 @@ const Color _supportSteel = Color(0xFF454C54);
 const Color _backingGrey = Color(0xFFC4C6C9);
 
 /// NLB Single Frame (rulebook NON_LIT): a slim single-plane steel frame –
-/// perimeter plus the vertical supports at the Section-07 bay stations – in
-/// FRONT of the advertising / backing surface, so the pipes stay visible
-/// (unlike the flex-covered box). The 1 in section is the app's configured
+/// perimeter plus the vertical supports at the Section-07 bay stations –
+/// BEHIND one continuous advertising flex (viewer → print → steel → rear),
+/// as in the physical installation. The 1 in section is the app's configured
 /// SHS profile (illustrative until the profile is confirmed); no GSB box,
 /// depth connectors, braces, GI, powder coat or LEDs. Horizontal intermediate
 /// supports (>= 7 ft) are NOT drawn: their position is not specified.
@@ -34,14 +34,25 @@ class NlbSinglePresentation {
   final Color backing;
   final Color printColor;
 
+  /// Visual thickness of the stretched flex sheet (≈1.2 mm). Presentation
+  /// only – it is NOT a fabrication/BOM value. It keeps the printed face and
+  /// the sheet's reverse surface from sharing a depth plane with the steel.
+  static const double flexThicknessFt = 0.004;
+
   double get depthFt => profileIn / 12;
 }
 
 class NlbSingleBoard {
   NlbSingleBoard._();
 
-  /// Perimeter + vertical support members (all share [memberName]) and the
-  /// backing surface ([flexName]). Front at z = 0, rear at z = −profile.
+  /// One continuous flex sheet ([flexName]) in front of the perimeter and
+  /// vertical support members (all sharing [memberName]).
+  ///
+  /// Scene depth: printed face z = 0, flex reverse z = −flexThicknessFt,
+  /// steel from −flexThicknessFt to −(flexThicknessFt + profile). The frame
+  /// therefore cannot interrupt the print at any front angle, while from the
+  /// rear the pipes remain separate solids in front of the unprinted flex
+  /// reverse (open bays show flex, not a black backing panel).
   static List<Solid> build(
     NlbSinglePresentation c, {
     String memberName = 'board',
@@ -50,32 +61,37 @@ class NlbSingleBoard {
     double fin(double v, double min) => v.isFinite && v > min ? v : min;
     final w = fin(c.widthFt, 0.5), h = fin(c.heightFt, 0.5);
     final p = math.min(fin(c.profileIn, 0.2) / 12, math.min(w, h) / 6);
+    final ft = NlbSinglePresentation.flexThicknessFt;
     final b = c.bottomFt.isFinite ? c.bottomFt : 0.0;
     final t = b + h, x0 = -w / 2, x1 = w / 2;
     Solid bar(Vec3 min, Vec3 max, Color color) =>
         Shapes.box(min, max, color, name: memberName);
     final out = <Solid>[
+      // Single full-size sheet: front label, plain reverse, no gaps between
+      // structural members and no second printed rear surface.
       Solid(
         name: flexName,
-        faces: [
-          Shapes.frontQuad(
-            x0 + p,
-            b + p,
-            x1 - p,
-            t - p,
-            -p * 0.9, // behind the pipes (painter orders by centroid depth)
-            c.backing,
-            label: c.brand,
-            labelColor: c.printColor,
-            layer: 0,
-            outline: false,
-          ),
-        ],
+        faces: Shapes.boxFaces(
+          Vec3(x0, b, -ft),
+          Vec3(x1, t, 0),
+          c.backing,
+          labels: {BoxSide.front: c.brand},
+          labelColor: c.printColor,
+          outline: false,
+        ),
       ),
-      bar(Vec3(x0, t - p, -p), Vec3(x1, t, 0), _frameSteel),
-      bar(Vec3(x0, b, -p), Vec3(x1, b + p, 0), _frameSteel),
-      bar(Vec3(x0, b + p, -p), Vec3(x0 + p, t - p, 0), _frameSteel),
-      bar(Vec3(x1 - p, b + p, -p), Vec3(x1, t - p, 0), _frameSteel),
+      bar(Vec3(x0, t - p, -ft - p), Vec3(x1, t, -ft), _frameSteel),
+      bar(Vec3(x0, b, -ft - p), Vec3(x1, b + p, -ft), _frameSteel),
+      bar(
+        Vec3(x0, b + p, -ft - p),
+        Vec3(x0 + p, t - p, -ft),
+        _frameSteel,
+      ),
+      bar(
+        Vec3(x1 - p, b + p, -ft - p),
+        Vec3(x1, t - p, -ft),
+        _frameSteel,
+      ),
     ];
     // Vertical supports at the rulebook bay stations (none when the width
     // has no approved bay rule: reported as Requires Review, not invented).
@@ -88,8 +104,8 @@ class NlbSingleBoard {
       final x = x0 + s / 12;
       out.add(
         bar(
-          Vec3(x - p * 0.4, b + p, -p),
-          Vec3(x + p * 0.4, t - p, 0),
+          Vec3(x - p * 0.4, b + p, -ft - p),
+          Vec3(x + p * 0.4, t - p, -ft),
           _supportSteel,
         ),
       );

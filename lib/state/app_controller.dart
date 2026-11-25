@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/utils/formatters.dart';
 import '../data/catalog/measurement_fields.dart';
+import '../data/catalog/question_equivalence.dart';
 import '../data/catalog/signage_catalog.dart';
 import '../data/catalog/site_checklists.dart';
 import '../data/mock/mock_seed.dart';
@@ -15,6 +16,19 @@ import '../data/storage/media_storage.dart';
 import '../features/model3d/signage_spec.dart';
 import '../features/references/reference_rules.dart';
 import '../features/survey/feasibility.dart';
+
+/// Workflow section that resolves a blocking issue.
+enum IssueSection { media, details, installation, questions, photos }
+
+/// One blocking validation issue of a media group, pointing at the physical
+/// board ([unitId], null = whole group) and the section that resolves it.
+class BoardIssue {
+  const BoardIssue(this.text, this.section, {this.unitId});
+
+  final String text;
+  final IssueSection section;
+  final String? unitId;
+}
 
 /// Aggregated counts for a set of shops.
 class ProgressSummary {
@@ -611,6 +625,80 @@ class AppController extends ChangeNotifier {
     return board;
   }
 
+  /// Creates the media groups confirmed in the Add Media Type popup, in one
+  /// operation (nothing is created while the vendor is still choosing).
+  /// Existing boards are never modified. Throws on an invalid plan.
+  List<Board> addMediaGroups(
+    String shopId,
+    List<MediaGroupPlan> plans, {
+    int? totalBoards,
+  }) {
+    final s = shop(shopId);
+    if (s == null) throw StateError('Shop not found');
+    if (!canEdit(s)) throw StateError('This recce is read-only now');
+    // Validate against the total the vendor actually requested (not only a
+    // total recomputed from the plans).
+    final total = totalBoards ?? plans.fold<int>(0, (t, p) => t + p.quantity);
+    final err = SignageCatalog.validateGroupPlans(total, plans);
+    if (err != null) throw ArgumentError(err);
+    if (plans.any((p) => p.quantity > maxQuantity)) {
+      throw ArgumentError('At most $maxQuantity boards per media type.');
+    }
+    final created = <Board>[];
+    for (final p in plans) {
+      final b = Board(
+        id: newId('b'),
+        name: '',
+        mediaCode: p.option.mediaCode,
+        doubleSided: p.option.doubleSided,
+        nlbSubtype: p.option.nlbSubtype,
+        quantity: p.quantity,
+        checklistRequired: true,
+      );
+      b.name = SignageCatalog.nextBoardName(b, s.boards);
+      s.boards.add(b);
+      created.add(b);
+    }
+    touchShop(
+      s,
+      title: 'Media types added',
+      message:
+          '${created.map((b) => '${b.name} ×${b.quantity}').join(', ')} '
+          'added to ${s.name}.',
+    );
+    return created;
+  }
+
+  /// In-memory marker of the last explicit "Save as Draft" per board.
+  final Map<String, DateTime> _draftSavedAt = {};
+
+  /// [b] was explicitly saved as a draft and has not changed since.
+  bool isDraftSaved(Board b) {
+    final saved = _draftSavedAt[b.id];
+    return saved != null && !b.updatedAt.isAfter(saved);
+  }
+
+  /// True when switching away from [b] should offer "Save as Draft?":
+  /// the board is incomplete and changed since the last explicit save.
+  bool needsDraftPrompt(Board b) {
+    if (boardIssues(b).isEmpty) return false;
+    final saved = _draftSavedAt[b.id];
+    return saved == null || b.updatedAt.isAfter(saved);
+  }
+
+  /// Saves [b] as a draft (local store; no submission validation). Returns
+  /// false when the write failed, so the caller stays on the board.
+  Future<bool> saveDraft(String shopId, Board b) async {
+    final s = shop(shopId);
+    if (s == null) return false;
+    // Reuses the normal local write queue; a failed write sets
+    // [storageError] (already surfaced with Retry on the home screen).
+    await retrySave();
+    if (storageError != null) return false;
+    _draftSavedAt[b.id] = b.updatedAt;
+    return true;
+  }
+
   Board duplicateBoard(String shopId, String boardId) {
     final s = shop(shopId)!;
     final src = board(shopId, boardId)!;
@@ -923,6 +1011,18 @@ class AppController extends ChangeNotifier {
       c.overlays.removeWhere((o) => ids.contains(o.unitId));
     }
     _forgetArUnits(s, ids);
+    // [Board.answers] belongs to the first unit. When that unit is removed,
+    // the next unit becomes first: its own answers move into the group map
+    // and the removed unit's answers are archived (not lost).
+    final first = SignageCatalog.firstUnit(b);
+    final next = b.units.where((u) => !ids.contains(u.id)).firstOrNull;
+    if (first != null && ids.contains(first.id) && next != null) {
+      for (final e in b.answers.entries) {
+        b.answersArchive.putIfAbsent(e.key, () => e.value);
+      }
+      b.answers = Map<String, dynamic>.from(next.siteAnswers);
+      next.siteAnswers = {};
+    }
     b.units.removeWhere((u) => ids.contains(u.id));
     b.quantity = math.max(1, b.units.length);
     b.syncUnits();
@@ -999,6 +1099,206 @@ class AppController extends ChangeNotifier {
   }
 
   /// Persists edits made directly on a unit's fields.
+  // ---------------------------------------------------------------------------
+  // Per-board installation, naming and common answers
+  // ---------------------------------------------------------------------------
+
+  /// Names a group after its media ("GSB Single 01") only while its name is
+  /// still app-generated; a manually edited name is never touched.
+  void autoNameBoard(String shopId, Board b) {
+    final s = shop(shopId);
+    if (s == null || SignageCatalog.media(b.mediaCode) == null) return;
+    if (!SignageCatalog.isAutoBoardName(b.name)) return;
+    b.name = SignageCatalog.nextBoardName(b, s.boards);
+  }
+
+  /// After a media / subtype change: a unit override that is not valid for
+  /// the new media is cleared (never silently kept or substituted).
+  void dropInvalidUnitInstallations(Board b) {
+    for (final u in b.units) {
+      final code = u.installationCode;
+      if (code != null && !SignageCatalog.allowsInstallation(b, code)) {
+        u.installationCode = null;
+      }
+    }
+  }
+
+  /// Editor step last shown per board (in memory), so switching media tabs
+  /// returns to the same place.
+  final Map<String, int> editorStep = {};
+
+  /// Physical board last selected in the editor per media group (memory).
+  final Map<String, String> editorUnit = {};
+
+  /// Sets ONE unit's installation (its own override). The group code and the
+  /// other units are never touched. Returns false when [code] is not a valid
+  /// choice for this media / variant.
+  bool setUnitInstallation(
+    String shopId,
+    Board b,
+    SignageUnit u,
+    String? code,
+  ) {
+    final s = shop(shopId);
+    if (s == null || !canEdit(s)) return false;
+    if (code != null && !SignageCatalog.allowsInstallation(b, code)) {
+      return false;
+    }
+    u.installationCode = code;
+    touchUnit(
+      shopId,
+      b,
+      u,
+      message:
+          '${b.name} ${SignageCatalog.unitName(b, u)}: installation '
+          '${SignageCatalog.installation(b.installationOf(u))?.name ?? '—'}.',
+    );
+    return true;
+  }
+
+  /// "Same Installation": explicit action that applies [code] to the group
+  /// and clears every unit override (callers confirm when overrides differ).
+  bool setSameInstallation(String shopId, Board b, String code) {
+    final s = shop(shopId);
+    if (s == null || !canEdit(s)) return false;
+    if (!SignageCatalog.allowsInstallation(b, code)) return false;
+    b.installationCode = code;
+    for (final u in b.units) {
+      u.installationCode = null;
+    }
+    touchBoard(
+      shopId,
+      b,
+      title: 'Board updated',
+      message:
+          '${b.name}: installation set to '
+          '${SignageCatalog.installation(code)?.name ?? code} for all boards.',
+    );
+    return true;
+  }
+
+  /// Copies the common, applicable answers of [source] into [target]. Only
+  /// unanswered target fields are filled unless [overwrite] is true. The
+  /// values are copied (no live link); provenance is stored on the target.
+  /// Returns the number of answers written.
+  int copyCommonAnswers(
+    String shopId,
+    Board source,
+    Board target, {
+    bool overwrite = false,
+    Set<String>? onlyIds,
+    SignageUnit? sourceUnit,
+    SignageUnit? targetUnit,
+  }) {
+    final s = shop(shopId);
+    if (s == null || !canEdit(s)) return 0;
+    final su = sourceUnit ?? SignageCatalog.firstUnit(source);
+    final tu = targetUnit ?? SignageCatalog.firstUnit(target);
+    if (su == null || tu == null) return 0;
+    if (source.id == target.id && su.id == tu.id) return 0;
+    final plan = SignageCatalog.planUnitAnswers(source, su, target, tu);
+    final qs = [...plan.toCopy, if (overwrite) ...plan.wouldOverwrite];
+    final from = SignageCatalog.answersOf(source, su);
+    final to = SignageCatalog.answersOf(target, tu);
+    var n = 0;
+    for (final q in qs) {
+      if (onlyIds != null && !onlyIds.contains(q.id)) continue;
+      final v = from[q.id];
+      // Independent value (no shared mutable reference).
+      to[q.id] = v is List ? [...v] : (v is Map ? {...v} : v);
+      QuestionEquivalence.syncToChecklist(target, tu, q.id);
+      n++;
+    }
+    // Common checklist-only questions (never evidence, never installation
+    // specific, never answers the target already has unless overwriting).
+    final cqs = [
+      ...plan.toCopyChecklist,
+      if (overwrite) ...plan.wouldOverwriteChecklist,
+    ];
+    for (final q in cqs) {
+      final r = su.checklist[q.id];
+      if (r == null || !r.hasValue) continue;
+      tu.checklist[q.id] = ChecklistResponse(
+        questionId: q.id,
+        value: r.value,
+        remarks: r.remarks,
+      );
+      n++;
+    }
+    if (n == 0) return 0;
+    // Provenance (source + time) lives in the activity log entry below; the
+    // answers map itself only ever holds real question ids.
+    touchBoard(
+      shopId,
+      target,
+      title: 'Common answers copied',
+      message:
+          '${SignageCatalog.unitName(target, tu)}: $n answer(s) copied from '
+          '${SignageCatalog.unitName(source, su)}.',
+    );
+    return n;
+  }
+
+  /// Saves one Site Question answer of ONE physical board (null = cleared).
+  /// Mirrored structure answers update only that unit's measurements.
+  void setUnitAnswer(
+    String shopId,
+    Board b,
+    SignageUnit u,
+    String questionId,
+    Object? value,
+  ) {
+    final a = SignageCatalog.answersOf(b, u);
+    if (value == null) {
+      a.remove(questionId);
+    } else {
+      a[questionId] = value;
+    }
+    _syncUnitAnswerToMeasurements(b, u, questionId, a[questionId]);
+    // One answer for both validation systems (verified equivalents only).
+    QuestionEquivalence.syncToChecklist(b, u, questionId);
+    touchBoard(shopId, b);
+  }
+
+  void _syncUnitAnswerToMeasurements(
+    Board b,
+    SignageUnit u,
+    String answerId,
+    Object? v,
+  ) {
+    final target = kAnswerMirrors[answerId];
+    final isShutter = answerId == 'shutter_height';
+    if (target == null && !isShutter) return;
+    final inst = b.installationOf(u);
+    if (target == 'bottom_height' && answerId != mountAnswerKey(inst)) return;
+    final d = v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
+    final id = isShutter ? 'bottom_height' : target!;
+    if (d == null) {
+      u.measurements.valuesMm.remove(id);
+      u.measurements.counts.remove(id);
+    } else if (id == 'pipe_count') {
+      u.measurements.counts[id] = d;
+    } else {
+      u.measurements.valuesMm[id] = (isShutter ? d + 0.5 : d) * 304.8;
+    }
+  }
+
+  /// Required Site Questions still unanswered for unit [u] (its own
+  /// installation + answers) PLUS its required site-checklist questions.
+  /// This is the single count shown by the Site Questions step.
+  int siteQuestionsPendingFor(Board b, SignageUnit u) {
+    var n = SignageCatalog.missingAnswersFor(b, u).length;
+    // Checklist-only questions; verified equivalents are counted above.
+    if (b.checklistRequired) n += SiteChecklists.uniqueMissing(b, u).length;
+    return n;
+  }
+
+  /// [siteQuestionsPendingFor] summed over every active physical board.
+  int siteQuestionsPending(Board b) {
+    if (b.activeUnits.isEmpty) return SignageCatalog.missingAnswers(b).length;
+    return b.activeUnits.fold(0, (s, u) => s + siteQuestionsPendingFor(b, u));
+  }
+
   void touchUnit(String shopId, Board b, SignageUnit u, {String? message}) {
     touchBoard(
       shopId,
@@ -1263,18 +1563,39 @@ class AppController extends ChangeNotifier {
     final from = b.unitById(fromUnitId);
     if (from == null || from.checklist.isEmpty) return 0;
     var n = 0;
+    final fromInst = b.installationOf(from);
     for (final u in b.activeUnits) {
       if (u.id == from.id) continue;
-      u.checklist = {
-        for (final e in from.checklist.entries)
-          e.key: ChecklistResponse(
-            questionId: e.key,
-            value: e.value.value,
-            remarks: e.value.remarks,
-            answeredAt: _clock(),
-          ),
+      // Only questions that apply to THIS board's installation and are not
+      // answered yet are copied; evidence, installation-specific answers
+      // and verified Site Question equivalents are never cloned.
+      final applicable = {
+        for (final q in SiteChecklists.questionsFor(
+          b.mediaCode,
+          b.installationOf(u),
+        ))
+          q.id: q,
       };
-      n++;
+      final mapped = QuestionEquivalence.mappedChecklistIds(b, u);
+      var copied = 0;
+      for (final e in from.checklist.entries) {
+        final q = applicable[e.key];
+        if (q == null ||
+            mapped.contains(q.id) ||
+            q.type == ChecklistResponseType.photoEvidence ||
+            (q.installations != null && b.installationOf(u) != fromInst)) {
+          continue;
+        }
+        if (q.isAnswered(u.checklist[q.id])) continue;
+        u.checklist[q.id] = ChecklistResponse(
+          questionId: q.id,
+          value: e.value.value,
+          remarks: e.value.remarks,
+          answeredAt: _clock(),
+        );
+        copied++;
+      }
+      if (copied > 0) n++;
     }
     if (n > 0) {
       touchBoard(
@@ -1444,7 +1765,9 @@ class AppController extends ChangeNotifier {
     if (target == null && !isShutter) return;
     final v = b.answers[answerId];
     final d = v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
-    for (final u in b.activeUnits) {
+    // [Board.answers] belongs to the group's first unit only (other units
+    // own their answers): never push one board's value into another board.
+    for (final u in b.activeUnits.take(1)) {
       final inst = b.installationOf(u);
       if (target == 'bottom_height' && answerId != mountAnswerKey(inst)) {
         continue;
@@ -1481,10 +1804,8 @@ class AppController extends ChangeNotifier {
     b.legacyMediaCode ??= from;
     b.mediaCode = newCode;
     if (m.sidedness == MediaSidedness.selectable) b.doubleSided = doubleSided;
-    if (!m.installations.contains(b.installationCode)) {
-      b.installationCode = m.installations.length == 1
-          ? m.installations.first
-          : null;
+    if (!SignageCatalog.allowsInstallation(b, b.installationCode)) {
+      b.installationCode = null;
     }
     touchBoard(
       shopId,
@@ -1499,6 +1820,8 @@ class AppController extends ChangeNotifier {
   /// Sets single / double-sided for media with a selectable sidedness.
   void setDoubleSided(String shopId, Board b, bool doubleSided) {
     b.doubleSided = doubleSided;
+    dropInvalidUnitInstallations(b);
+    autoNameBoard(shopId, b);
     touchBoard(
       shopId,
       b,
@@ -1573,6 +1896,13 @@ class AppController extends ChangeNotifier {
     if (subtype != 'NLB_SINGLE_FRAME' && subtype != 'NLB_BOX_FRAME') return;
     b.nlbSubtype = subtype;
     b.doubleSided = subtype == 'NLB_BOX_FRAME';
+    // Projecting Mount exists only for Box Frame; never keep an invalid value.
+    if (b.installationCode != null &&
+        !SignageCatalog.allowsInstallation(b, b.installationCode)) {
+      b.installationCode = null;
+    }
+    dropInvalidUnitInstallations(b);
+    autoNameBoard(shopId, b);
     touchBoard(
       shopId,
       b,
@@ -2382,51 +2712,102 @@ class AppController extends ChangeNotifier {
   // Validation
   // ---------------------------------------------------------------------------
 
-  List<String> boardIssues(Board b) {
-    final issues = <String>[];
+  /// Blocking issues as text (same wording as before; see
+  /// [boardIssueDetails] for the board / section each one points to).
+  List<String> boardIssues(Board b) => [
+    for (final i in boardIssueDetails(b)) i.text,
+  ];
+
+  /// Canonical blocking validation of a media group: every issue knows the
+  /// physical board (unit) and workflow section that resolves it.
+  List<BoardIssue> boardIssueDetails(Board b) {
+    final issues = <BoardIssue>[];
+    void add(String text, IssueSection section, [String? unitId]) =>
+        issues.add(BoardIssue(text, section, unitId: unitId));
     final media = SignageCatalog.media(b.mediaCode);
     if (media == null) {
-      issues.add('Select a media type');
+      add('Select a media type', IssueSection.media);
     }
-    if (b.installationCode == null) {
-      issues.add('Select an installation type');
-    } else if (media != null &&
-        !media.installations.contains(b.installationCode)) {
-      issues.add('Installation type not valid for ${media.shortName}');
+    // Each unit resolves its own installation (override, else the group's).
+    final missingInst = [
+      for (final u in b.activeUnits)
+        if (b.installationOf(u) == null) u,
+    ];
+    if (b.activeUnits.isEmpty ? b.installationCode == null : missingInst.isNotEmpty) {
+      add(
+        missingInst.isNotEmpty && missingInst.length < b.activeUnits.length
+            ? 'Select an installation type for '
+                  '${missingInst.map((u) => SignageCatalog.unitName(b, u)).join(', ')}'
+            : 'Select an installation type',
+        IssueSection.installation,
+        missingInst.isEmpty ? null : missingInst.first.id,
+      );
+    } else if (!SignageCatalog.installationComplete(b)) {
+      add(
+        'Installation type not valid for ${media?.shortName ?? b.mediaCode}',
+        IssueSection.installation,
+      );
     }
-    if (media != null && b.installationCode != null) {
+    if (media != null && b.activeUnits.isEmpty &&
+        SignageCatalog.primaryInstallation(b) != null) {
       final missing = SignageCatalog.missingAnswers(b).length;
       if (missing > 0) {
-        issues.add('Answer $missing site question${missing == 1 ? '' : 's'}');
+        add(
+          'Answer $missing site question${missing == 1 ? '' : 's'}',
+          IssueSection.questions,
+        );
       }
     }
     if (media != null) {
       for (final u in b.activeUnits) {
         final unit = b.quantity > 1 ? ' for ${b.unitLabel(u)}' : '';
-        final st = SiteChecklists.statusOf(b, u);
-        if (b.checklistRequired && st.total > 0 && !st.isComplete) {
-          final n = st.missingRequired.length;
-          issues.add(
+        // Site Questions of THIS board, for its own installation.
+        if (b.installationOf(u) != null) {
+          final missing = SignageCatalog.missingAnswersFor(b, u).length;
+          if (missing > 0) {
+            add(
+              'Answer $missing site question${missing == 1 ? '' : 's'}$unit',
+              IssueSection.questions,
+              u.id,
+            );
+          }
+        }
+        final uniq = SiteChecklists.uniqueMissing(b, u);
+        if (b.checklistRequired && uniq.isNotEmpty) {
+          final n = uniq.length;
+          add(
             'Complete the site checklist$unit ($n required question'
             '${n == 1 ? '' : 's'} left)',
+            IssueSection.questions,
+            u.id,
           );
         }
         final errors = MeasurementCatalog.errors(b, u);
         if (errors.isNotEmpty) {
-          issues.add('Fix measurements$unit: ${errors.first.message}');
+          add(
+            'Fix measurements$unit: ${errors.first.message}',
+            IssueSection.details,
+            u.id,
+          );
         }
       }
     }
     if (b.isSameSize) {
-      if (!b.hasSize) issues.add('Enter board width and height');
+      if (!b.hasSize) add('Enter board width and height', IssueSection.details);
     } else {
       for (final u in b.activeUnits) {
         if (!b.unitHasSize(u)) {
-          issues.add('Enter width and height for ${b.unitLabel(u)}');
+          add(
+            'Enter width and height for ${b.unitLabel(u)}',
+            IssueSection.details,
+            u.id,
+          );
         }
       }
     }
-    if (b.photos.isEmpty) issues.add('Capture at least one site photo');
+    if (b.photos.isEmpty) {
+      add('Capture at least one site photo', IssueSection.photos);
+    }
     return issues;
   }
 

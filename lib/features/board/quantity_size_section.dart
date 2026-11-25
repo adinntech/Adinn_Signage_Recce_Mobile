@@ -11,7 +11,10 @@ import '../../state/app_controller.dart';
 import '../survey/markup_entry.dart';
 import 'units_screen.dart';
 
-final _numFmt = [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}'))];
+// Anchored so a second decimal point cannot slip through the formatter.
+final _numFmt = [
+  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}$')),
+];
 
 String? _sizeError(String text) {
   final t = text.trim();
@@ -24,7 +27,7 @@ String? _sizeError(String text) {
 
 /// Quantity-based dimension workflow of a media group:
 /// * quantity 1 → the normal width × height form, nothing else asked;
-/// * quantity ≥ 2 → "Are all signage units the same size?"
+/// * quantity ≥ 2 → "Same Size" / "Different Sizes";
 ///   - same size: one width × height applied to every unit;
 ///   - different sizes: width × height per unit.
 /// Increasing the quantity only adds units; decreasing asks for
@@ -93,7 +96,8 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
     widget.h.text = b.height == null ? '' : fmtNum(b.height!);
   }
 
-  String get _media => SignageCatalog.media(b.mediaCode)?.shortName ?? b.name;
+  String _boardLabel(int index) =>
+      'Board ${(index + 1).toString().padLeft(2, '0')}';
 
   Future<void> _setQuantity(int next) async {
     final c = context.read<AppController>();
@@ -137,7 +141,7 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
     final v = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('How many signage units are required?'),
+        title: const Text('Number of Boards'),
         content: TextField(
           key: const Key('qty_input'),
           controller: ctl,
@@ -232,6 +236,41 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
     setState(() {});
   }
 
+  Widget _sizeField({
+    required Key key,
+    required String label,
+    required TextEditingController controller,
+    required ValueChanged<String> onChanged,
+  }) {
+    // Original compact style: the label lives inside the outlined field,
+    // with the active unit shown as a suffix.
+    return TextField(
+      key: key,
+      controller: controller,
+      enabled: widget.enabled,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: _numFmt,
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: b.unit.label,
+        errorText: _sizeError(controller.text),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade400),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
+      ),
+      onChanged: (t) {
+        onChanged(t);
+        setState(() {});
+      },
+    );
+  }
+
   Widget _sizeRow({
     required Key wKey,
     required Key hKey,
@@ -241,46 +280,29 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
     required ValueChanged<String> onH,
   }) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: TextField(
+          child: _sizeField(
             key: wKey,
+            label: 'Width *',
             controller: w,
-            enabled: widget.enabled,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: _numFmt,
-            decoration: InputDecoration(
-              labelText: 'Width *',
-              suffixText: b.unit.label,
-              errorText: _sizeError(w.text),
-            ),
-            onChanged: (t) {
-              onW(t);
-              setState(() {});
-            },
+            onChanged: onW,
           ),
         ),
         const Padding(
-          padding: EdgeInsets.fromLTRB(8, 14, 8, 0),
-          child: Text('×', style: TextStyle(fontSize: 20)),
+          padding: EdgeInsets.symmetric(horizontal: 6),
+          child: Text(
+            '×',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+          ),
         ),
         Expanded(
-          child: TextField(
+          child: _sizeField(
             key: hKey,
+            label: 'Height *',
             controller: h,
-            enabled: widget.enabled,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: _numFmt,
-            decoration: InputDecoration(
-              labelText: 'Height *',
-              suffixText: b.unit.label,
-              errorText: _sizeError(h.text),
-            ),
-            onChanged: (t) {
-              onH(t);
-              setState(() {});
-            },
+            onChanged: onH,
           ),
         ),
       ],
@@ -291,34 +313,44 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
   Widget build(BuildContext context) {
     final c = context.read<AppController>();
     final multi = b.quantity > 1;
+    final circle = CircleBorder(side: BorderSide(color: Colors.grey.shade400));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Expanded(
               child: Text(
-                'How many signage units are required?',
-                style: TextStyle(fontWeight: FontWeight.w600),
+                'Number of Boards',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               ),
             ),
-            IconButton.outlined(
+            const SizedBox(width: 8),
+            IconButton(
               key: const Key('qty_minus'),
               tooltip: 'Decrease',
+              style: IconButton.styleFrom(
+                shape: circle,
+                side: circle.side,
+                minimumSize: const Size(40, 40),
+                padding: EdgeInsets.zero,
+              ),
               onPressed: widget.enabled && b.quantity > 1
                   ? () => _setQuantity(b.quantity - 1)
                   : null,
               icon: const Icon(Icons.remove),
             ),
+            const SizedBox(width: 4),
             InkWell(
               key: const Key('qty_value'),
               onTap: widget.enabled ? _typeQuantity : null,
               borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 6,
-                ),
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 44),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Text(
                   '${b.quantity}',
                   style: const TextStyle(
@@ -328,9 +360,16 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
                 ),
               ),
             ),
-            IconButton.outlined(
+            const SizedBox(width: 4),
+            IconButton(
               key: const Key('qty_plus'),
               tooltip: 'Increase',
+              style: IconButton.styleFrom(
+                shape: circle,
+                side: circle.side,
+                minimumSize: const Size(40, 40),
+                padding: EdgeInsets.zero,
+              ),
               onPressed:
                   widget.enabled && b.quantity < AppController.maxQuantity
                   ? () => _setQuantity(b.quantity + 1)
@@ -341,33 +380,52 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
         ),
         if (b.mediaCode == SignageCatalog.doubleStandee)
           const Padding(
-            padding: EdgeInsets.only(top: 2),
+            padding: EdgeInsets.only(top: 6),
             child: Text(
               'Quantity = physical double-sided standees (each has 2 faces).',
               style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
             ),
           ),
+        const SizedBox(height: 16),
+        const Text(
+          'Board Size',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
         if (multi) ...[
-          const SizedBox(height: 12),
-          const Text(
-            'Are all signage units the same size?',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           SegmentedButton<SizeMode>(
+            key: const Key('size_mode_selector'),
             segments: const [
-              ButtonSegment(
+              ButtonSegment<SizeMode>(
                 value: SizeMode.same,
-                label: Text('Yes – Same Size', key: Key('size_same')),
+                label: Text('Same Size', key: Key('size_same')),
               ),
-              ButtonSegment(
+              ButtonSegment<SizeMode>(
                 value: SizeMode.different,
-                label: Text('No – Different Sizes', key: Key('size_diff')),
+                label: Text('Different Sizes', key: Key('size_diff')),
               ),
             ],
             selected: {b.sizeMode},
+            multiSelectionEnabled: false,
+            showSelectedIcon: false,
+            style: SegmentedButton.styleFrom(
+              foregroundColor: AdinnColors.ink,
+              selectedForegroundColor: AdinnColors.ink,
+              selectedBackgroundColor: AdinnColors.redLight,
+              side: BorderSide(color: Colors.grey.shade400),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
             onSelectionChanged: widget.enabled
-                ? (s) => _setMode(s.first)
+                ? (next) {
+                    if (next.isNotEmpty) _setMode(next.first);
+                  }
                 : null,
           ),
         ],
@@ -389,10 +447,10 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
           ),
           if (multi)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: 10),
               child: Text(
-                'Applied to all ${b.quantity} units. Placement, installation, '
-                'photos and notes stay separate per unit.',
+                'Applies to all ${b.quantity} boards. Placement and notes are '
+                'saved separately.',
                 style: const TextStyle(
                   fontSize: 11.5,
                   color: AdinnColors.muted,
@@ -401,68 +459,127 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
             ),
         ] else
           for (var i = 0; i < b.activeUnits.length; i++) ...[
-            Text(
-              '$_media – ${b.unitLabel(b.activeUnits[i])}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    _boardLabel(i),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Builder(
+                    builder: (context) {
+                      final u = b.activeUnits[i];
+                      final (wc, hc) = _ctlFor(u);
+                      return _sizeRow(
+                        wKey: Key('unit_w_$i'),
+                        hKey: Key('unit_h_$i'),
+                        w: wc,
+                        h: hc,
+                        onW: (t) {
+                          c.setUnitSize(
+                            widget.shopId,
+                            b,
+                            u,
+                            width: double.tryParse(t),
+                            height: u.height,
+                          );
+                          widget.onChanged();
+                        },
+                        onH: (t) {
+                          c.setUnitSize(
+                            widget.shopId,
+                            b,
+                            u,
+                            width: u.width,
+                            height: double.tryParse(t),
+                          );
+                          widget.onChanged();
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 4),
-            Builder(
-              builder: (context) {
-                final u = b.activeUnits[i];
-                final (wc, hc) = _ctlFor(u);
-                return _sizeRow(
-                  wKey: Key('unit_w_$i'),
-                  hKey: Key('unit_h_$i'),
-                  w: wc,
-                  h: hc,
-                  onW: (t) {
-                    c.setUnitSize(
-                      widget.shopId,
-                      b,
-                      u,
-                      width: double.tryParse(t),
-                      height: u.height,
-                    );
-                    widget.onChanged();
-                  },
-                  onH: (t) {
-                    c.setUnitSize(
-                      widget.shopId,
-                      b,
-                      u,
-                      width: u.width,
-                      height: double.tryParse(t),
-                    );
-                    widget.onChanged();
-                  },
-                );
-              },
-            ),
-            const SizedBox(height: 10),
+            if (i < b.activeUnits.length - 1) const SizedBox(height: 12),
           ],
         if (b.hasSize) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(10),
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: AdinnColors.canvas,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
-              b.isSameSize
-                  ? 'Size ${fmtLength(b.widthFt, MeasureUnit.ft)} × '
-                        '${fmtLength(b.heightFt, MeasureUnit.ft)} • '
-                        'Area ${fmtNum(b.areaSqFt)} sq ft'
-                        '${b.quantity > 1 ? ' (×${b.quantity})' : ''}'
-                  : '${b.quantity} units, different sizes • '
-                        'Total area ${fmtNum(b.areaSqFt)} sq ft',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  b.isSameSize
+                      ? 'Size ${fmtLength(b.widthFt, MeasureUnit.ft)} × '
+                            '${fmtLength(b.heightFt, MeasureUnit.ft)} · '
+                            '${multi ? 'Total Area' : 'Area'} '
+                            '${fmtNum(b.areaSqFt)} sq ft'
+                      : '${b.quantity} boards · different sizes',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AdinnColors.muted,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Total Area',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${fmtNum(b.areaSqFt)} sq ft',
+                      key: const Key('total_area_value'),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         OutlinedButton.icon(
           key: const Key('open_units'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AdinnColors.red,
+            side: const BorderSide(color: AdinnColors.red),
+            minimumSize: const Size(0, 48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            textStyle: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13.5,
+            ),
+          ),
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => UnitsScreen(
@@ -473,11 +590,12 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
               ),
             ),
           ),
-          icon: const Icon(Icons.view_list_outlined),
+          icon: const Icon(Icons.view_list_outlined, size: 18),
           label: Text(
             multi
-                ? 'Unit details (${b.quantity}) – placement, installation, notes'
-                : 'Unit details – placement, installation, notes',
+                ? 'Unit details (${b.quantity}) — placement, installation, notes'
+                : 'Unit details — placement, installation, notes',
+            maxLines: 2,
           ),
         ),
       ],

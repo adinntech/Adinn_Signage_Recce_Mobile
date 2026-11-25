@@ -84,7 +84,10 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
       brand: brand,
       overlays: restored,
     )..addListener(_changed);
-    _c!.photoView = GsbPhotoViewX.fromKey(photo.gsbView);
+    // Starting orientation of NEW placements only (restored overlays keep
+    // their saved yaw): saved view key, else the photo's angle label.
+    _c!.photoView =
+        GsbPhotoViewX.fromKey(photo.gsbView) ?? viewForAngleLabel(photo.label);
     if (restored == null) {
       final unitId =
           board.unitById(widget.initialUnitId)?.id ?? board.units.first.id;
@@ -553,42 +556,6 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
     );
   }
 
-  /// GSB: which side of the board the photo looks at. Sets the starting
-  /// turn; manual Turn adjustments stay on top of it.
-  Widget _viewSelector(LivePreviewController c) {
-    final app = context.read<AppController>();
-    return SizedBox(
-      height: 36,
-      child: ListView(
-        key: const ValueKey('gsb_photo_view'),
-        scrollDirection: Axis.horizontal,
-        children: [
-          for (final v in GsbPhotoView.values)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: ChoiceChip(
-                key: ValueKey('gsb_view_${v.name}'),
-                label: Text(v.label, style: const TextStyle(fontSize: 12)),
-                visualDensity: VisualDensity.compact,
-                selected: (c.photoView ?? GsbPhotoView.front) == v,
-                onSelected: !widget.editable
-                    ? null
-                    : (_) {
-                        c.setPhotoView(v);
-                        app.setGsbPhotoView(
-                          widget.shopId,
-                          c.board,
-                          c.photo.id,
-                          v.name,
-                        );
-                      },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _controls(Shop shop, Board b, LivePreviewController c) {
     final sel = c.selected;
     final rect = sel == null ? null : c.placementFor(sel.unitId);
@@ -666,8 +633,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
                       onChanged: c.setScale,
                     ),
                     // Shared by every media type: view presets + full 360°
-                    // Turn (−180…+180). Geometry still differs per media.
-                    _viewSelector(c),
+                    // The starting turn comes from the photo's angle.
                     _slider(
                       key: const ValueKey('live_yaw'),
                       icon: Icons.threed_rotation,

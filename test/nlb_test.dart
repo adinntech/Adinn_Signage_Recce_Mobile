@@ -1,3 +1,7 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +12,7 @@ import 'package:signage_recce/data/storage/local_store.dart';
 import 'package:signage_recce/features/board/board_editor_screen.dart';
 import 'package:signage_recce/features/nlb/nlb_presentation.dart';
 import 'package:signage_recce/features/nlb/nlb_rules.dart';
+import 'package:signage_recce/features/preview3d/renderer_painter.dart';
 import 'package:signage_recce/features/preview3d/scene3d.dart';
 import 'package:signage_recce/features/preview3d/signage_scene_builder.dart';
 import 'package:signage_recce/features/model3d/parametric_builder.dart';
@@ -337,12 +342,32 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('media_NLB')));
+      // Board Details opens first; move to the media catalog.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('step_next_0')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(const Key('step_next_0')));
+      await tester.pumpAndSettle();
+      tester
+          .widget<InkWell>(find.byKey(const Key('media_NLB')))
+          .onTap!();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('nlb_type_title')), findsOneWidget);
       expect(find.text('Select NLB Board Type'), findsOneWidget);
       // Compact cards: name only, no description bullets.
-      expect(find.textContaining('•'), findsNothing);
+      // (Scoped to the sheet: the editor behind it shows '•' summaries.)
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.byKey(const Key('nlb_type_title')),
+            matching: find.byType(Column),
+          ).first,
+          matching: find.textContaining('•'),
+        ),
+        findsNothing,
+      );
       expect(
         tester
             .widget<FilledButton>(find.byKey(const Key('nlb_type_continue')))
@@ -353,7 +378,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(b.mediaCode, isNull);
 
-      await tester.tap(find.byKey(const Key('media_NLB')));
+      tester
+          .widget<InkWell>(find.byKey(const Key('media_NLB')))
+          .onTap!();
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('nlb_type_box')));
       await tester.pump();
@@ -368,6 +395,316 @@ void main() {
       expect(b.nlbSubtype, 'NLB_SINGLE_FRAME');
       expect(b.doubleSided, isFalse);
       expect(b.gsbVariantKey, isNull);
+    });
+  });
+
+  group('NLB Single Frame — flex in front, steel behind', () {
+    const ft = NlbSinglePresentation.flexThicknessFt;
+    const preset = NlbSinglePresentation(
+      widthFt: 6,
+      heightFt: 3,
+      bottomFt: 6.5,
+      profileIn: 1,
+      brand: 'SAKTHI MASALA',
+    );
+
+    test('one continuous full-size flex with a plain reverse surface', () {
+      final solids = NlbSingleBoard.build(preset);
+      final flex = solids.singleWhere((s) => s.name == 'nlb_backing');
+      // A thin sheet has front + reverse + four wrap edges; only the front
+      // face is printed. It is never split into panels between the pipes.
+      expect(flex.faces, hasLength(6));
+      final printed = flex.faces.where((f) => f.label != null).toList();
+      expect(printed, hasLength(1));
+      expect(printed.single.normal, const Vec3(0, 0, 1));
+      expect(printed.single.label, 'SAKTHI MASALA');
+      final reverse = flex.faces.where((f) => f.normal == const Vec3(0, 0, -1));
+      expect(reverse, hasLength(1));
+      expect(reverse.single.label, isNull); // no mirrored rear advertising
+      expect(reverse.single.points.every((p) => (p.z - -ft).abs() < 1e-9), isTrue);
+
+      for (final face in [printed.single, reverse.single]) {
+        final xs = face.points.map((p) => p.x).toList();
+        final ys = face.points.map((p) => p.y).toList();
+        expect(xs.reduce((a, c) => a < c ? a : c), closeTo(-3, 1e-9));
+        expect(xs.reduce((a, c) => a > c ? a : c), closeTo(3, 1e-9));
+        expect(ys.reduce((a, c) => a < c ? a : c), closeTo(6.5, 1e-9));
+        expect(ys.reduce((a, c) => a > c ? a : c), closeTo(9.5, 1e-9));
+      }
+      expect(printed.single.points.every((p) => p.z == 0), isTrue);
+    });
+
+    test('all steel is behind the flex, with open bays at the rear', () {
+      final solids = NlbSingleBoard.build(preset);
+      final frame = solids.where((s) => s.name == 'board').toList();
+      final flex = solids.singleWhere((s) => s.name == 'nlb_backing');
+      expect(frame, hasLength(6)); // 4 perimeter + 2 internal supports (6 ft)
+      final ft = NlbSinglePresentation.flexThicknessFt;
+      for (final s in frame) {
+        final zs = [for (final f in s.faces) for (final p in f.points) p.z];
+        final front = zs.reduce((a, c) => a > c ? a : c);
+        final back = zs.reduce((a, c) => a < c ? a : c);
+        expect(front, closeTo(-ft, 1e-9), reason: s.name);
+        expect(back, closeTo(-ft - 1 / 12, 1e-9), reason: s.name);
+        // Every pipe has a rear-facing surface that can be inspected.
+        expect(s.faces.any((f) => f.normal == const Vec3(0, 0, -1)), isTrue);
+      }
+      final flexZ = [
+        for (final f in flex.faces) for (final p in f.points) p.z,
+      ];
+      expect(flexZ.reduce((a, c) => a > c ? a : c), 0);
+      // No artificial solid dark backing board behind the frame.
+      for (final s in frame) {
+        final xs = [for (final f in s.faces) for (final p in f.points) p.x];
+        final ys = [for (final f in s.faces) for (final p in f.points) p.y];
+        final fullWidth =
+            (xs.reduce((a, c) => a < c ? a : c) - 3).abs() < 1e-9 &&
+            (xs.reduce((a, c) => a > c ? a : c) - 3).abs() < 1e-9;
+        final fullHeight =
+            (ys.reduce((a, c) => a < c ? a : c) - 6.5).abs() < 1e-9 &&
+            (ys.reduce((a, c) => a > c ? a : c) - 9.5).abs() < 1e-9;
+        expect(fullWidth && fullHeight, isFalse, reason: 'solid rear panel');
+      }
+      // Approved 24 + 24 + 24 bays → internal supports at x = ±1 ft.
+      final supports = frame
+          .where(
+            (s) =>
+                (s.centroid.x - -1).abs() < 1e-9 ||
+                (s.centroid.x - 1).abs() < 1e-9,
+          )
+          .toList();
+      expect(supports, hasLength(2));
+    });
+
+    test('shared geometry in live preview, isometric and parametric model', () {
+      final b = _nlb(6, 3, subtype: 'NLB_SINGLE_FRAME');
+      final u = b.units.first;
+      final g = unitGeometry(b, u);
+      final live = SignageSceneBuilder.buildModel(g, brand: 'X');
+      final liveFlex = live.solids.singleWhere((s) => s.name == 'nlb_backing');
+      expect(
+        liveFlex.faces.any(
+          (f) =>
+              f.normal == const Vec3(0, 0, 1) &&
+              f.label == 'X' &&
+              f.points.every((p) => p.z == 0),
+        ),
+        isTrue,
+      );
+      expect(
+        liveFlex.faces.any(
+          (f) =>
+              f.normal == const Vec3(0, 0, -1) &&
+              f.points.every((p) => (p.z + ft).abs() < 1e-9),
+        ),
+        isTrue,
+      );
+      final model = ParametricModelBuilder.build(
+        SignageModelSpec.of(b, u),
+        context: false,
+      );
+      final modelFlex = model.scene.solids.singleWhere(
+        (s) => s.name.startsWith('front_face'),
+      );
+      expect(
+        modelFlex.faces.any(
+          (f) =>
+              f.normal == const Vec3(0, 0, 1) &&
+              f.points.every((p) => p.z == 0),
+        ),
+        isTrue,
+      );
+      expect(
+        modelFlex.faces.any(
+          (f) =>
+              f.normal == const Vec3(0, 0, -1) &&
+              f.points.every((p) => (p.z + ft).abs() < 1e-9),
+        ),
+        isTrue,
+      );
+      // Saved / reopened board data still resolves to the same subtype and
+      // therefore the same physical layering.
+      final reopened = Board.fromJson(b.toJson());
+      final g2 = unitGeometry(reopened, reopened.units.first);
+      expect(g2.nlbSingleFrame, isTrue);
+      final scene2 = SignageSceneBuilder.buildModel(g2, brand: 'X');
+      expect(
+        scene2.solids.singleWhere((s) => s.name == 'nlb_backing').faces.length,
+        6,
+      );
+    });
+  });
+
+  group('NLB Single Frame — full turn visibility', () {
+    ViewProjector projector(Scene scene, double degrees, {double factor = 2.8}) =>
+        ViewProjector(
+          camera: Camera3D(yaw: degrees * math.pi / 180),
+          size: const Size(800, 600),
+          target: scene.focus,
+          radius: scene.radius,
+          distanceFactor: factor,
+        );
+
+    bool visible(ViewProjector p, Face f) =>
+        p.facesCamera(f.normal, p.toView(f.centroid));
+
+    test('0 / 45 / 90 / 130 / 180 / 270 / 360 degrees', () {
+      final solids = NlbSingleBoard.build(
+        const NlbSinglePresentation(widthFt: 6, heightFt: 3),
+      );
+      final scene = Scene(focus: const Vec3(0, 1.5, -0.04))
+        ..solids.addAll(solids)
+        ..finalize();
+      final flex = solids.singleWhere((s) => s.name == 'nlb_backing');
+      final frame = solids.where((s) => s.name == 'board').toList();
+      final front = flex.faces.singleWhere((f) => f.label != null);
+      final rear = flex.faces.singleWhere((f) => f.normal.z < -0.5);
+
+      for (final factor in const [2.8, 4.0]) {
+        for (final (deg, expectFront, expectRear) in const [
+          (0.0, true, false),
+          (45.0, true, false),
+          (90.0, null, null), // edge-on: only a sliver of one sheet side
+          (130.0, false, true),
+          (180.0, false, true),
+          (270.0, null, null), // opposite edge-on profile
+          (360.0, true, false),
+        ]) {
+          final p = projector(scene, deg, factor: factor);
+          if (expectFront != null) {
+            expect(visible(p, front), expectFront, reason: '$deg° front');
+          }
+          if (expectRear != null) {
+            expect(visible(p, rear), expectRear, reason: '$deg° flex reverse');
+          }
+          if (deg == 90 || deg == 270) {
+            // A true side profile: the frame's side walls, not the print,
+            // carry the silhouette at both side angles.
+            expect(
+              frame.any(
+                (s) => s.faces.any(
+                  (f) => f.normal.x.abs() > 0.5 && visible(p, f),
+                ),
+              ),
+              isTrue,
+              reason: '$deg° side profile',
+            );
+          }
+          // A single assembly is reused: no angle swaps in another model.
+          expect(scene.solids, hasLength(solids.length));
+          final order = Scene3DPainter.orderSolids(scene.solids, p);
+          final flexAt = order.indexOf(flex);
+          final frameAt = [for (final s in frame) order.indexOf(s)];
+          if (deg == 0 || deg == 45 || deg == 360) {
+            expect(
+              frameAt.every((i) => flexAt > i),
+              isTrue,
+              reason: '$deg° flex must cover the pipes',
+            );
+          } else if (deg == 130 || deg == 180) {
+            expect(
+              frameAt.every((i) => flexAt < i),
+              isTrue,
+              reason: '$deg° pipes must be inspectable from the rear',
+            );
+            for (final s in frame) {
+              expect(
+                s.faces.any(
+                  (f) =>
+                      f.normal == const Vec3(0, 0, -1) && visible(p, f),
+                ),
+                isTrue,
+                reason: '$deg° pipe rear face',
+              );
+            }
+          }
+        }
+      }
+    });
+
+    test('rear render shows dark pipes over the unprinted flex, no black bay', () async {
+      const size = Size(600, 400);
+      const ft = NlbSinglePresentation.flexThicknessFt;
+      final solids = NlbSingleBoard.build(
+        const NlbSinglePresentation(widthFt: 6, heightFt: 3),
+      );
+      final scene = Scene(focus: Vec3(0, 1.5, -(ft + 1 / 12) / 2))
+        ..solids.addAll(solids)
+        ..finalize();
+
+      late Uint8List bytes;
+      Color pixelAt(Camera3D camera, Vec3 world) {
+        final proj = ViewProjector(
+          camera: camera,
+          size: size,
+          target: scene.focus,
+          radius: scene.radius,
+        );
+        final o = proj.project(world)!;
+        final x = o.dx.round().clamp(0, size.width.toInt() - 1);
+        final y = o.dy.round().clamp(0, size.height.toInt() - 1);
+        final i = (y * size.width.toInt() + x) * 4;
+        return Color.fromARGB(
+          bytes[i + 3],
+          bytes[i],
+          bytes[i + 1],
+          bytes[i + 2],
+        );
+      }
+
+      Future<void> render(Camera3D camera) async {
+        final recorder = ui.PictureRecorder();
+        Scene3DPainter(
+          scene: scene,
+          camera: camera,
+          showDimensions: false,
+          paintBackground: false,
+          paintGround: false,
+          paintGizmo: false,
+        ).paint(Canvas(recorder), size);
+        final image = await recorder.endRecording().toImage(
+          size.width.toInt(),
+          size.height.toInt(),
+        );
+        final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        bytes = data!.buffer.asUint8List();
+        image.dispose();
+      }
+
+      // Rear: a bay is the flex reverse (not a hole / black panel), while a
+      // support station reads as dark steel in front of that same sheet.
+      await render(const Camera3D(yaw: math.pi, ortho: true));
+      final bay = pixelAt(const Camera3D(yaw: math.pi, ortho: true),
+          const Vec3(-2, 1.5, -ft));
+      final pipe = pixelAt(const Camera3D(yaw: math.pi, ortho: true),
+          const Vec3(-1, 1.5, -ft - 1 / 12));
+      expect(bay.r * 255, greaterThan(55), reason: 'bay shows flex reverse');
+      expect(pipe.r * 255, lessThan(55), reason: 'rear pipe is dark steel');
+
+      // Front: no internal pipe interrupts the printed surface.
+      await render(const Camera3D(yaw: 0, ortho: true));
+      final print = pixelAt(
+        const Camera3D(yaw: 0, ortho: true),
+        const Vec3(-1, 1.32, 0),
+      );
+      expect(print.r * 255, greaterThan(55), reason: 'print is not covered');
+    });
+
+    test('360 degrees projects identically to 0 degrees', () {
+      final scene = Scene(focus: Vec3.zero)
+        ..solids.addAll(
+          NlbSingleBoard.build(
+            const NlbSinglePresentation(widthFt: 6, heightFt: 3),
+          ),
+        )
+        ..finalize();
+      final a = projector(scene, 0);
+      final b = projector(scene, 360);
+      final point = const Vec3(1, 1, -0.04);
+      final pa = a.project(point)!;
+      final pb = b.project(point)!;
+      expect((pa - pb).distance, lessThan(1e-6));
+      expect((a.cameraWorld - b.cameraWorld).length, lessThan(1e-6));
     });
   });
 }

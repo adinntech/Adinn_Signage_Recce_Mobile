@@ -81,7 +81,12 @@ class ParametricModelBuilder {
         'Unknown installation "${spec.installationCode}": the board is shown '
         'without a support structure.',
       );
-    } else if (media != null && !media.installations.contains(inst.code)) {
+    } else if (media != null &&
+        !media.installations.contains(inst.code) &&
+        // Projecting Mount (flange bracket) is approved for GSB / NLB Box.
+        !(inst.code == SignageCatalog.flangeBracket &&
+            (media.code == SignageCatalog.gsb ||
+                media.code == SignageCatalog.nlb))) {
       final allowed = media.installations
           .map((c) => SignageCatalog.installation(c)?.name ?? c)
           .join(', ');
@@ -222,8 +227,8 @@ class ParametricModelBuilder {
 const _eps = 1e-4;
 const _white = Color(0xFFFFFFFF);
 const _vinylInk = Color(0xFF00897B);
-const _acrylicBody = Color(0x4D9FD8E3);
-const _acrylicEdge = Color(0xB34FB3BF);
+const _acrylicBody = Color(0x739FD8E3);
+const _acrylicEdge = Color(0xD94FB3BF);
 const _glass = Color(0x5586B3D1);
 const _mdf = Color(0xFFC49A6C);
 const _logo = Color(0xFF263238);
@@ -832,12 +837,23 @@ class _Build {
       _mediaThicknessMm(5),
       minMm: 0.5,
     );
+    // Single rigid full-size foam substrate: one box, one vinyl layer, both
+    // spanning the full selected board size. Edge faces use a distinct foam
+    // tone so the thin 3 mm substrate reads against the printed vinyl.
+    const foamEdge = Color(0xFFE3DDD2);
     _add(
       _box(
         _C.displayPanel,
         Vec3(-w / 2, b, -th),
         Vec3(w / 2, t, 0),
         SceneColors.white,
+        sideColors: {
+          BoxSide.left: foamEdge,
+          BoxSide.right: foamEdge,
+          BoxSide.top: foamEdge,
+          BoxSide.bottom: foamEdge,
+          BoxSide.back: foamEdge,
+        },
       ),
     );
     _add(_skin(_C.vinylLayer, -w / 2, b, w / 2, t, 0, _vinylInk, label: brand));
@@ -987,9 +1003,9 @@ class _Build {
     if (perforated) {
       // Fine perforation as a see-through MASK on the film faces (holes
       // are cleared by the painter, no mesh holes). The pitch is an
-      // illustrative display preset (~100 holes across the width, never
-      // finer than the 2.5 mm of typical film), NOT a manufacturing
-      // specification and never a BOM value.
+      // Fine micro-perforation: ~100 holes across the width, never coarser
+      // than ~2.5 mm. Visual-only preset (not a manufacturing spec) and
+      // never a BOM value.
       final pitch = math.max(w / 100, 2.5 / kMmPerFoot);
       for (final f in film.faces.where((f) => f.normal.z.abs() > 0.5)) {
         f.perforationPitchFt = pitch;
@@ -1563,7 +1579,9 @@ class _Build {
       case SignageCatalog.shopFascia:
         _wallInstall(gapMm: 25, fascia: true);
       case SignageCatalog.wallMount:
-        _wallInstall(gapMm: 50);
+        // Foam boards are glued flush to the wall: keep a thin adhesive gap
+        // instead of the bracket standoff used for rigid boards.
+        _wallInstall(gapMm: template == 'foam' ? 10 : 50);
       case SignageCatalog.directWall:
         _wallInstall(gapMm: 0);
       case SignageCatalog.glassPasting:

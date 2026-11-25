@@ -520,7 +520,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
         builder: (_) => BoardEditorScreen(
           shopId: widget.shopId,
           boardId: p.groupId,
-          initialStep: BoardEditorScreen.measurementsStep,
+          initialStep: BoardEditorScreen.boardDetailsStep,
         ),
       ),
     );

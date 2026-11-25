@@ -270,11 +270,12 @@ class SignageModelSpec {
     final instSelected =
         inst != null && SignageCatalog.installation(inst) != null;
     if (!instSelected) {
-      inst = media?.installations.first ?? SignageCatalog.shopFascia;
+      inst = media?.installations.firstOrNull ?? SignageCatalog.shopFascia;
     }
     final installation = inst;
     final m = u.measurements;
-    final a = b.answers;
+    // This physical board's own Site Question answers.
+    final a = SignageCatalog.answersOf(b, u);
     final values = <SpecField, double>{};
     final sources = <SpecField, SpecSource>{};
     final ft = MeasureUnit.ft.mmFactor;

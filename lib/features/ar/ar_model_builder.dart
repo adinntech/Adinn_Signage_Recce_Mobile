@@ -40,6 +40,8 @@ class ArFaceData {
     this.emissive = false,
     this.layer = 0,
     this.glow,
+    this.perforationPitchFt,
+    this.perforationHole = 0.5,
   });
 
   /// x0, y0, z0, x1, … (metres, model space: +Y up, +Z out of the board).
@@ -55,6 +57,10 @@ class ArFaceData {
   /// [emissive]).
   final bool? glow;
 
+  /// One-way-vision micro-perforation (visual-only preset). Null = solid.
+  final double? perforationPitchFt;
+  final double perforationHole;
+
   Map<String, Object?> toMap() => {
     'p': points,
     'n': normal,
@@ -64,6 +70,8 @@ class ArFaceData {
     'e': emissive,
     'k': layer,
     if (glow != null) 'g': glow,
+    if (perforationPitchFt != null) 'pf': perforationPitchFt,
+    'ph': perforationHole,
   };
 }
 
@@ -149,6 +157,8 @@ ArModelData buildArModel(Board b, SignageUnit u, {String brand = 'ADINN'}) {
           emissive: face.emissive,
           glow: face.glow,
           layer: decal ? math.max(1, face.layer) : 0,
+          perforationPitchFt: face.perforationPitchFt,
+          perforationHole: face.perforationHole,
         ),
       );
     }

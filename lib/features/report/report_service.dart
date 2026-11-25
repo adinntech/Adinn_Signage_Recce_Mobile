@@ -93,7 +93,8 @@ class DeviceReportImageLoader implements ReportImageLoader {
         markup: annotated ? photo.markup : null,
         labels: labels,
       );
-      return _compress(image);
+      // awaited so a failure is handled here, not lost as a stray Future
+      return await _compress(image);
     } catch (_) {
       return null;
     }
@@ -105,6 +106,74 @@ class DeviceReportImageLoader implements ReportImageLoader {
     return _compress(await decodeImageFile(path, maxSide: maxSide));
   }
 }
+
+const kRecceIncompleteMessage =
+    'Complete all required recce details to download the report.';
+
+const kGroupIncompleteMessage =
+    'Complete every board of this media type to download its report.';
+
+/// The shop data a report is built from (submitted snapshot while under
+/// review / approved, else the live draft) – validation uses the SAME data.
+Shop reportSource(Shop live) =>
+    reportUsesSnapshot(live) ? live.latestSubmission!.shopSnapshot : live;
+
+/// Shop-level mandatory details (same rules as Review & Submit).
+List<String> shopLevelBlockers(Shop s) => [
+  if (s.name.trim().isEmpty) 'Shop name is missing',
+  if (s.phone.trim().isEmpty) 'Shop contact number is missing',
+  if (s.address.trim().isEmpty) 'Shop address is missing',
+  if (s.geo == null) 'Capture the shop GPS location',
+];
+
+/// Why a final Vendor Recce PDF of this scope cannot be generated (empty =
+/// allowed). [groupIds] null = Combined PDF (every media group of the
+/// shop); otherwise a Separate PDF of exactly those media groups – other,
+/// unrelated media groups never block it.
+List<String> recceReportBlockers(
+  AppController c,
+  Shop live, {
+  Set<String>? groupIds,
+}) {
+  final s = reportSource(live);
+  // Combined report: the complete shop recce incl. shop-level mandatory
+  // details. Separate report: only the shop's identity (name) – optional
+  // details such as phone / address / GPS never block a completed media
+  // group (missing ones simply show as not available).
+  final out = groupIds == null
+      ? [...shopLevelBlockers(s)]
+      : [if (s.name.trim().isEmpty) 'Shop name is missing'];
+  if (groupIds == null) {
+    if (s.boards.isEmpty) out.add('Add at least one board');
+    for (final b in s.boards) {
+      for (final i in c.boardIssues(b)) {
+        out.add('${b.name}: $i');
+      }
+    }
+    return out;
+  }
+  if (groupIds.isEmpty) return [...out, 'Select a media type'];
+  for (final id in groupIds) {
+    final b = s.boards.where((e) => e.id == id).firstOrNull;
+    if (b == null) {
+      out.add('Unknown media group for this shop');
+      continue;
+    }
+    for (final i in c.boardIssues(b)) {
+      out.add('${b.name}: $i');
+    }
+  }
+  return out;
+}
+
+/// Combined PDF allowed: the whole shop's Vendor Recce is complete.
+bool recceComplete(AppController c, Shop s) =>
+    recceReportBlockers(c, s).isEmpty;
+
+/// Separate PDF of media group [b] allowed: every physical board of THIS
+/// group is complete (plus shop-level details).
+bool groupReportReady(AppController c, Shop s, Board b) =>
+    recceReportBlockers(c, s, groupIds: {b.id}).isEmpty;
 
 /// Generates, stores and reads measurement PDFs. Everything is local: no
 /// upload, no e-mail.
@@ -189,7 +258,11 @@ class ReportService {
             if (b != null && u != null && r != null) {
               final spec = SignageModelSpec.of(b, u);
               image = ref.kind == ReportImageKind.model3d
-                  ? await r.model(spec, brand: labels.brand)
+                  ? await r.model(
+                      spec,
+                      brand: labels.brand,
+                      yaw: ref.view == 'rear' ? kRearIsoYaw : kFrontIsoYaw,
+                    )
                   : await r.drawing(
                       spec,
                       DrawingView.values.firstWhere(
@@ -213,13 +286,35 @@ class ReportService {
     AppController c,
     String shopId, {
     void Function(String message)? onProgress,
+    Set<String>? groupIds,
+    bool requireComplete = false,
   }) async {
     final shop = c.shop(shopId);
     if (shop == null) throw StateError('Shop not found');
+    // Final Recce PDF: re-check the requested scope right before exporting,
+    // on the same data the report is built from.
+    if (requireComplete) {
+      final visible = c.visibleShops.any((e) => e.id == shop.id);
+      if (!visible) throw StateError('You cannot access this shop report.');
+      final blockers = recceReportBlockers(c, shop, groupIds: groupIds);
+      if (blockers.isNotEmpty) {
+        throw StateError(
+          groupIds == null
+              ? kRecceIncompleteMessage
+              : '$kGroupIncompleteMessage (${blockers.first})',
+        );
+      }
+    }
     final now = clock();
     final by = c.currentUser?.name ?? 'Unknown user';
     onProgress?.call('Collecting recce data…');
-    final build = buildReportData(c, shop, now: now, generatedBy: by);
+    final build = buildReportData(
+      c,
+      shop,
+      now: now,
+      generatedBy: by,
+      groupIds: groupIds,
+    );
     final project = c.project(shop.projectId);
     final labels = MarkupLabels.forShop(
       build.source,

@@ -4,17 +4,21 @@ import 'package:signage_recce/data/models/models.dart';
 import 'package:signage_recce/data/services/location_service.dart';
 
 /// Answers every visible required site question with a plausible value.
+/// Every physical board (unit) answers its own questions.
 void completeAnswers(Board b) {
-  for (var guard = 0; guard < 5; guard++) {
-    final missing = SignageCatalog.missingAnswers(b);
-    if (missing.isEmpty) break;
-    for (final q in missing) {
-      b.answers[q.id] = switch (q.type) {
-        QuestionType.yesNo => true,
-        QuestionType.choice => q.options.first,
-        QuestionType.number => 5.0,
-        QuestionType.text => 'ok',
-      };
+  for (final u in b.activeUnits) {
+    final a = SignageCatalog.answersOf(b, u);
+    for (var guard = 0; guard < 5; guard++) {
+      final missing = SignageCatalog.missingAnswersFor(b, u);
+      if (missing.isEmpty) break;
+      for (final q in missing) {
+        a[q.id] = switch (q.type) {
+          QuestionType.yesNo => true,
+          QuestionType.choice => q.options.first,
+          QuestionType.number => 5.0,
+          QuestionType.text => 'ok',
+        };
+      }
     }
   }
   completeChecklists(b);

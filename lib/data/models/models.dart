@@ -518,7 +518,9 @@ class SignageUnit {
     MeasurementDetails? measurements,
     Map<String, ChecklistResponse>? checklist,
     ElectricalSurvey? electrical,
+    Map<String, dynamic>? siteAnswers,
   }) : measurements = measurements ?? MeasurementDetails(),
+       siteAnswers = siteAnswers ?? {},
        checklist = checklist ?? {},
        electrical = electrical ?? ElectricalSurvey();
 
@@ -545,6 +547,12 @@ class SignageUnit {
   /// Electrical availability survey.
   ElectricalSurvey electrical;
 
+  /// Site Question answers (question id → value) of this physical board.
+  /// Used for every unit except the group's first unit, whose answers stay
+  /// in [Board.answers] (the historical storage, read by older records and
+  /// single-board groups). See `SignageCatalog.answersOf`. Additive field.
+  Map<String, dynamic> siteAnswers;
+
   bool get hasOwnSize => (width ?? 0) > 0 && (height ?? 0) > 0;
 
   SignageUnit copyWith({required String id}) =>
@@ -562,9 +570,13 @@ class SignageUnit {
     if (checklist.isNotEmpty)
       'checklist': ChecklistResponse.mapToJson(checklist),
     if (!electrical.isEmpty) 'electrical': electrical.toJson(),
+    if (siteAnswers.isNotEmpty) 'siteAnswers': siteAnswers,
   };
 
   factory SignageUnit.fromJson(Map<String, dynamic> j) => SignageUnit(
+    siteAnswers: j['siteAnswers'] is Map
+        ? Map<String, dynamic>.from(j['siteAnswers'] as Map)
+        : null,
     id: _s(j['id']),
     width: _dn(j['width']),
     height: _dn(j['height']),

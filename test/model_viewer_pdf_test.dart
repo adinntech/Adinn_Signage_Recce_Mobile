@@ -39,8 +39,16 @@ class FakeModels implements ModelImageRenderer {
   }
 
   @override
-  Future<ReportImage?> model(SignageModelSpec spec, {String brand = ''}) async {
-    calls.add('3d:${spec.template}:${spec.widthMm.round()}');
+  Future<ReportImage?> model(
+    SignageModelSpec spec, {
+    String brand = '',
+    double yaw = kFrontIsoYaw,
+  }) async {
+    // The opposite-side review angle is recorded separately.
+    calls.add(
+      '${yaw == kRearIsoYaw ? '3d-rear' : '3d'}:${spec.template}:'
+      '${spec.widthMm.round()}',
+    );
     return _img();
   }
 }

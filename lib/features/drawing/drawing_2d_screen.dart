@@ -23,10 +23,14 @@ class Drawing2DScreen extends StatefulWidget {
     super.key,
     required this.shopId,
     required this.boardId,
+    this.unitId,
   });
 
   final String shopId;
   final String boardId;
+
+  /// Physical board to draw (default: the group's first board).
+  final String? unitId;
 
   @override
   State<Drawing2DScreen> createState() => _Drawing2DScreenState();
@@ -70,16 +74,18 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
   }
 
   DrawingInfo _info(AppController c, Shop shop, Board board) {
-    final questions = SignageCatalog.questionsFor(
-      board.mediaCode,
-      board.installationCode,
-    );
+    final unit = board.unitById(widget.unitId) ??
+        SignageCatalog.firstUnit(board);
+    final questions = unit == null
+        ? SignageCatalog.questionsFor(board.mediaCode, board.installationCode)
+        : SignageCatalog.questionsForUnit(board, unit);
+    final answers = SignageCatalog.answersOf(board, unit);
     final gps = shop.geo;
     final notes = <String>[
       if (gps != null) 'GPS ${gps.coordinates} (±${gps.accuracyM.round()} m)',
       for (final q in questions)
-        if (q.isVisible(board.answers) && q.isAnswered(board.answers))
-          '${q.label} ${SignageCatalog.answerText(q, board.answers[q.id])}',
+        if (q.isVisible(answers) && q.isAnswered(answers))
+          '${q.label} ${SignageCatalog.answerText(q, answers[q.id])}',
       if (board.textNote.trim().isNotEmpty) 'Remark: ${board.textNote.trim()}',
     ];
     return DrawingInfo(
@@ -156,7 +162,10 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
       );
     }
 
-    final geo = SignageGeometry.fromBoard(board);
+    final geo = SignageGeometry.fromBoard(
+      board,
+      unit: board.unitById(widget.unitId),
+    );
     final missingSelection = !geo.mediaSelected || !geo.installationSelected;
     final canEdit = c.canEdit(shop);
     final showDrawing = !missingSelection || _useDefaults;
@@ -196,6 +205,7 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
                 builder: (_) => Preview3DScreen(
                   shopId: widget.shopId,
                   boardId: widget.boardId,
+                  unitId: widget.unitId,
                 ),
               ),
             ),

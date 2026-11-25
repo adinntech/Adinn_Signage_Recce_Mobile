@@ -114,6 +114,19 @@ pw.Page reportSheetPage({
                           height: 150,
                         ),
                       ),
+                      if (sheet['model_rear'] != null) ...[
+                        pw.SizedBox(width: 6),
+                        pw.Expanded(
+                          child: _sheetImage(
+                            images,
+                            sheet['model_rear'],
+                            '3D opposite-side view',
+                            '3D model image could not be generated on this '
+                                'device (not replaced by a generic model)',
+                            height: 150,
+                          ),
+                        ),
+                      ],
                       pw.SizedBox(width: 6),
                       pw.Expanded(
                         child: pw.Table(

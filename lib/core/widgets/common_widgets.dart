@@ -115,12 +115,17 @@ class TagChip extends StatelessWidget {
             Icon(icon, size: 12, color: color),
             const SizedBox(width: 3),
           ],
-          Text(
-            text,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+          // Never overflows a narrow card: long text is cut with an ellipsis.
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

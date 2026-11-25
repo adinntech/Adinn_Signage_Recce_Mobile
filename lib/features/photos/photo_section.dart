@@ -51,46 +51,41 @@ class _PhotoSectionState extends State<PhotoSection> {
     return showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
+      // Seven angles: scrollable so small phones never overflow.
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Which angle is this photo?',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-              ),
-            ),
-            for (final l in SignageCatalog.photoLabels)
-              ListTile(
-                leading: Icon(
-                  l == current
-                      ? Icons.radio_button_checked
-                      : Icons.photo_outlined,
-                  color: AdinnColors.red,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Which angle is this photo?',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
                 ),
-                title: Text(l),
-                onTap: () => Navigator.pop(ctx, l),
               ),
-          ],
+              for (final l in SignageCatalog.photoLabels)
+                ListTile(
+                  leading: Icon(
+                    l == current
+                        ? Icons.radio_button_checked
+                        : Icons.photo_outlined,
+                    color: AdinnColors.red,
+                  ),
+                  title: Text(l),
+                  onTap: () => Navigator.pop(ctx, l),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// GSB / NLB (vendor flow): no "Which angle is this photo?" prompt. The
-  /// board orientation is chosen in Live Preview (view selector), and the
-  /// photo keeps a neutral label instead of a guessed angle. Other media
-  /// keep the existing prompt; historical labels are never touched.
-  bool get _skipAnglePrompt =>
-      widget.board.mediaCode == SignageCatalog.gsb ||
-      widget.board.mediaCode == SignageCatalog.nlb;
-
-  String _neutralLabel() => 'Site photo ${widget.board.photos.length + 1}';
-
+  /// Every media type asks "Which angle is this photo?" after capture; the
+  /// angle is the photo's label and sets Live Preview's starting turn.
   Future<String> _labelForNewPhoto() async {
-    if (_skipAnglePrompt) return _neutralLabel();
     return await _pickLabel() ??
         SignageCatalog.photoLabels[min(
           widget.board.photos.length,
@@ -181,7 +176,7 @@ class _PhotoSectionState extends State<PhotoSection> {
   }
 
   Future<void> _addSample() async {
-    final label = _skipAnglePrompt ? _neutralLabel() : await _pickLabel();
+    final label = await _pickLabel();
     if (!mounted) return;
     context.read<AppController>().addPhoto(
       widget.shopId,

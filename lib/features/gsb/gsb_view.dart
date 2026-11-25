@@ -32,6 +32,17 @@ extension GsbPhotoViewX on GsbPhotoView {
   }
 }
 
+/// Starting orientation implied by a photo angle label (any media type):
+/// Front 0°, Left −90°, Right +90°, Back 180°. Other categories (close-up,
+/// long shot, surroundings, historical labels) keep the neutral default.
+GsbPhotoView? viewForAngleLabel(String label) => switch (label.trim().toLowerCase()) {
+  'front view' => GsbPhotoView.front,
+  'left angle' => GsbPhotoView.left,
+  'right angle' => GsbPhotoView.right,
+  'back view' => GsbPhotoView.back,
+  _ => null,
+};
+
 /// Normalises an angle to (−π, π]. Non-finite input → 0.
 double wrapYaw(double a) {
   if (!a.isFinite) return 0;

@@ -64,20 +64,22 @@ ReadinessResult unitReadiness(Shop shop, Board b, SignageUnit u) {
   if (media == null) missing.add('Media type not selected');
   if (inst == null) {
     missing.add('Installation type not selected');
-  } else if (media != null && !media.installations.contains(inst)) {
+  } else if (media != null && !SignageCatalog.allowsInstallation(b, inst)) {
     missing.add('Installation not valid for ${media.shortName}');
   }
   if (!b.unitHasSize(u)) missing.add('Width / height not entered');
   if (b.photosOf(u).isEmpty && b.photos.isEmpty) {
     missing.add('No site photo');
   }
-  final q = media == null || b.installationCode == null
+  // This physical board's own Site Questions (own installation + answers).
+  final q = media == null || b.installationOf(u) == null
       ? 0
-      : SignageCatalog.missingAnswers(b).length;
+      : SignageCatalog.missingAnswersFor(b, u).length;
   if (q > 0) missing.add('$q site question(s) unanswered');
-  final cl = SiteChecklists.statusOf(b, u);
-  if (cl.total > 0 && !cl.isComplete) {
-    missing.add('Checklist: ${cl.missingRequired.length} required left');
+  // Checklist-only questions (equivalents are counted as site questions).
+  final cl = SiteChecklists.uniqueMissing(b, u);
+  if (cl.isNotEmpty) {
+    missing.add('Checklist: ${cl.length} required left');
   }
   final errors = MeasurementCatalog.errors(b, u);
   if (errors.isNotEmpty) missing.add('Measurement: ${errors.first.message}');

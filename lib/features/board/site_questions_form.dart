@@ -15,7 +15,16 @@ class SiteQuestionsForm extends StatefulWidget {
     required this.answers,
     required this.onChanged,
     this.enabled = true,
+    this.sectionOf,
+    this.autoFilled = const {},
   });
+
+  /// Optional section title per question (headers are shown when the
+  /// section changes). Null = flat list exactly as before.
+  final String Function(SiteQuestion q)? sectionOf;
+
+  /// Question ids whose current value was auto-filled from another board.
+  final Set<String> autoFilled;
 
   final List<SiteQuestion> questions;
   final Map<String, dynamic> answers;
@@ -68,6 +77,20 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           ),
         ),
+        if (widget.autoFilled.contains(q.id))
+          Container(
+            key: Key('autofilled_${q.id}'),
+            margin: const EdgeInsets.only(left: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: AdinnColors.success.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              'Auto-filled',
+              style: TextStyle(fontSize: 10.5, color: AdinnColors.success),
+            ),
+          ),
         if (missing)
           const Padding(
             padding: EdgeInsets.only(left: 6),
@@ -156,18 +179,38 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final q in visible)
+        for (var i = 0; i < visible.length; i++) ...[
+          if (widget.sectionOf != null &&
+              (i == 0 ||
+                  widget.sectionOf!(visible[i]) !=
+                      widget.sectionOf!(visible[i - 1])))
+            Padding(
+              padding: EdgeInsets.only(top: i == 0 ? 0 : 6, bottom: 10),
+              child: Text(
+                widget.sectionOf!(visible[i]),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: AdinnColors.red,
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _label(q, q.required && !q.isAnswered(widget.answers)),
+                _label(
+                  visible[i],
+                  visible[i].required &&
+                      !visible[i].isAnswered(widget.answers),
+                ),
                 const SizedBox(height: 6),
-                _input(q),
+                _input(visible[i]),
               ],
             ),
           ),
+        ],
       ],
     );
   }

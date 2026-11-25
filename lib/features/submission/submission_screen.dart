@@ -160,7 +160,7 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
                               children: [
                                 Text(
                                   '${b.name} – ${SignageCatalog.media(b.mediaCode)?.shortName ?? '?'}'
-                                  ' • ${SignageCatalog.installation(b.installationCode)?.name ?? '?'}'
+                                  ' • ${SignageCatalog.installationSummary(b, empty: '?')}'
                                   ' • ${b.isSameSize ? fmtSize(b.width, b.height, b.unit) : 'different sizes'}'
                                   '${b.quantity > 1 ? ' • qty ${b.quantity}' : ''}',
                                   style: const TextStyle(fontSize: 13),

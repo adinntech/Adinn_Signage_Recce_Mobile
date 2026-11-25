@@ -25,6 +25,9 @@ internal class ModelFace(
     val layer: Int,
     /** Night View: a self-lit face that does NOT glow (e.g. unlit rear flex). */
     val glow: Boolean = emissive,
+    /** One-way-vision micro-perforation pitch in metres (null = solid). */
+    val perfPitch: Float = 0f,
+    val perfHole: Float = 0.5f,
 )
 
 /**
@@ -85,6 +88,8 @@ internal class ModelData(
                     emissive = f["e"] == true,
                     layer = int(f["k"], 0),
                     glow = (f["g"] as? Boolean) ?: (f["e"] == true),
+                    perfPitch = (f["pf"] as? Number)?.toFloat() ?: 0f,
+                    perfHole = (f["ph"] as? Number)?.toFloat() ?: 0.5f,
                 )
             }
             require(faces.isNotEmpty()) { "Signage model has no faces" }
@@ -95,7 +100,7 @@ internal class ModelData(
     }
 }
 
-internal class DrawItem(val buffer: FloatBuffer, val vertexCount: Int, val textureId: Int, val layer: Int)
+internal class DrawItem(val buffer: FloatBuffer, val vertexCount: Int, val textureId: Int, val layer: Int, val perforated: Boolean = false)
 
 /**
  * GPU-ready geometry of one [ModelData]. Built once per signage item and
@@ -120,6 +125,7 @@ internal class ModelRenderer {
     private var uUseTexture = 0
     private var uTexture = 0
     private var uNight = 0
+    private var uPerforated = 0
 
     /**
      * Illustrative night view (0 = day, 1 = night): unlit faces take the
@@ -148,6 +154,7 @@ internal class ModelRenderer {
         uUseTexture = GLES20.glGetUniformLocation(program, "u_UseTexture")
         uTexture = GLES20.glGetUniformLocation(program, "u_Texture")
         uNight = GLES20.glGetUniformLocation(program, "u_Night")
+        uPerforated = GLES20.glGetUniformLocation(program, "u_Perforated")
         GlUtil.checkError("ModelRenderer.create")
     }
 
@@ -163,7 +170,7 @@ internal class ModelRenderer {
         val plain = mutableMapOf<Int, MutableList<Float>>()
         for (face in data.faces) {
             if (face.label != null && face.points.size == 12) {
-                items += texturedItem(face)
+                items += texturedItem(face, face.perfPitch > 0f)
                 continue
             }
             val out = plain.getOrPut(face.layer) { mutableListOf() }
@@ -202,7 +209,7 @@ internal class ModelRenderer {
     }
 
     /** Quad (TL, TR, BR, BL) with the label painted into a texture. */
-    private fun texturedItem(face: ModelFace): DrawItem {
+    private fun texturedItem(face: ModelFace, perforated: Boolean): DrawItem {
         val p = face.points
         fun dist(a: Int, b: Int): Float {
             val dx = p[a * 3] - p[b * 3]
@@ -247,7 +254,7 @@ internal class ModelRenderer {
         for (idx in intArrayOf(0, 1, 2, 0, 2, 3)) {
             appendVertex(values, face, idx, uv[idx * 2], uv[idx * 2 + 1])
         }
-        return DrawItem(GlUtil.floatBuffer(values.toFloatArray()), 6, ids[0], face.layer)
+        return DrawItem(GlUtil.floatBuffer(values.toFloatArray()), 6, ids[0], face.layer, perforated)
     }
 
     /** Draws the single-model API mesh. */
@@ -292,6 +299,7 @@ internal class ModelRenderer {
             } else {
                 GLES20.glUniform1f(uUseTexture, 0f)
             }
+            GLES20.glUniform1f(uPerforated, if (item.perforated) 1f else 0f)
             bind(item.buffer)
             GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, item.vertexCount)
         }
@@ -369,11 +377,18 @@ internal class ModelRenderer {
             uniform float u_UseTexture;
             uniform sampler2D u_Texture;
             uniform float u_Night;
+            uniform float u_Perforated;
             varying vec4 v_Color;
             varying vec2 v_Uv;
             varying float v_Shade;
             varying float v_Emissive;
             void main() {
+                if (u_Perforated > 0.5) {
+                    // Fine micro-perforation grid in film-local (UV) space.
+                    vec2 g = fract(v_Uv * 60.0);
+                    vec2 c = g - 0.5;
+                    if (length(c) < 0.18) discard;
+                }
                 vec4 base = u_UseTexture > 0.5 ? texture2D(u_Texture, v_Uv) : v_Color;
                 vec3 rgb = base.rgb * v_Shade;
                 vec3 lit = min(rgb * 1.12 + vec3(0.04), vec3(1.0));

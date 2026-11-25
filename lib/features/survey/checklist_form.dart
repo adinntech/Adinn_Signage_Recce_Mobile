@@ -93,13 +93,25 @@ class ChecklistForm extends StatefulWidget {
     required this.unit,
     required this.editable,
     this.onDirtyChanged,
+    this.embedded = false,
+    this.hideIds = const {},
   });
+
+  /// Checklist question ids not shown (embedded unified form: questions that
+  /// are answered as Site Questions, and evidence, which lives in Site Photos
+  /// & Annotation).
+  final Set<String> hideIds;
 
   final String shopId;
   final Board board;
   final SignageUnit unit;
   final bool editable;
   final ValueChanged<bool>? onDirtyChanged;
+
+  /// Shown inside the board editor's Site Questions step: no own scrolling,
+  /// and every change is saved immediately to this unit (like the rest of
+  /// the editor) instead of an explicit Save button.
+  final bool embedded;
 
   @override
   State<ChecklistForm> createState() => _ChecklistFormState();
@@ -148,6 +160,27 @@ class _ChecklistFormState extends State<ChecklistForm>
       _ctl.putIfAbsent(id, TextEditingController.new);
 
   void _markDirty() {
+    if (widget.embedded) {
+      // Hidden questions (answered as Site Questions / evidence) are owned
+      // by the unit: never overwrite them with this form's older snapshot.
+      for (final id in widget.hideIds) {
+        final cur = _u.checklist[id];
+        if (cur != null) {
+          _draft[id] = cur;
+        } else {
+          _draft.remove(id);
+        }
+      }
+      // Saved straight to this unit; validation updates immediately.
+      context.read<AppController>().saveChecklist(
+        widget.shopId,
+        _b,
+        _u.id,
+        _draft,
+      );
+      setState(() {});
+      return;
+    }
     if (!_dirty) {
       _dirty = true;
       widget.onDirtyChanged?.call(true);
@@ -256,9 +289,17 @@ class _ChecklistFormState extends State<ChecklistForm>
     }
 
     return ListView(
-      key: const PageStorageKey('survey_checklist_list'),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      children: [
+      key: widget.embedded
+          ? null
+          : const PageStorageKey('survey_checklist_list'),
+      shrinkWrap: widget.embedded,
+      physics: widget.embedded ? const NeverScrollableScrollPhysics() : null,
+      padding: widget.embedded
+          ? EdgeInsets.zero
+          : const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: widget.embedded
+          ? _embeddedChildren(qs)
+          : [
         Text(
           def.title,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
@@ -294,7 +335,7 @@ class _ChecklistFormState extends State<ChecklistForm>
         const SizedBox(height: 8),
         for (final q in qs) _question(q),
         if (kept.isNotEmpty) _keptSection(kept),
-        if (widget.editable) ...[
+        if (widget.editable && !widget.embedded) ...[
           const SizedBox(height: 12),
           FilledButton.icon(
             key: const Key('cl_save'),
@@ -305,6 +346,42 @@ class _ChecklistFormState extends State<ChecklistForm>
         ],
       ],
     );
+  }
+
+  /// Unified form: only the checklist questions that are NOT already a Site
+  /// Question, under the same section headings as the Site Questions.
+  List<Widget> _embeddedChildren(List<ChecklistQuestion> all) {
+    final qs = [
+      for (final q in all)
+        if (!widget.hideIds.contains(q.id)) q,
+    ];
+    final out = <Widget>[];
+    String? last;
+    for (final q in qs) {
+      final section = q.id == 'checklist_remarks'
+          ? 'Additional Site Remarks'
+          : q.installations != null
+          ? 'Installation-Specific Questions'
+          : 'Media-Specific Questions';
+      if (section != last) {
+        out.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 10),
+            child: Text(
+              section,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+                color: AdinnColors.red,
+              ),
+            ),
+          ),
+        );
+        last = section;
+      }
+      out.add(_question(q));
+    }
+    return out;
   }
 
   Widget _keptSection(List<ChecklistResponse> kept) => Card(
