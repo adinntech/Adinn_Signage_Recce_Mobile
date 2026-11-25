@@ -7,12 +7,15 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_file_row.dart';
 import '../../../core/widgets/common_widgets.dart';
 import '../../live_auth/presentation/live_auth_controller.dart';
+import '../data/live_services.dart';
 import '../data/recce_api.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import '../data/rework_alert.dart' show FlaggedSection;
 import 'board_views_screen.dart';
 import 'capture_flow.dart';
 import 'live_widgets.dart';
+import 'rework_alert.dart' show SectionReworkBanner;
 import 'rework_sheet.dart';
 
 /// Photos: one section per physical board (GSB-01, GSB-02, Acrylic-01 ...), each with its own seven photo tiles (Front, Left,
@@ -158,6 +161,8 @@ class PhotosTab extends StatelessWidget {
   }
 
   void _photoSheet(BuildContext context, PhotoCategoryDef cat, ShopPhoto p) {
+    // A photo that replaced an earlier one keeps that history: the earlier pictures stay viewable after the new version was submitted.
+    final api = p.replaces != null ? context.read<LiveServices>().api : null;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -183,9 +188,16 @@ class PhotosTab extends StatelessWidget {
               _GpsLine(p),
               Text('Review: ${_reviewLabel(p.review.status)}', style: const TextStyle(color: AdinnColors.muted)),
               if (p.capturedAt != null) Text('Captured ${fmtDateTime(p.capturedAt!)}', style: const TextStyle(color: AdinnColors.muted)),
-              if (p.replaces != null) const Padding(padding: EdgeInsets.only(top: 4), child: Text('This photo replaces an earlier one. It goes for review when you submit.', style: TextStyle(color: AdinnColors.info, fontSize: 13))),
+              if (p.replaces != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(p.isDraft ? 'This photo replaces an earlier one. It goes for review when you submit.' : 'This photo replaced an earlier one.', style: const TextStyle(color: AdinnColors.info, fontSize: 13))),
+              if (api != null) ...[
+                const SizedBox(height: 12),
+                PhotoHistorySection(api: api, siteId: ctrl.siteId, photoId: p.id),
+              ],
               const SizedBox(height: 14),
-              if (ctrl.canEdit)
+              // In rework only the photos the reviewer flagged (and the new drafts that replace them) can change; this one was not asked again.
+              if (ctrl.inRework && !p.isDraft)
+                const Text('The reviewer did not ask for this photo again. It stays as it is.', key: Key('photo-locked-in-rework'), style: TextStyle(color: AdinnColors.muted, fontSize: 13))
+              else if (ctrl.canEdit)
                 Row(children: [
                   Expanded(
                     child: FilledButton.icon(
@@ -243,7 +255,7 @@ class PhotosTab extends StatelessWidget {
     final done = saved ? tiles.where((c) => d.photoOf(c.key, b.key) != null).length : 0;
     return KeyedSubtree(
       key: ValueKey('board-row-${b.key}'),
-      child: _BoardPhotoHeader(board: b, done: done, total: tiles.length, open: false, onToggle: () => ctrl.focusBoard(b.key)),
+      child: _BoardPhotoHeader(board: b, done: done, total: tiles.length, resubmitted: d.resubmittedCount(b.key), open: false, onToggle: () => ctrl.focusBoard(b.key)),
     );
   }
 
@@ -258,7 +270,7 @@ class PhotosTab extends StatelessWidget {
       key: ValueKey('board-photos-${b.key}'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _BoardPhotoHeader(board: b, done: saved ? done : 0, total: tiles.length, onToggle: foldable ? ctrl.closePhotoBoards : null),
+        _BoardPhotoHeader(board: b, done: saved ? done : 0, total: tiles.length, resubmitted: d.resubmittedCount(b.key), onToggle: foldable ? ctrl.closePhotoBoards : null),
         const SizedBox(height: 10),
         if (!saved)
           const Text('Save the draft first. This board takes photos after it is saved.', style: TextStyle(color: AdinnColors.warning, fontWeight: FontWeight.w600))
@@ -279,6 +291,7 @@ class PhotosTab extends StatelessWidget {
                   pending: pending.where((u) => u.category == c.key).fold<UploadItem?>(null, (_, u) => u),
                   onTap: (photo, pend) => _openTile(context, c, b, photo, pend),
                   onFlag: (photo) => _openRework(context, photo),
+                  resubmitted: d.isResubmitted(d.photoOf(c.key, b.key)),
                   onImageError: ctrl.imageFailed,
                 ),
             ],
@@ -302,15 +315,19 @@ class PhotosTab extends StatelessWidget {
     }
     final requested = d.requestedPhotos;
     // Board by board: with several boards only the one being photographed is open, the others are one line each. When it is complete
-    // the screen opens the next one. Rework and locked shops show every board open (flagged photos can sit on any board).
-    final byBoard = boards.length > 1 && ctrl.canEdit && !ctrl.inRework;
-    final current = byBoard ? ctrl.photoBoard : null;
+    // the screen opens the next one. A submitted (locked) shop starts with every board folded; a tap opens one board, a tap on it folds it.
+    // Rework shows every board open (flagged photos can sit on any board).
+    final locked = !ctrl.canEdit;
+    final byBoard = boards.length > 1 && !ctrl.inRework;
+    final current = !byBoard ? null : (locked ? ctrl.pickedPhotoBoard : ctrl.photoBoard);
     return RefreshIndicator(
       onRefresh: ctrl.refreshAll,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          // What the reviewer sent back for the photos as a whole (checklist items such as "Required angles captured"), each with its own remark.
+          SectionReworkBanner(items: FlaggedSection.of(d, section: 'PHOTOS'), title: 'Reviewer asked for changes to the photos'),
           if (showPhotoTestTools && ctrl.canEdit) _UseFirstPhotoBox(value: ctrl.useFirstPhotoForAll, onChanged: ctrl.setUseFirstPhotoForAll),
           Row(children: [
             Expanded(child: Text('Required photos $done of $total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
@@ -318,7 +335,9 @@ class PhotosTab extends StatelessWidget {
           ]),
           const SizedBox(height: 4),
           Text(
-            current != null
+            locked && byBoard
+                ? (current != null ? 'Photos of ${current.label}. Tap the board again to fold it.' : 'Tap a board to see its photos.')
+                : current != null
                 ? 'Photos of ${current.label} now. When they are all taken the next board opens by itself. Tap a box to capture; your location is read first, then the camera opens.'
                 : boards.length > 1
                     ? 'Every board has its own photos. Tap a box to capture. Your location is read first, then the camera opens.'
@@ -462,10 +481,13 @@ String _reviewLabel(String s) => switch (s) {
 
 /// Title of one board's photo section: "GSB-01", its size and how many of its photos are taken.
 class _BoardPhotoHeader extends StatelessWidget {
-  const _BoardPhotoHeader({required this.board, required this.done, required this.total, this.onToggle, this.open = true});
+  const _BoardPhotoHeader({required this.board, required this.done, required this.total, this.resubmitted = 0, this.onToggle, this.open = true});
   final BoardItem board;
   final int done;
   final int total;
+
+  /// Photos of this board the recce person resubmitted in the current version (after a rework); 0 hides the line.
+  final int resubmitted;
 
   /// Set when the shop has several boards: the header is then an accordion row and a tap folds ([open]) or opens it.
   final VoidCallback? onToggle;
@@ -489,6 +511,8 @@ class _BoardPhotoHeader extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(board.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             Text(onToggle != null && !open ? '$size  |  tap to open the photos' : size, style: const TextStyle(fontSize: 12.5, color: AdinnColors.muted)),
+            if (resubmitted > 0)
+              Text('$resubmitted ${resubmitted == 1 ? 'photo' : 'photos'} resubmitted', key: Key('resubmitted-${board.key}'), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AdinnColors.info)),
           ]),
         ),
         TagChip('$done / $total', icon: complete ? Icons.check_circle : Icons.photo_camera_outlined, color: complete ? AdinnColors.success : AdinnColors.red),
@@ -502,10 +526,13 @@ class _BoardPhotoHeader extends StatelessWidget {
 }
 
 class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({super.key, required this.cat, required this.photo, required this.pending, required this.onTap, required this.onFlag, this.onImageError});
+  const _CategoryTile({super.key, required this.cat, required this.photo, required this.pending, required this.onTap, required this.onFlag, this.resubmitted = false, this.onImageError});
 
   final PhotoCategoryDef cat;
   final ShopPhoto? photo;
+
+  /// The photo replaced a flagged one and went for review again with the current version.
+  final bool resubmitted;
   final UploadItem? pending;
   final void Function(ShopPhoto? photo, UploadItem? pending) onTap;
   final void Function(ShopPhoto photo) onFlag;
@@ -552,7 +579,9 @@ class _CategoryTile extends StatelessWidget {
                       top: 6,
                       left: 6,
                       child: GestureDetector(onTap: () => onFlag(p), child: _Badge(icon: p.isRejected ? Icons.cancel : Icons.flag, color: AdinnColors.red)),
-                    ),
+                    )
+                  else if (resubmitted && u == null)
+                    const Positioned(top: 6, left: 6, child: _Badge(icon: Icons.published_with_changes, color: AdinnColors.info)),
                 ],
               ),
             ),
@@ -591,6 +620,7 @@ class _CategoryTile extends StatelessWidget {
     final p = photo;
     if (p == null) return 'Tap to capture';
     if (p.needsRework) return p.attentionLabel;
+    if (resubmitted) return 'Resubmitted';
     if (p.locationUnverified) return 'Location unverified';
     return _reviewLabel(p.review.status);
   }
@@ -601,6 +631,7 @@ class _CategoryTile extends StatelessWidget {
     final p = photo;
     if (p == null) return AdinnColors.muted;
     if (p.needsRework) return AdinnColors.red;
+    if (resubmitted) return AdinnColors.info;
     if (p.locationUnverified) return AdinnColors.warning;
     return AdinnColors.muted;
   }
@@ -882,7 +913,7 @@ class _FilesSectionState extends State<_FilesSection> {
     final why = p.isRejected ? (ctrl.detail?.reworkNoteFor(p)?.reason ?? '') : '';
     final subtitle = [
       if (p.isDraft) 'Draft' else if (p.version != null) 'V${p.version}',
-      if (p.replaces != null) 'Replacement',
+      if (p.replaces != null) (ctrl.detail?.isResubmitted(p) ?? false) ? 'Resubmitted' : 'Replacement',
       if (why.isNotEmpty) 'Reason: $why',
     ].join(' | ');
     return AppFileRow(

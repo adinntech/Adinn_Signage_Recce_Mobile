@@ -9,9 +9,9 @@ Today the 13 media cards, 10 installation methods and about 90 questions are wri
 | # | What | State |
 |---|---|---|
 | **C1** | Backend: catalog data, seed from the built-in list, read API for everyone, edit API for the admin, per-board `mediaCode` / `installationType` / `answers` | **Built 2026-11-24** (this document) |
-| C2 | Phone, field flow: read the server catalog (cached, built-in fallback), select several media types in one go, one card per board with Type, Quantity, Size, Photos, Installation, Questions top to bottom, quantity change per board | not started |
-| C3 | Web: admin screen "Media catalog" (media, installation types, questions; add, edit, delete, order, active switch, usage) | not started |
-| C4 | Phone: admin login (SUPER_ADMIN on the phone) and the same catalog screens | not started. Needs an auth change (web roles are refused on the phone today) |
+| C2 | Phone, field flow: read the server catalog (cached, built-in fallback), select several media types in one go, one card per board with Type, Quantity, Size, Photos, Installation, Questions top to bottom, quantity change per board | **Built 2026-11-24** (section C2 below) |
+| C3 | Web: admin screen "Media catalog" (media, installation types, questions; add, edit, delete, order, active switch, usage) | files exist (parallel session), not reviewed or tested here |
+| C4 | Phone: admin login (SUPER_ADMIN on the phone) and the same catalog screens | files exist (parallel session), not reviewed or tested here |
 
 ## C1. What was built
 
@@ -91,6 +91,43 @@ Env: none added.
 `tests/catalog.test.ts`: 22 pass (first read seeds 18 / 10 / 93; version and "unchanged"; vendor refused on every write; media add / edit / delete with cascade and in-use block; installation add / delete with cascade and in-use block; question rules per type; immutable scope / key / type; null clears a value; order; load defaults keeps an edit; board fields stored, validated, older draft kept, usage counts).
 
 Full backend suite (one clean run, 2026-11-24): 1210 pass, 16 fail. None of the 16 is in the catalog, recce or files tests. They are the older failures of `bd-crm-unit`, `client-servicing` (2), `handover-import-unit`, `recce-codes-validator` (2), `role-home` (2), `signage-code-mail` (4), `signage-vendor-mail` (2), `vendors-zoho-kyc`, and one `project-cascade` test that failed once under load and passed 3 of 3 alone (a fire-and-forget notification arriving after the delete). An earlier run showed 51 failures because two suites ran at the same time and the machine ran out of memory: run the backend suite one at a time.
+
+## C2. Phone, field flow (built 2026-11-24)
+
+Flow now, per shop: **Boards** tab > Add boards (tick one or more media types, quantity and size of each) > for each board its **photos** (Photos tab, one board open at a time) > that board's **installation requirement** (Boards tab: installation method, then the site questions) > the next board > site **Install** tab > Review. The tabs are in that order (Boards, Photos, Install, Review, Chat). The Install tab stays what it was: the site-level feasibility (ladder, scaffolding, crane, hydra, manual, electrical, height). The new per-board requirement is a different thing and lives on the board.
+
+### What was built
+
+| Part | Where |
+|---|---|
+| Catalog on the phone: `CatalogData` (media, installation methods, questions; JSON; lookups `installationsFor`, `questionsFor`, `missingAnswers`), `CatalogData.builtIn()` = the same entries as the older editor, `CatalogController` (built-in copy, then the copy saved on the phone, then the server's; one "since version N" call; a failed read keeps what is held). Read at sign-in and whenever a shop opens. | `live_recce/data/catalog_data.dart`, `catalog_controller.dart`, `RecceApi.catalog`, `LiveServices.catalog` (saved under `live_catalog_cache_v1`) |
+| `BoardItem` carries `mediaCode`, `installationType`, `answers` (sent only when set; copied by `copy()`) | `recce_models.dart` |
+| **Add boards, several media types**: the cards toggle (tick / untick); each ticked type gets its own card with quantity (+ / -), same or different sizes and the numbers it will get; one unit for all; the shop limit (12) is shared by all ticked types; ONE save for everything (`ShopDetailController.addBoards`); the first new board is the one photographed first | `add_boards_screen.dart`, `MediaTypeGrid(selectedCodes:, media:)` |
+| **Boards tab**: boards of one media type sit under a header with the quantity (`-` removes the highest-numbered board of the type, `+` adds one like the last: same size, installation and answers, its own number and no photos, saved at once; `-` is off at one board and refuses a board with photos). Each board is a card folded to one line with status chips (Size, Installation, Photos 3/7). A card opens (one at a time) to Size, Installation (the methods of its media type as tiles) and Site questions (the media's, the method's and the common ones), then Photos and Next. | `boards_tab.dart` |
+| **Flow**: `_nextWork()` decides what comes next in this order: a board's size, then board by board its photos and its installation, then the site Install, then Review. The last photo of a board opens that board's installation (card open, section in view) when it still has one to fill; "Next" on a board saves what was typed and goes to the next board's photos or installation; when every board is complete it asks "another board?" (Add another board, or Continue). A shop opens on the step the person is at. Rework and locked shops are not moved. | `live_shop_screen.dart` |
+| Submit check, first submit only: `GSB-01: choose the installation type`, `GSB-01: answer "Fascia material"` (the board name is left out when the shop has one board) | `submit_validator.dart` `installationProblems`, `ShopDetailController.installationProblems` |
+
+### Rules (decisions)
+
+- **Who must fill it**: a board made from the catalog (numbered, or with a `mediaCode`) whose media type has at least one active installation method, on the FIRST submit only. Older lines and every resubmission are never asked (rework asks only for what the reviewer flagged). The server does not enforce it (the phone does, like the seven photos); say if it should.
+- **Quantity** is per media type: each unit is its own board, so each has its own photos, installation and answers. An older line with a quantity above 1 keeps its quantity box.
+- **A required question counts only when it shows** (`remove_existing` only when `existing_board` is yes, `power_distance` only when `power_available` is no).
+- **A save tidies the answers**: an answer to a question this catalog knows but that no longer applies to the board's installation is dropped (the server keeps at most 60 per board). An answer whose key the phone does not know is kept. Choosing another installation method keeps the answers until the save.
+- The media of an older numbered board (made before codes were stored) is found by its name; an older unnumbered line has no catalog media, so the card shows "Choose the media type above first" and nothing is required.
+- An admin who makes a media type or installation inactive removes it from new boards only; a board that already holds it keeps it.
+
+### Files
+
+New: `catalog_data.dart`, `catalog_controller.dart`; tests `live_recce_installation_test.dart` (26).
+Changed: `recce_models.dart`, `recce_controllers.dart` (`addBoards`, `NewBoards`, board and installation helpers, card state, `boardPhotoProgress`), `recce_api.dart`, `live_services.dart`, `submit_validator.dart`, `add_boards_screen.dart` (rewritten), `boards_tab.dart` (rewritten), `live_shop_screen.dart`, `board/media_type_grid.dart`; tests `live_recce_boards_test.dart` (Add boards group rewritten for several types), `live_recce_guided_flow_test.dart`, `live_recce_m3_test.dart` (six new flow tests).
+
+### Tests
+
+`flutter analyze lib test`: clean except two old warnings (`report_service.dart`, `photo_render.dart`). New and changed tests pass: installation 26, Add boards screen 7, six new shop screen flow tests. The older failures are the same as before this work (`live_recce_m3_test.dart` chat and dashboard, `photo_shrink_test.dart`).
+
+### C3 and C4
+
+The web admin screen (`signage_web/app/(app)/admin/media-catalog`, `components/admin/media-catalog/*`, `lib/api/catalog.ts`) and the phone admin screens (`lib/features/catalog_admin/*`, the admin login in `live_auth`) were written in a parallel session while C2 was being built. **They are not reviewed or tested here**; the milestone table below says "not started" for them only because this document was written before. Check them against the API in section C1 before relying on them.
 
 ## Open for the next milestones
 

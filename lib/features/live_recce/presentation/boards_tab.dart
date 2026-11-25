@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,11 +10,14 @@ import '../../board/site_questions_form.dart';
 import '../data/catalog_data.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import '../data/rework_alert.dart' show FlaggedSection;
 import 'add_boards_screen.dart';
 import 'live_widgets.dart';
+import 'rework_alert.dart' show SectionReworkBanner;
 
-/// Boards: one card per physical board, folded to one line. A card opens to its parts, top to bottom: Size, Installation (the
-/// installation method of its media type), Site questions (the questions of that media type and method). A board made with "Add
+/// Boards: one card per physical board, folded to one line. A card opens to two tabs: "Size & details" (media type, size, sides,
+/// position, notes) and "Installation" (the installation method of its media type, then its site questions in a section that
+/// folds once they are answered). A board made with "Add
 /// boards" is always one unit with its own number; an older line (made before numbers existed) may still stand for several
 /// identical boards through its quantity. Boards of one media type sit under one header whose + and - change the quantity.
 class BoardsTab extends StatelessWidget {
@@ -41,6 +42,30 @@ class BoardsTab extends StatelessWidget {
     }
     final ok = await confirmDialog(context, title: 'Remove ${b.label}?', message: 'This board will be removed from the recce.', confirmText: 'Remove', destructive: true);
     if (ok) ctrl.removeBoard(b);
+  }
+
+  /// The bin on a media type's header: a type added by mistake goes with all its boards (and its draft photos), in one confirmed step.
+  Future<void> _removeType(BuildContext context, String type) async {
+    final list = ctrl.boardsOfType(type);
+    if (list.isEmpty) return;
+    final photos = ctrl.photosOfType(type);
+    if (photos.submitted > 0) {
+      showSnack(context, '$type has photos that were already submitted, so it cannot be removed.', error: true);
+      return;
+    }
+    final loose = photos.drafts + photos.waiting;
+    final names = list.map((b) => b.label).join(', ');
+    final ok = await confirmDialog(
+      context,
+      title: 'Remove ${list.first.name}?',
+      message: 'This removes ${list.length == 1 ? 'the board' : 'all ${list.length} boards'} of this media type ($names) from the recce.${loose > 0 ? ' Its $loose photo${loose == 1 ? '' : 's'} will be deleted too.' : ''}',
+      confirmText: 'Remove',
+      destructive: true,
+    );
+    if (!ok || !context.mounted) return;
+    final err = await ctrl.removeMediaType(type);
+    if (!context.mounted) return;
+    showSnack(context, err ?? '${list.first.name} removed. Save the draft to keep this change.', error: err != null);
   }
 
   Future<void> _add(BuildContext context) async {
@@ -75,8 +100,13 @@ class BoardsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final editable = ctrl.canEdit;
-    // FIX_MEASUREMENT requests that name no board (web reviewers may send them that way) cannot sit on a card: one banner for all.
+    // Size / quantity / media type requests that name no board (web reviewers may send them that way) cannot sit on a card: one banner for all.
     final general = ctrl.detail?.measurementReworksWithoutBoard(ctrl.boards.map((b) => b.key)) ?? const [];
+    // In rework only what the reviewer flagged is open: boards are not added or removed, and a board card is editable only when a request
+    // names it. A request that names no board (general banner, or a Boards checklist item) leaves every board open.
+    final inRework = ctrl.inRework;
+    final anyBoardOpen = general.isNotEmpty || (ctrl.detail != null && FlaggedSection.of(ctrl.detail!, section: 'BOARDS').isNotEmpty);
+    bool open(BoardItem b) => editable && (!inRework || anyBoardOpen || (ctrl.detail?.boardReworksFor(b.key).isNotEmpty ?? false));
     final shownTypes = <String>{};
     final rows = <Widget>[];
     for (final b in ctrl.boards) {
@@ -88,25 +118,28 @@ class BoardsTab extends StatelessWidget {
           type: b.mediaType,
           name: list.first.name,
           count: list.length,
-          enabled: editable,
+          enabled: editable && !inRework,
           canAdd: ctrl.boards.length < maxBoardItems,
           onMore: () => _more(context, b.mediaType),
           onFewer: () => _fewer(context, b.mediaType),
+          onRemove: () => _removeType(context, b.mediaType),
         ));
         rows.add(const SizedBox(height: 8));
         for (final x in list) {
-          rows.add(_card(context, x, editable));
+          rows.add(_card(context, x, open(x)));
           rows.add(const SizedBox(height: 10));
         }
         rows.add(const SizedBox(height: 4));
       } else {
-        rows.add(_card(context, b, editable));
+        rows.add(_card(context, b, open(b)));
         rows.add(const SizedBox(height: 12));
       }
     }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Checklist items of the Boards section that are not a size, quantity or media type request (those use the banner below).
+        if (ctrl.detail != null) SectionReworkBanner(items: FlaggedSection.of(ctrl.detail!, section: 'BOARDS'), title: 'Reviewer asked for changes to the boards'),
         if (general.isNotEmpty) ...[
           _MeasurementBanner(items: general),
           const SizedBox(height: 12),
@@ -116,9 +149,11 @@ class BoardsTab extends StatelessWidget {
           Text('${ctrl.boards.length}/$maxBoardItems', style: const TextStyle(color: AdinnColors.muted)),
         ]),
         const SizedBox(height: 4),
-        const Text(
-          'Every physical board has its own number (GSB-01, GSB-02 ...), size, photos and installation requirement. Tap a board to open it.',
-          style: TextStyle(color: AdinnColors.muted, fontSize: 13),
+        Text(
+          inRework
+              ? 'The reviewer asked for changes. Only the boards marked in red can be edited. The others stay as they are.'
+              : 'Every physical board has its own number (GSB-01, GSB-02 ...), size, photos and installation requirement. Tap a board to open it.',
+          style: const TextStyle(color: AdinnColors.muted, fontSize: 13),
         ),
         const SizedBox(height: 12),
         if (ctrl.boards.isEmpty)
@@ -126,7 +161,7 @@ class BoardsTab extends StatelessWidget {
               ? const _NoBoardsWarning()
               : const EmptyState(icon: Icons.view_in_ar_outlined, title: 'No boards yet', message: 'Add the boards you measured.'),
         ...rows,
-        if (editable)
+        if (editable && !inRework)
           OutlinedButton.icon(
             key: const Key('add-boards'),
             onPressed: ctrl.boards.length >= maxBoardItems ? null : () => _add(context),
@@ -142,7 +177,7 @@ class BoardsTab extends StatelessWidget {
         ctrl: ctrl,
         item: b,
         enabled: editable,
-        rework: ctrl.detail?.measurementReworkFor(b.key),
+        fixes: ctrl.detail?.boardReworksFor(b.key) ?? const [],
         onRemove: () => _remove(context, b),
         onNext: onNextBoard == null ? null : () => onNextBoard!(b),
         onOpenPhotos: onOpenPhotos == null ? null : () => onOpenPhotos!(b),
@@ -151,7 +186,7 @@ class BoardsTab extends StatelessWidget {
 
 /// One media type's header: its name and how many boards of it the shop has; + and - change that quantity.
 class _GroupHeader extends StatelessWidget {
-  const _GroupHeader({required this.media, required this.type, required this.name, required this.count, required this.enabled, required this.canAdd, required this.onMore, required this.onFewer});
+  const _GroupHeader({required this.media, required this.type, required this.name, required this.count, required this.enabled, required this.canAdd, required this.onMore, required this.onFewer, required this.onRemove});
 
   final CatalogMedia? media;
   final String type;
@@ -162,6 +197,9 @@ class _GroupHeader extends StatelessWidget {
   final VoidCallback onMore;
   final VoidCallback onFewer;
 
+  /// Removes the whole media type (every board of it): for a type added by mistake.
+  final VoidCallback onRemove;
+
   @override
   Widget build(BuildContext context) {
     return Row(key: Key('group-$type'), children: [
@@ -171,11 +209,12 @@ class _GroupHeader extends StatelessWidget {
       if (enabled) IconButton(key: Key('group-minus-$type'), tooltip: 'One board less', visualDensity: VisualDensity.compact, onPressed: count <= 1 ? null : onFewer, icon: const Icon(Icons.remove_circle_outline)),
       Text('$count', key: Key('group-count-$type'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
       if (enabled) IconButton(key: Key('group-plus-$type'), tooltip: 'One board more', visualDensity: VisualDensity.compact, onPressed: canAdd ? onMore : null, icon: const Icon(Icons.add_circle_outline)),
+      if (enabled) IconButton(key: Key('group-remove-$type'), tooltip: 'Remove this media type', visualDensity: VisualDensity.compact, onPressed: onRemove, icon: const Icon(Icons.delete_outline, color: AdinnColors.red)),
     ]);
   }
 }
 
-/// "Measurement rework requested": the reviewer's note when it is not tied to one board.
+/// "Board details to correct": the reviewer's size / quantity / media type notes when they are not tied to one board.
 class _MeasurementBanner extends StatelessWidget {
   const _MeasurementBanner({required this.items});
 
@@ -194,12 +233,12 @@ class _MeasurementBanner extends StatelessWidget {
             const Row(children: [
               Icon(Icons.flag, color: AdinnColors.red, size: 20),
               SizedBox(width: 8),
-              Expanded(child: Text('Measurement rework requested', style: TextStyle(fontWeight: FontWeight.w800, color: AdinnColors.red))),
+              Expanded(child: Text('Board details to correct', style: TextStyle(fontWeight: FontWeight.w800, color: AdinnColors.red))),
             ]),
             for (final i in items) ...[
               const SizedBox(height: 8),
-              if (i.forBoard.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('For board ${i.forBoard}', style: const TextStyle(fontSize: 12, color: AdinnColors.muted))),
-              ReworkBox(note: i.note, fallback: 'The reviewer asked you to correct the measurements.'),
+              Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('${boardFixTitleFor(i.note.itemType, rejected: i.note.rejected, label: i.note.label)}${i.forBoard.isNotEmpty ? ' (board ${i.forBoard})' : ''}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AdinnColors.redDark))),
+              ReworkBox(note: i.note, fallback: 'The reviewer asked you to correct the board details.'),
             ],
           ],
         ),
@@ -233,14 +272,14 @@ class _NoBoardsWarning extends StatelessWidget {
 }
 
 class _BoardCard extends StatefulWidget {
-  const _BoardCard({super.key, required this.ctrl, required this.item, required this.enabled, this.rework, required this.onRemove, this.onNext, this.onOpenPhotos});
+  const _BoardCard({super.key, required this.ctrl, required this.item, required this.enabled, this.fixes = const [], required this.onRemove, this.onNext, this.onOpenPhotos});
 
   final ShopDetailController ctrl;
   final BoardItem item;
   final bool enabled;
 
-  /// The open FIX_MEASUREMENT request for this board, if the reviewer asked for the size to be corrected.
-  final ReworkNote? rework;
+  /// The open requests for this board: the reviewer asked for its size, quantity or media type to be checked or corrected.
+  final List<ReworkNote> fixes;
   final VoidCallback onRemove;
   final VoidCallback? onNext;
   final VoidCallback? onOpenPhotos;
@@ -255,7 +294,8 @@ class _BoardCardState extends State<_BoardCard> {
   late final _height = TextEditingController(text: _num(widget.item.height));
   late final _position = TextEditingController(text: widget.item.position);
   late final _notes = TextEditingController(text: widget.item.notes);
-  final _installKey = GlobalKey();
+  /// The tab of the open card. Null until the card is first drawn: it then opens on the first part that is not done yet.
+  _BoardTab? _tab;
 
   static String _num(double? v) => v == null ? '' : (v == v.roundToDouble() ? v.toInt().toString() : v.toString());
 
@@ -301,14 +341,16 @@ class _BoardCardState extends State<_BoardCard> {
     _c.changeBoardType(_i, mediaType: m.shortName, name: m.name, mediaCode: m.code);
   }
 
-  /// Brings the section a flow asked for into view once the card is open.
-  void _showRequestedSection() {
+  bool get _sizeDone => _i.hasSize && _i.name.trim().isNotEmpty;
+
+  /// A card opens on the first part that is not done: Size, else Installation (when it is required and missing), else Size.
+  _BoardTab _firstTab() => !_sizeDone ? _BoardTab.size : (_c.needsInstallation(_i) && !_c.boardInstallDone(_i) ? _BoardTab.install : _BoardTab.size);
+
+  /// The part a flow asked for ("Next" moved on to this board's installation, a chip was tapped ...) is shown once the card is open.
+  void _applyRequestedSection() {
     final section = _c.takeCardSection(_i.key);
-    if (section != BoardSection.installation) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _installKey.currentContext;
-      if (ctx != null && mounted) unawaited(Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), alignment: 0.05));
-    });
+    if (section == null) return;
+    _tab = section == BoardSection.installation ? _BoardTab.install : _BoardTab.size;
   }
 
   String get _sizeText => _i.hasSize ? '${_trim(_i.width!)} x ${_trim(_i.height!)} ${_i.unit.toLowerCase()}' : 'size not entered';
@@ -317,9 +359,11 @@ class _BoardCardState extends State<_BoardCard> {
   @override
   Widget build(BuildContext context) {
     final en = widget.enabled;
-    final fix = widget.rework;
+    final fixes = widget.fixes;
+    final fix = fixes.isEmpty ? null : fixes.first;
     final open = _c.boardCardOpen(_i.key);
-    if (open) _showRequestedSection();
+    if (open) _applyRequestedSection();
+    final tab = _tab ??= _firstTab();
     final needs = _c.needsInstallation(_i);
     final photos = _c.boardPhotoProgress(_i.key);
     final media = _c.mediaOf(_i);
@@ -343,13 +387,13 @@ class _BoardCardState extends State<_BoardCard> {
                     Text(_i.quantity > 1 ? '$_sizeText  ×${_i.quantity}' : _sizeText, style: const TextStyle(fontSize: 12.5, color: AdinnColors.muted)),
                   ]),
                 ),
-                if (fix != null) const ReworkTag(text: 'Rework'),
+                if (fixes.isNotEmpty) ReworkTag(text: fixes.every((f) => f.rejected) ? 'Rejected' : 'Rework'),
                 Icon(open ? Icons.expand_less : Icons.expand_more, color: AdinnColors.muted),
               ]),
               const SizedBox(height: 6),
               Wrap(spacing: 6, runSpacing: 4, children: [
-                _StateChip(key: Key('chip-size-${_i.key}'), label: 'Size', done: _i.hasSize && _i.name.trim().isNotEmpty),
-                if (needs) _StateChip(key: Key('chip-install-${_i.key}'), label: 'Installation', done: _c.boardInstallDone(_i)),
+                _StateChip(key: Key('chip-size-${_i.key}'), label: 'Size', done: _sizeDone, onTap: () => _c.openBoardCard(_i.key, section: BoardSection.size)),
+                if (needs) _StateChip(key: Key('chip-install-${_i.key}'), label: 'Installation', done: _c.boardInstallDone(_i), onTap: () => _c.openBoardCard(_i.key, section: BoardSection.installation)),
                 if (_c.isSaved(_i.key)) _StateChip(key: Key('chip-photos-${_i.key}'), label: 'Photos ${photos.done}/${photos.total}', done: photos.total > 0 && photos.done >= photos.total, onTap: widget.onOpenPhotos),
               ]),
             ]),
@@ -360,20 +404,16 @@ class _BoardCardState extends State<_BoardCard> {
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               const Divider(height: 1),
-              if (fix != null) ...[
+              for (final f in fixes) ...[
                 const SizedBox(height: 10),
-                ReworkBox(note: fix, fallback: 'The reviewer asked you to correct the size of this board.'),
+                Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(boardFixTitleFor(f.itemType, rejected: f.rejected, label: f.label), style: const TextStyle(fontWeight: FontWeight.w800, color: AdinnColors.red))),
+                ReworkBox(note: f, fallback: 'The reviewer asked you to ${boardFixTitle(f.itemType).toLowerCase()} of this board.'),
               ],
               const SizedBox(height: 12),
-              _SectionTitle(key: Key('sec-size-${_i.key}'), number: 1, title: 'Size', done: _i.hasSize),
-              const SizedBox(height: 10),
-              ..._sizeSection(en),
-              const SizedBox(height: 16),
-              KeyedSubtree(key: _installKey, child: _SectionTitle(key: Key('sec-install-${_i.key}'), number: 2, title: 'Installation', done: needs ? _c.boardInstallDone(_i) : null)),
-              const SizedBox(height: 10),
-              ..._installationSection(en),
-              const SizedBox(height: 16),
-              ..._moreDetails(en),
+              _BoardTabBar(boardKey: _i.key, selected: tab, sizeDone: _sizeDone, installDone: needs ? _c.boardInstallDone(_i) : null, onSelect: (t) => setState(() => _tab = t)),
+              const SizedBox(height: 14),
+              // One tab at a time (no animation: the person is typing measurements here).
+              if (tab == _BoardTab.size) ...[..._sizeSection(en), const SizedBox(height: 16), ..._moreDetails(en)] else ..._installationSection(en),
               const SizedBox(height: 14),
               Row(children: [
                 if (en)
@@ -510,15 +550,25 @@ class _BoardCardState extends State<_BoardCard> {
         ),
       if (chosen != null && chosen.isNotEmpty) ...[
         const SizedBox(height: 8),
-        Text('Site questions', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
-        SiteQuestionsForm(
-          key: ValueKey('${_i.key}|${_c.mediaOf(_i)?.code}|$chosen'),
-          questions: _c.questionsOf(_i),
-          answers: _i.answers,
-          enabled: en,
-          onChanged: (id, v) => _c.setAnswer(_i, id, v),
-        ),
+        // The answers fold: open while something is still to answer, folded once every question is answered (tap the header to open it again).
+        Builder(builder: (_) {
+          // The count is of the required questions (an optional one left empty must not keep the section open); with none required, of all.
+          final visible = _c.questionsOf(_i).where((q) => q.isVisible(_i.answers)).toList();
+          final counted = visible.any((q) => q.required) ? visible.where((q) => q.required).toList() : visible;
+          return _AnswersPanel(
+            key: ValueKey('answers-${_i.key}-$chosen'),
+            title: 'Site questions',
+            answered: counted.where((q) => q.isAnswered(_i.answers)).length,
+            total: counted.length,
+            child: SiteQuestionsForm(
+              key: ValueKey('${_i.key}|${_c.mediaOf(_i)?.code}|$chosen'),
+              questions: _c.questionsOf(_i),
+              answers: _i.answers,
+              enabled: en,
+              onChanged: (id, v) => _c.setAnswer(_i, id, v),
+            ),
+          );
+        }),
       ] else if (en)
         const Padding(padding: EdgeInsets.only(top: 6), child: Text('Choose the installation method to get its questions.', style: TextStyle(color: AdinnColors.muted, fontSize: 13))),
     ];
@@ -586,25 +636,110 @@ class _StateChip extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({super.key, required this.number, required this.title, this.done});
-  final int number;
-  final String title;
+/// The two parts of an open board card.
+enum _BoardTab { size, install }
 
-  /// null = nothing is required here.
-  final bool? done;
+/// The tabs of an open board card: a red pill for the open one, a tick or a warning on each part that needs an answer.
+class _BoardTabBar extends StatelessWidget {
+  const _BoardTabBar({required this.boardKey, required this.selected, required this.sizeDone, required this.installDone, required this.onSelect});
+  final String boardKey;
+  final _BoardTab selected;
+  final bool sizeDone;
+
+  /// null = nothing is required on the Installation tab (no tick or warning shown).
+  final bool? installDone;
+  final ValueChanged<_BoardTab> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      CircleAvatar(
-        radius: 12,
-        backgroundColor: done == true ? AdinnColors.success : AdinnColors.red,
-        child: done == true ? const Icon(Icons.check, size: 14, color: Colors.white) : Text('$number', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: AdinnColors.canvas, borderRadius: BorderRadius.circular(14), border: Border.all(color: AdinnColors.line)),
+      child: Row(children: [
+        Expanded(child: _tab(key: Key('btab-size-$boardKey'), value: _BoardTab.size, icon: Icons.straighten, label: 'Size & details', done: sizeDone)),
+        const SizedBox(width: 4),
+        Expanded(child: _tab(key: Key('btab-install-$boardKey'), value: _BoardTab.install, icon: Icons.construction_outlined, label: 'Installation', done: installDone)),
+      ]),
+    );
+  }
+
+  Widget _tab({required Key key, required _BoardTab value, required IconData icon, required String label, required bool? done}) {
+    final on = selected == value;
+    final fg = on ? Colors.white : AdinnColors.muted;
+    return Semantics(
+      selected: on,
+      button: true,
+      child: Material(
+        color: on ? AdinnColors.red : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          key: key,
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => onSelect(value),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon, size: 18, color: fg),
+              const SizedBox(width: 6),
+              Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 13.5))),
+              if (done != null) ...[
+                const SizedBox(width: 6),
+                Icon(done ? Icons.check_circle : Icons.error_outline, size: 15, color: on ? Colors.white : (done ? AdinnColors.success : AdinnColors.red)),
+              ],
+            ]),
+          ),
+        ),
       ),
-      const SizedBox(width: 10),
-      Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-    ]);
+    );
+  }
+}
+
+/// A section of answers that folds: its header says how many questions are answered. It starts open while something is still to answer
+/// and folded when everything is answered; a tap on the header opens or folds it again.
+class _AnswersPanel extends StatefulWidget {
+  const _AnswersPanel({super.key, required this.title, required this.answered, required this.total, required this.child});
+  final String title;
+  final int answered;
+  final int total;
+  final Widget child;
+
+  @override
+  State<_AnswersPanel> createState() => _AnswersPanelState();
+}
+
+class _AnswersPanelState extends State<_AnswersPanel> {
+  late bool _open = widget.answered < widget.total;
+
+  @override
+  Widget build(BuildContext context) {
+    final complete = widget.total > 0 && widget.answered >= widget.total;
+    final color = complete ? AdinnColors.success : AdinnColors.red;
+    return Container(
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: AdinnColors.line)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        InkWell(
+          key: const Key('answers-toggle'),
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() => _open = !_open),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(children: [
+              const Icon(Icons.fact_check_outlined, size: 20, color: AdinnColors.muted),
+              const SizedBox(width: 10),
+              Expanded(child: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
+                child: Text(widget.total == 0 ? 'none' : '${widget.answered}/${widget.total} answered', key: const Key('answers-count'), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color)),
+              ),
+              const SizedBox(width: 4),
+              Icon(_open ? Icons.expand_less : Icons.expand_more, color: AdinnColors.muted),
+            ]),
+          ),
+        ),
+        if (_open) Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 4), child: widget.child),
+      ]),
+    );
   }
 }
 

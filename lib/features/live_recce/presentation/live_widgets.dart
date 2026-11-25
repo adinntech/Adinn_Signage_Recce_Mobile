@@ -225,12 +225,17 @@ class ReviewStatusHeader extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // A Wrap: on a narrow phone the version tag and the status ("Rework required") go to a second line instead of overflowing.
             Row(children: [
               const Icon(Icons.fact_check_outlined, color: AdinnColors.red),
               const SizedBox(width: 8),
-              const Expanded(child: Text('Review status', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
-              if (d.version > 0) Padding(padding: const EdgeInsets.only(right: 8), child: TagChip('Version ${d.version}', icon: Icons.history)),
-              StatusPill(d.status),
+              Expanded(
+                child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  const Text('Review status', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  if (d.version > 0) TagChip('Version ${d.version}', icon: Icons.history),
+                  StatusPill(d.status),
+                ]),
+              ),
             ]),
             if (d.version == 0)
               const Padding(padding: EdgeInsets.only(top: 8), child: Text('Not submitted yet. Reviewers see this shop after you submit.', style: TextStyle(color: AdinnColors.muted)))

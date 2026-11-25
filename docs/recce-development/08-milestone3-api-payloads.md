@@ -42,7 +42,7 @@ Rules: text or an image is required (422); `body` max 2000; `refs` max 10, dupli
 | All stages approved | `Recce Review Update` | `Final approval` | `VERSION n` |
 | Rejected / Admin override | `Recce Review Update` | `Rejected` / `Admin override: approved` | `VERSION n` |
 | Approval changed | `Recce Review Update` | `Decision changed: rejected / rework required / more photos requested` + `Earlier decision: Approved` | `VERSION n`, `PHOTO id` |
-| Hand-over (sequential mode only) | `Client Servicing Review Due` | - | `VERSION n` |
+| ~~Hand-over~~ (removed 2026-11-25: no turn order, so no "Review Due" card) | - | - | - |
 | Shop reopened | `Shop Reopened` | `Reason`, `Previous status` | `VERSION n` |
 
 **Who can read.** Another vendor's / login's shop: 404 on all four routes. Reviewers: only projects they review (Operations: assigned, Client Servicing: their orders, Admin / Management: all), else 404. History stays with the shop: after a reassignment the new vendor sees the whole thread, the old one gets 404.
@@ -95,9 +95,9 @@ Per-person key (event + person): a retry never sends twice; the person who cause
 | Event | Recipient | `type` |
 |---|---|---|
 | Shops given to a login | the vendor logins or the chosen executive | `SHOPS_ADDED` |
-| Version submitted / resubmitted | **parallel (default): reviewers of every stage at once**; sequential: first stage only (named reviewer, else Operations / Client Servicing of the project) | `RECCE_SUBMITTED` |
+| Version submitted / resubmitted | **reviewers of every stage at once** (named reviewer, else Operations / Client Servicing of the project) | `RECCE_SUBMITTED` |
 | Stage approved / rejected / rework / override | the recce person (and, for rework / reject, the other stage's people) | `RECCE_REVIEWED` |
-| Next stage's turn | **sequential mode only** | `RECCE_SUBMITTED` |
+| Next stage's turn | removed 2026-11-25 (no turn order) | - |
 | All stages approved | recce person (`Final approval`) + people of both stages (`Shop approved by all stages`), except whoever made the last decision; only the call that moved the status sends it | `RECCE_REVIEWED` |
 | Approval changed | recce person and the other stage | `RECCE_REVIEWED` |
 | Shop reopened | the recce person | `RECCE_REVIEWED` |

@@ -10,7 +10,7 @@ Routes, payloads, rules and errors: **09** (the one API reference). Backend beha
 | Every step is one update with a guard (`rev`, `status`, the `PENDING` review entry, `clientId` not stored yet) | Two reviewers, a double tap or a retry cannot both win |
 | `versions[]` snapshots are immutable (photo ids, boards, installation, notes, `stages`, `sequential`) | V1 stays readable after V2; compare = V1 snapshot against V2 snapshot |
 | Photo ids = embedded `_id`; clients only see photo ids, version numbers, review rows | Storage shape can change without an API change |
-| Review mode is a config switch (`sequential`, default `false`) and is copied into each version | Operations and Client Servicing decide independently; old versions keep the rule they were submitted under |
+| Review has no turn order: the `sequential` field (config and each version) is kept for old data but ignored | Operations and Client Servicing decide independently, in any order, for every version old or new |
 | One physical board = one `mediaItems` entry; different size = new `key` | A rework can point at exactly one board (`6x4 -> 8x4` is `width 6 -> 8`) |
 | Installation answers are tri-state, default `NOT_ASSESSED` | An unanswered question is never read as NO |
 | GPS comes only from the device, per photo; doubtful data is kept and flagged | Reviewer decides; the shop's registered address is never substituted |

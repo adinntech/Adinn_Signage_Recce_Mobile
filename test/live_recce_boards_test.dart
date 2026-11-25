@@ -38,12 +38,20 @@ class _FakeApi extends RecceApi {
 
   List<Map<String, dynamic>> onServer;
   List<Map<String, dynamic>>? sent;
+  List<Map<String, dynamic>> photos = [];
+  final deleted = <String>[];
   int saves = 0;
   String? failWith;
   bool editable = true;
 
   @override
-  Future<ShopDetail> detail(String siteId) async => ShopDetail.fromJson(_detail(onServer, editable: editable));
+  Future<ShopDetail> detail(String siteId) async => ShopDetail.fromJson(_detail(onServer, editable: editable, photos: photos));
+
+  @override
+  Future<void> deletePhoto(String siteId, String photoId, {String? reason}) async {
+    deleted.add(photoId);
+    photos = [for (final p in photos) if (p['id'] != photoId) p];
+  }
 
   @override
   Future<ShopDetail> saveDraft(String siteId, {List<BoardItem>? mediaItems, Installation? installation, String? notes}) async {
@@ -249,6 +257,34 @@ void main() {
       expect(r.c.boardHasPhotos('b2'), isFalse);
       r.queue.add(UploadItem(id: 'c-up-00001', siteId: 's1', path: '/x.jpg', category: 'LEFT_SIDE', mediaKey: 'b2'));
       expect(r.c.boardHasPhotos('b2'), isTrue); // an upload on its way counts too
+      r.c.dispose();
+      r.queue.dispose();
+    });
+
+    test('a media type added by mistake: every board of it goes, with its draft photos and its waiting uploads; other types stay', () async {
+      final r = await _rig([_item('b1'), _item('b2', seq: 2), _item('b3', type: 'ACP')]);
+      r.api.photos = [_photo('p1', 'SHOP_FRONT', 'b1'), _photo('p2', 'LEFT_SIDE', 'b2'), _photo('p3', 'SHOP_FRONT', 'b3')];
+      await r.c.refresh();
+      r.queue.add(UploadItem(id: 'c-up-00002', siteId: 's1', path: '/x.jpg', category: 'RIGHT_SIDE', mediaKey: 'b2'));
+      expect(r.c.photosOfType('GSB'), (drafts: 2, submitted: 0, waiting: 1));
+      expect(await r.c.removeMediaType('GSB'), isNull);
+      expect(r.api.deleted, unorderedEquals(['p1', 'p2'])); // its draft photos go with it, the other type's photo stays
+      expect(r.queue.forShop('s1').where((u) => u.mediaKey == 'b2'), isEmpty);
+      expect(r.c.boards.map((b) => b.key), ['b3']);
+      expect(r.c.dirty, isTrue); // like every board change, saved with the draft
+      r.c.dispose();
+      r.queue.dispose();
+    });
+
+    test('a media type with submitted photos cannot be removed, and nothing is touched', () async {
+      final r = await _rig([_item('b1'), _item('b2', type: 'ACP')]);
+      r.api.photos = [{..._photo('p1', 'SHOP_FRONT', 'b1'), 'state': 'SUBMITTED'}, _photo('p2', 'SHOP_FRONT', 'b2')];
+      await r.c.refresh();
+      expect(await r.c.removeMediaType('GSB'), contains('already submitted'));
+      expect(r.api.deleted, isEmpty);
+      expect(r.c.boards, hasLength(2));
+      expect(await r.c.removeMediaType('ACP'), isNull); // the other type has only a draft photo
+      expect(r.c.boards.map((b) => b.key), ['b1']);
       r.c.dispose();
       r.queue.dispose();
     });

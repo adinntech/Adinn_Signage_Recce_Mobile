@@ -128,7 +128,7 @@ CS: the same body with `"stage": "CS"` and its six keys.
 `type`: `REPLACE_PHOTO | ADDITIONAL_PHOTO | FIX_MEASUREMENT | OTHER`; a `photo` must belong to this shop. **More photos:** `"decision": "ADDITIONAL"` with at least one `{ "type": "ADDITIONAL_PHOTO", "category": "LEFT_SIDE", "mediaKey": "b1" }`.
 **Reject:** `{ "stage": "OPS", "decision": "REJECT", "versionNo": 1, "reason": "Wrong shop photographed" }`.
 
-**Result** (details and the two review modes in 07): both stages approved = `APPROVED` (locked); one approved and one waiting = `UNDER_REVIEW`; any rework = `REWORK_REQUIRED` (the other waiting stage becomes `VOID`); any reject = `REJECTED` (reject beats rework beats approve). Default review is **parallel**: either stage may decide first. With `sequential: true` CS first gets `409 An earlier review stage must approve first`.
+**Result** (details and the two review modes in 07): both stages approved = `APPROVED` (locked); one approved and one waiting = `UNDER_REVIEW`; any rework = `REWORK_REQUIRED` (the other waiting stage becomes `VOID`); any reject = `REJECTED` (reject beats rework beats approve). Review is **always parallel**: either stage may decide first (the old `sequential` setting is ignored since 2026-11-25, so the 409 "An earlier review stage must approve first" no longer exists).
 **Change an approval later:** `POST .../change-decision`, same body with `decision` = `REJECT | REWORK | ADDITIONAL` and a reason of 5+ characters; only that stage's own login, on the current version (07).
 Other errors: stage already decided 409, vendor 403, OPS deciding the CS stage 403, ADMIN deciding directly 403 (use `/override`), closed project 409.
 

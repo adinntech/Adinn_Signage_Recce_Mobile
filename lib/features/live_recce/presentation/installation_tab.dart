@@ -5,6 +5,8 @@ import '../../../core/widgets/common_widgets.dart';
 import '../../../core/widgets/input_formats.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import '../data/rework_alert.dart' show FlaggedSection;
+import 'rework_alert.dart' show SectionReworkBanner;
 
 const _restrictionChoices = ['Narrow lane', 'Heavy traffic', 'Permission needed', 'Overhead wires', 'No parking', 'Time limited'];
 
@@ -48,6 +50,7 @@ class _InstallationTabState extends State<InstallationTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (widget.ctrl.detail != null) SectionReworkBanner(items: FlaggedSection.of(widget.ctrl.detail!, section: 'INSTALLATION'), title: 'Reviewer asked for changes to the installation'),
         const Text('Installation feasibility', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
         const SizedBox(height: 4),
         const Text('Answer every question marked *. Choose "Not assessed" only if you could not check it.', style: TextStyle(color: AdinnColors.muted, fontSize: 13)),

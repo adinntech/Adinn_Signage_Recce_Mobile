@@ -85,6 +85,7 @@ class _ApprovalHistoryScreenState extends State<ApprovalHistoryScreen> {
                       last: i == list.length - 1,
                       photo: list[i].photo == null ? null : photos[list[i].photo],
                       rework: reworkForEvent(list[i], d.reworks),
+                      boardLabels: d.boardLabels,
                       board: list[i].mediaKey == null ? null : _boardText(d, list[i].mediaKey!),
                     ),
               ],
@@ -126,13 +127,16 @@ Color _colorOf(String type) => switch (type) {
 /// One event of the history: what happened, who did it (and their role), when (local time), the version, the comment, and the
 /// related photo or board when the event names one.
 class ActivityTile extends StatelessWidget {
-  const ActivityTile({super.key, required this.event, this.last = false, this.photo, this.rework, this.board});
+  const ActivityTile({super.key, required this.event, this.last = false, this.photo, this.rework, this.board, this.boardLabels = const {}});
 
   final ActivityEvent event;
   final bool last;
   final ShopPhoto? photo;
   final ReworkEntry? rework;
   final String? board;
+
+  /// Board key to "GSB-01", so a board request names the board by its number.
+  final Map<String, String> boardLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +173,7 @@ class ActivityTile extends StatelessWidget {
                   child: Text(e.reason),
                 ),
               if (rework != null)
-                for (final i in rework!.items) Padding(padding: const EdgeInsets.only(top: 4), child: Text('- ${reworkItemText(i)}', style: const TextStyle(fontSize: 13))),
+                for (final i in rework!.items) Padding(padding: const EdgeInsets.only(top: 4), child: Text('- ${reworkItemText(i, boardLabels: boardLabels)}', style: const TextStyle(fontSize: 13))),
               if (board != null) Padding(padding: const EdgeInsets.only(top: 6), child: TagChip(board!, icon: Icons.view_in_ar_outlined)),
               if (e.photo != null) Padding(padding: const EdgeInsets.only(top: 6), child: _PhotoRef(photo: photo)),
               for (final c in changes.take(4)) Padding(padding: const EdgeInsets.only(top: 3), child: Text(c.text, style: const TextStyle(fontSize: 12, color: AdinnColors.muted))),

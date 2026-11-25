@@ -91,7 +91,13 @@ class _LiveLoginScreenState extends State<LiveLoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (error != null) AuthBanner(message: friendlyAuthMessage(error)),
+            if (error != null)
+              AuthBanner(
+                // An admin made on the web usually has a password only, so an MPIN sign in fails until one is set by email code.
+                message: _isAdmin && error.code == 'INVALID_CREDENTIALS'
+                    ? 'Incorrect details. If this admin account has no MPIN yet, tap "Set up / reset MPIN" below and set one with the emailed code.'
+                    : friendlyAuthMessage(error),
+              ),
             const Text('Select your role', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             Row(
@@ -139,13 +145,22 @@ class _LiveLoginScreenState extends State<LiveLoginScreen> {
                   onPressed: busy
                       ? null
                       : () => Navigator.of(context).push(MaterialPageRoute<void>(
-                            builder: (_) => LiveForgotScreen(initialIdentifier: _identifier.text.trim(), startWithMpin: _credential.useMpin),
+                            builder: (_) => LiveForgotScreen(initialIdentifier: _identifier.text.trim(), startWithMpin: _isAdmin || _credential.useMpin),
                           )),
-                  child: const Text('Forgot MPIN or password?'),
+                  child: Text(_isAdmin ? 'Set up / reset MPIN' : 'Forgot MPIN or password?'),
                 ),
               ),
               AuthButton(label: 'Login', busy: busy, onPressed: _submit),
               // An administrator account is made on the web, never from the phone.
+              if (_isAdmin)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: Text(
+                    'Admin accounts are created on the web CRM. Already have one? Set your MPIN above, then sign in.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: AdinnColors.muted),
+                  ),
+                ),
               if (!_isAdmin)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,

@@ -295,6 +295,9 @@ void main() {
     testWidgets('a numbered board shows its type read-only and cannot be re-typed', (tester) async {
       final r = await _rig([_item('b1')]);
       await show(tester, r.c);
+      // The card opens on the part still to do (Installation); the media type is on the Size & details tab.
+      await tester.tap(find.byKey(const Key('btab-size-b1')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('board-media-type')), findsOneWidget);
       expect(find.byKey(const Key('board-pick-type')), findsNothing);
       r.c.dispose();

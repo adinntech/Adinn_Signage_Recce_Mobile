@@ -339,6 +339,10 @@ class ShopDetailController extends ChangeNotifier {
     return boards.where((b) => b.key == open?.key).firstOrNull ?? boards.last;
   }
 
+  /// The board the person opened by hand (or the flow moved to); null while none is open. A submitted (locked) shop starts with every
+  /// board folded, so it does not guess one like [photoBoard].
+  BoardItem? get pickedPhotoBoard => (_focusBoard == null || _focusBoard == _allClosed) ? null : boards.where((b) => b.key == _focusBoard).firstOrNull;
+
   void focusBoard(String key) {
     if (_focusBoard == key) return;
     _focusBoard = key;
@@ -492,6 +496,34 @@ class ShopDetailController extends ChangeNotifier {
     final last = list.last;
     if (boardHasPhotos(last.key)) return '${last.label} has photos, so it cannot be removed. Delete its draft photos first.';
     removeBoard(last);
+    return null;
+  }
+
+  /// The photos that belong to the boards of one media type: draft photos (can be deleted), submitted ones (cannot) and uploads still waiting.
+  ({int drafts, int submitted, int waiting}) photosOfType(String mediaType) {
+    final keys = {for (final b in boardsOfType(mediaType)) b.key};
+    final live = [for (final p in detail?.photos ?? const <ShopPhoto>[]) if (keys.contains(p.mediaKey)) p];
+    return (drafts: live.where((p) => p.isDraft).length, submitted: live.where((p) => !p.isDraft).length, waiting: pending.where((u) => keys.contains(u.mediaKey)).length);
+  }
+
+  /// A media type added by mistake: every board of it goes, with its DRAFT photos and its waiting uploads. A type with photos that were
+  /// already submitted stays (the server keeps those photos). Saved with the draft like every other board change. Returns the reason
+  /// when it cannot be removed, else null.
+  Future<String?> removeMediaType(String mediaType) async {
+    if (!canEdit) return 'This shop is locked. Boards cannot be removed now.';
+    final list = boardsOfType(mediaType);
+    if (list.isEmpty) return null;
+    if (photosOfType(mediaType).submitted > 0) return '$mediaType has photos that were already submitted, so it cannot be removed.';
+    final keys = {for (final b in list) b.key};
+    for (final u in pending.where((u) => keys.contains(u.mediaKey)).toList()) {
+      queue.cancel(u.id);
+    }
+    for (final p in [for (final p in detail?.photos ?? const <ShopPhoto>[]) if (keys.contains(p.mediaKey) && p.isDraft) p]) {
+      final err = await deletePhoto(p);
+      if (err != null) return err; // nothing is removed while a photo could not be deleted: the boards stay as they are
+    }
+    boards.removeWhere((b) => keys.contains(b.key));
+    markDirty();
     return null;
   }
 

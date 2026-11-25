@@ -388,22 +388,31 @@ void main() {
       for (final k in ['b1', 'b2', 'b3']) {
         expect(find.byKey(Key('bcard-$k')), findsOneWidget);
       }
-      expect(find.byKey(const Key('sec-size-b1')), findsNothing); // no card is open: its parts are not drawn
+      expect(find.byKey(const Key('btab-size-b1')), findsNothing); // no card is open: its tabs are not drawn
       expect(find.byKey(const Key('inst_b1_shop_fascia')), findsNothing);
       expect(tester.widget<IconButton>(find.byKey(const Key('group-minus-Acrylic'))).onPressed, isNull); // one board: "-" is off
       r.c.dispose();
       r.queue.dispose();
     });
 
-    testWidgets('a card opens to Size, Installation and its questions, top to bottom; opening another closes the first', (tester) async {
+    testWidgets('a card opens to two tabs, Size & details and Installation (with its questions); opening another closes the first', (tester) async {
       final r = await _rig([_gsb('b1', 1), _gsb('b2', 2)]);
       await show(tester, r.c);
       await tester.tap(find.byKey(const Key('bcard-b1')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sec-size-b1')), findsOneWidget);
-      expect(find.byKey(const Key('sec-install-b1')), findsOneWidget);
-      // top to bottom: Size, then Installation
-      expect(tester.getTopLeft(find.byKey(const Key('sec-size-b1'))).dy, lessThan(tester.getTopLeft(find.byKey(const Key('sec-install-b1'))).dy));
+      expect(find.byKey(const Key('btab-size-b1')), findsOneWidget);
+      expect(find.byKey(const Key('btab-install-b1')), findsOneWidget);
+      // left to right: Size & details, then Installation
+      expect(tester.getTopLeft(find.byKey(const Key('btab-size-b1'))).dx, lessThan(tester.getTopLeft(find.byKey(const Key('btab-install-b1'))).dx));
+      // The card opens on the part still to do (the size is entered, the installation is not): one tab at a time.
+      expect(find.byKey(const Key('board-media-type')), findsNothing);
+      await tester.tap(find.byKey(const Key('btab-size-b1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('board-media-type')), findsOneWidget);
+      expect(find.byKey(const Key('inst_b1_shop_fascia')), findsNothing);
+      await tester.tap(find.byKey(const Key('btab-install-b1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('board-media-type')), findsNothing);
       expect(find.byKey(const Key('inst_b1_shop_fascia')), findsOneWidget);
       expect(find.byKey(const Key('inst_b1_rooftop')), findsOneWidget);
       expect(find.textContaining('Fascia material'), findsNothing); // the questions come with the method
@@ -422,6 +431,50 @@ void main() {
       expect(find.byKey(const Key('inst_b2_shop_fascia')), findsOneWidget);
       expect(find.byKey(const Key('inst_b2_rooftop')), findsOneWidget);
       expect(find.textContaining('Fascia material'), findsNothing); // b2 has no method yet: its own questions are not asked
+      r.c.dispose();
+      r.queue.dispose();
+    });
+
+    testWidgets('the site questions fold: open while something is unanswered; a tap folds them and opens them again, the count stays in the header', (tester) async {
+      final r = await _rig([_gsb('b1', 1, extra: {'installationType': 'shop_fascia'})]);
+      await show(tester, r.c); // one board: its card is open, on the Installation tab (the part still to do)
+      expect(tester.widget<Text>(find.byKey(const Key('answers-count'))).data, startsWith('0/'));
+      expect(find.textContaining('Fascia material'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('answers-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Fascia material'), findsNothing);
+      expect(find.byKey(const Key('answers-count')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('answers-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Fascia material'), findsOneWidget);
+      r.c.dispose();
+      r.queue.dispose();
+    });
+
+    testWidgets('a board whose questions are all answered shows them folded, with "n/n answered" in the header', (tester) async {
+      final r = await _rig([_gsb('b1', 1, extra: {'installationType': 'shop_fascia', 'answers': _allAnswers})]);
+      await show(tester, r.c);
+      await tester.tap(find.byKey(const Key('btab-install-b1')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.byKey(const Key('answers-count'))).data, matches(RegExp(r'^(\d+)/\1 answered$')));
+      expect(find.textContaining('Fascia material'), findsNothing); // everything is answered: folded
+      await tester.tap(find.byKey(const Key('answers-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Fascia material'), findsOneWidget);
+      r.c.dispose();
+      r.queue.dispose();
+    });
+
+    testWidgets('the Size and Installation chips of a folded card open it on that tab', (tester) async {
+      final r = await _rig([_gsb('b1', 1), _gsb('b2', 2)]);
+      await show(tester, r.c);
+      await tester.tap(find.byKey(const Key('chip-install-b2')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('inst_b2_shop_fascia')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('chip-size-b1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('board-media-type')), findsOneWidget); // b1 opened on Size, b2 folded
+      expect(find.byKey(const Key('inst_b2_shop_fascia')), findsNothing);
       r.c.dispose();
       r.queue.dispose();
     });
@@ -493,6 +546,27 @@ void main() {
       await tester.tap(find.text('Remove'));
       await tester.pumpAndSettle();
       expect(r.c.boards.map((b) => b.label), ['GSB-01', 'GSB-02']);
+      r.c.dispose();
+      r.queue.dispose();
+    });
+
+    testWidgets('the bin on a media type header removes the whole type after one confirmation; the other type stays', (tester) async {
+      final r = await _rig([_gsb('b1', 1), _gsb('b2', 2), {..._gsb('b3', 1), 'name': 'Clear Acrylic', 'mediaType': 'Acrylic', 'mediaCode': 'ACRYLIC'}]);
+      await show(tester, r.c);
+      await tester.tap(find.byKey(const Key('group-remove-Acrylic'))); // a one-board type too: "-" is off there, the bin is not
+      await tester.pumpAndSettle();
+      expect(find.text('Remove Clear Acrylic?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(r.c.boards, hasLength(3)); // cancelled: nothing changed
+
+      await tester.tap(find.byKey(const Key('group-remove-GSB')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('all 2 boards'), findsOneWidget);
+      await tester.tap(find.text('Remove'));
+      await tester.pumpAndSettle();
+      expect(r.c.boards.map((b) => b.label), ['Acrylic-01']);
+      expect(find.byKey(const Key('group-GSB')), findsNothing);
       r.c.dispose();
       r.queue.dispose();
     });

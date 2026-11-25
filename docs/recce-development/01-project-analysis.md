@@ -14,7 +14,7 @@
 - Auth: login, vendor-login, register, forgot, refresh (rotating), logout, me; role / platform restriction.
 - Assignment: Operations assigns on the web; `/recce/shops` returns only this login's shops; another vendor's shop = 404.
 - Shop recce: start, draft (boards, notes, installation), photos (multipart, per-photo GPS / time, idempotent `clientId`, duplicate refusal, server flags, six mobile categories), annotation copy, submit with idempotency key, immutable versions, field-side versions / compare / photo history.
-- Review: Recce Operations and Client Servicing decide independently; **parallel by default** (any order or at the same moment), `sequential: true` makes the second stage wait; reject / rework (per photo and measurement) / more photos; v2 after rework; v1 approvals never carry over; change of an approval; Admin override / reopen; time-based history; shop thread with refs and one image; notifications; field dashboard and staff performance.
+- Review: Recce Operations and Client Servicing decide independently; **always parallel** (any order or at the same moment; the old `sequential` switch is ignored since 2026-11-25); reject / rework (per photo and measurement) / more photos; v2 after rework; v1 approvals never carry over; change of an approval; Admin override / reopen; time-based history; shop thread with refs and one image; notifications; field dashboard and staff performance.
 - Storage: one document per shop (`RecceSubmission`) with photos, versions, reviews and reworks embedded (see 04).
 - Console: one line per recce call with the person's name (`requestLog`).
 
@@ -25,7 +25,7 @@
 - Photo annotation is not wired to the new API on mobile (backend endpoint and web viewer exist; the older local editor is untouched).
 - `change-decision` has no mobile screen (reviewers use the web).
 - Offline queue persists photo uploads only; measurements, notes and submit need network. No FCM push for a closed app.
-- Existing databases keep `sequential: true` and only two required photos until Admin sends the one-time config call (09 section 0).
+- Existing databases keep only two required photos until Admin sends the one-time config call (09 section 0). Their old `sequential: true` no longer matters (ignored).
 
 ## Reusable parts of A
 Theme (`AdinnColors`, `AppTheme`), `common_widgets.dart`, geolocator `LocationService`, image_picker capture, annotation editor, PDF report. A's offline models (Shop, Board, Photo) do not match the server model, so the live flow has its own models in `features/live_recce/data`.

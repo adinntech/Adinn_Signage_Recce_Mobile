@@ -747,12 +747,46 @@ enum PhotoFilter {
   bool get includesUploads => this == PhotoFilter.all || this == PhotoFilter.pending;
 }
 
-/// What one rework item asks for, in words: "Replace Front View: Board not clear", "Correct the size of b1: Width is 8 ft".
-String reworkItemText(ReworkItem i) {
+/// The rework item types that ask for one detail of a board to be checked: its size, quantity or media type. The server asks for no
+/// answer to resubmit (the person corrects the board or confirms it is right).
+const boardFixTypes = {'FIX_MEASUREMENT', 'FIX_QUANTITY', 'FIX_MEDIA_TYPE'};
+
+/// The board detail a board request is about, in words: "size", "quantity", "media type".
+String boardFixWhat(String type) => switch (type) {
+      'FIX_QUANTITY' => 'quantity',
+      'FIX_MEDIA_TYPE' => 'media type',
+      _ => 'size',
+    };
+
+/// The title of a board request: "Check the quantity", "Correct the size", or "Quantity rejected" when the reviewer rejected it.
+String boardFixTitle(String type, {bool rejected = false}) {
+  final what = boardFixWhat(type);
+  if (rejected) return '${what[0].toUpperCase()}${what.substring(1)} rejected';
+  return type == 'FIX_MEASUREMENT' ? 'Correct the size' : 'Check the $what';
+}
+
+/// The title of a board request: the CHECKLIST label the reviewer ticked ("Measurements available", with "rejected" after it when the
+/// reviewer rejected it) when there is one, else the generic [boardFixTitle].
+String boardFixTitleFor(String type, {bool rejected = false, String label = ''}) {
+  if (label.isEmpty) return boardFixTitle(type, rejected: rejected);
+  return rejected ? '$label: rejected' : label;
+}
+
+/// What one rework item asks for, in words: "Replace Front View: Board not clear", "Correct the size of b1: Width is 8 ft",
+/// "Check the quantity of GSB-01: Shop has 2 boards". [boardLabels] (board key to "GSB-01", see `ShopDetail.boardLabels`) names a board
+/// by its number; without it the board key is shown.
+String reworkItemText(ReworkItem i, {Map<String, String> boardLabels = const {}}) {
+  final board = i.mediaKey.isEmpty ? 'a board' : (boardLabels[i.mediaKey] ?? i.mediaKey);
+  // A reworked checklist item reads as its checklist label ("Shop front visible: Board is cut off"), not as the generic text.
+  if (i.label.isNotEmpty && (i.type == 'OTHER' || boardFixTypes.contains(i.type))) {
+    return '${i.rejected ? 'Rejected: ' : ''}${i.label}${i.note.isNotEmpty ? ': ${i.note}' : ''}${i.resolved ? ' (done)' : ''}';
+  }
   final what = switch (i.type) {
     'REPLACE_PHOTO' => i.rejected ? 'Rejected: retake ${i.categoryLabel ?? 'the marked photo'}' : 'Replace ${i.categoryLabel ?? 'the marked photo'}',
     'ADDITIONAL_PHOTO' => 'Add ${i.categoryLabel ?? 'a photo'}',
-    'FIX_MEASUREMENT' => 'Correct the size of ${i.mediaKey.isEmpty ? 'a board' : i.mediaKey}',
+    'FIX_MEASUREMENT' => i.rejected ? 'Rejected: size of $board' : 'Correct the size of $board',
+    'FIX_QUANTITY' => i.rejected ? 'Rejected: quantity of $board' : 'Check the quantity of $board',
+    'FIX_MEDIA_TYPE' => i.rejected ? 'Rejected: media type of $board' : 'Check the media type of $board',
     _ => 'Other',
   };
   return '$what${i.note.isNotEmpty ? ': ${i.note}' : ''}${i.resolved ? ' (done)' : ''}';

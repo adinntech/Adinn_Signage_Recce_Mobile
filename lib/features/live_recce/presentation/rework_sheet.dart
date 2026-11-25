@@ -93,13 +93,18 @@ class _ReworkSheetState extends State<ReworkSheet> {
                 const SizedBox(height: 12),
                 ReworkBox(note: note),
                 const SizedBox(height: 14),
-                const Text('Original photo', style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                if (p.displayUrl != null)
-                  GestureDetector(
-                    onTap: () => showAppPhotoViewer(context, title: photoCategoryLabel(p.category), url: p.displayUrl),
-                    child: ClipRRect(borderRadius: BorderRadius.circular(10), child: SizedBox(height: 190, width: double.infinity, child: AppFileRow.image(p.displayUrl, null))),
-                  ),
+                if (waiting != null || draft != null) ...[
+                  // The photo the reviewer flagged next to the one that replaces it: the person sees what changed before submitting.
+                  _BeforeAfter(old: p, draft: draft, waiting: waiting, rejected: p.isRejected || (note?.rejected ?? false)),
+                ] else ...[
+                  const Text('Original photo', style: TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  if (p.displayUrl != null)
+                    GestureDetector(
+                      onTap: () => showAppPhotoViewer(context, title: photoCategoryLabel(p.category), url: p.displayUrl),
+                      child: ClipRRect(borderRadius: BorderRadius.circular(10), child: SizedBox(height: 190, width: double.infinity, child: AppFileRow.image(p.displayUrl, null))),
+                    ),
+                ],
                 const SizedBox(height: 6),
                 Text(
                   [
@@ -131,7 +136,7 @@ class _ReworkSheetState extends State<ReworkSheet> {
                 const SizedBox(height: 18),
                 const Text('History of this photo', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                 const SizedBox(height: 6),
-                _HistoryBody(ctrl: _history),
+                HistoryBody(ctrl: _history),
               ],
             ),
           ),
@@ -163,7 +168,7 @@ class _ReplacementStatus extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withValues(alpha: 0.35))),
       child: Row(children: [
-        SizedBox(width: 48, height: 48, child: ClipRRect(borderRadius: BorderRadius.circular(8), child: AppFileRow.image(draft?.displayUrl, up?.path))),
+        Icon(bad ? Icons.error_outline : (up != null ? Icons.cloud_upload_outlined : Icons.check_circle), color: color),
         const SizedBox(width: 10),
         Expanded(child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13))),
       ]),
@@ -171,8 +176,92 @@ class _ReplacementStatus extends StatelessWidget {
   }
 }
 
-class _HistoryBody extends StatelessWidget {
-  const _HistoryBody({required this.ctrl});
+/// The flagged photo and its replacement side by side ("Rejected photo" / "New photo"); tap either to zoom.
+class _BeforeAfter extends StatelessWidget {
+  const _BeforeAfter({required this.old, required this.draft, required this.waiting, required this.rejected});
+
+  final ShopPhoto old;
+  final ShopPhoto? draft;
+  final UploadItem? waiting;
+  final bool rejected;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = photoCategoryLabel(old.category);
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(child: _PhotoSide(key: const Key('before-photo'), label: rejected ? 'Rejected photo' : 'Earlier photo', color: AdinnColors.red, title: title, url: old.displayUrl)),
+      const SizedBox(width: 10),
+      Expanded(child: _PhotoSide(key: const Key('after-photo'), label: 'New photo', color: AdinnColors.success, title: title, url: draft?.displayUrl, localPath: waiting?.path)),
+    ]);
+  }
+}
+
+class _PhotoSide extends StatelessWidget {
+  const _PhotoSide({super.key, required this.label, required this.color, required this.title, this.url, this.localPath});
+
+  final String label;
+  final Color color;
+  final String title;
+  final String? url;
+  final String? localPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final has = url != null || localPath != null;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: TextStyle(fontWeight: FontWeight.w800, color: color)),
+      const SizedBox(height: 6),
+      GestureDetector(
+        onTap: has ? () => showAppPhotoViewer(context, title: '$label: $title', url: url, localPath: localPath) : null,
+        child: Container(
+          height: 150,
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withValues(alpha: 0.6), width: 1.5)),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(9),
+            child: has ? AppFileRow.image(url, localPath) : const ColoredBox(color: AdinnColors.canvas, child: Center(child: Icon(Icons.hourglass_empty, color: AdinnColors.muted))),
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+/// "History of this photo" for a photo that replaced an earlier one (shown from the photo's own sheet after the new version went
+/// for review): every revision as a thumbnail (tap to zoom) and the timeline of who rejected / replaced it and when. It reads the
+/// photo's history from the server, so the earlier pictures stay viewable after the next version is submitted.
+class PhotoHistorySection extends StatefulWidget {
+  const PhotoHistorySection({super.key, required this.api, required this.siteId, required this.photoId});
+
+  final RecceApi api;
+  final String siteId;
+  final String photoId;
+
+  @override
+  State<PhotoHistorySection> createState() => _PhotoHistorySectionState();
+}
+
+class _PhotoHistorySectionState extends State<PhotoHistorySection> {
+  late final PhotoHistoryController _ctrl = PhotoHistoryController(widget.api, widget.siteId, widget.photoId)..load();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Earlier photos and history', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+          const SizedBox(height: 6),
+          ListenableBuilder(listenable: _ctrl, builder: (context, _) => HistoryBody(ctrl: _ctrl)),
+        ],
+      );
+}
+
+class HistoryBody extends StatelessWidget {
+  const HistoryBody({super.key, required this.ctrl});
   final PhotoHistoryController ctrl;
 
   @override

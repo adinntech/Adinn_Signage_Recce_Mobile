@@ -111,37 +111,45 @@ class ChatSystemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final card = message.card!;
     final color = chatToneColor(card.tone);
+    // A rounded box can only have a border of ONE colour (Flutter throws while painting otherwise, and the whole card then shows empty):
+    // the thin outline is the box's own border, the thick tone stripe on the left is a separate strip clipped to the rounded corners.
     return Container(
       key: ValueKey('card-${message.id}'),
       margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
-        border: Border(left: BorderSide(color: color, width: 4), top: BorderSide(color: color.withValues(alpha: 0.3)), right: BorderSide(color: color.withValues(alpha: 0.3)), bottom: BorderSide(color: color.withValues(alpha: 0.3))),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(chatToneIcon(card.tone), size: 18, color: color),
-            const SizedBox(width: 8),
-            Expanded(child: Text(card.title, style: TextStyle(fontWeight: FontWeight.w800, color: color))),
-          ]),
-          for (final l in card.lines)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                SizedBox(width: 92, child: Text(l.label, style: const TextStyle(fontSize: 12, color: AdinnColors.muted))),
-                Expanded(child: Text(l.value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+      child: Stack(children: [
+        Positioned(left: 0, top: 0, bottom: 0, width: 4, child: ColoredBox(color: color)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(chatToneIcon(card.tone), size: 18, color: color),
+                const SizedBox(width: 8),
+                Expanded(child: Text(card.title, style: TextStyle(fontWeight: FontWeight.w800, color: color))),
               ]),
-            ),
-          if (message.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(message.body)),
-          ChatRefChips(refs: message.refs, labelOf: labelOf, onTap: onRef),
-          if (message.createdAt != null)
-            Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 4), child: Text('System  |  ${fmtTime(message.createdAt!)}', style: const TextStyle(fontSize: 11, color: AdinnColors.muted)))),
-        ],
-      ),
+              for (final l in card.lines)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    SizedBox(width: 92, child: Text(l.label, style: const TextStyle(fontSize: 12, color: AdinnColors.muted))),
+                    Expanded(child: Text(l.value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                  ]),
+                ),
+              if (message.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(message.body)),
+              ChatRefChips(refs: message.refs, labelOf: labelOf, onTap: onRef),
+              if (message.createdAt != null)
+                Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 4), child: Text('System  |  ${fmtTime(message.createdAt!)}', style: const TextStyle(fontSize: 11, color: AdinnColors.muted)))),
+            ],
+          ),
+        ),
+      ]),
     );
   }
 }

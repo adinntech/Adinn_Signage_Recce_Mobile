@@ -278,10 +278,20 @@ class ExtraPhotoSlot {
 const gpsAccuracyLimitM = 50.0;
 
 class ReworkNote {
-  const ReworkNote({this.reason = '', this.note = '', this.instructions = '', this.by, this.role, this.at, this.reworkId, this.itemId, this.rejected = false});
+  const ReworkNote({this.reason = '', this.note = '', this.instructions = '', this.by, this.role, this.at, this.reworkId, this.itemId, this.rejected = false, this.itemType = '', this.label = '', this.section = ''});
 
-  /// The reviewer REJECTED this photo (not just "rework"): [reason] is the reason for rejection.
+  /// The checklist item this note is about ("Shop front visible", "Measurements available"); empty for a photo or a board detail. The
+  /// reviewer's own remark for that item is [note].
+  final String label;
+
+  /// The part of the app a checklist item belongs to: SHOP | PHOTOS | BOARDS | INSTALLATION; empty when unknown.
+  final String section;
+
+  /// The reviewer REJECTED this photo / board detail (not just "rework"): [reason] is the reason for rejection.
   final bool rejected;
+
+  /// The rework item type this note came from (REPLACE_PHOTO, FIX_QUANTITY, FIX_MEDIA_TYPE, FIX_MEASUREMENT ...); empty when unknown.
+  final String itemType;
 
   /// The text to show first: an explicit reason, else the note on this photo, else the overall instructions.
   final String reason;
@@ -314,6 +324,8 @@ class ReworkNote {
       reworkId: _s(j['reworkId']),
       itemId: _s(j['itemId']),
       rejected: j['rejected'] == true,
+      label: _s(j['label']) ?? '',
+      section: _s(j['section']) ?? '',
     );
   }
 }
@@ -700,11 +712,27 @@ class ReworkItem {
     this.resolved = false,
     this.resolvedInVersion,
     this.rejected = false,
+    this.section,
+    this.label = '',
   });
 
-  /// A REPLACE_PHOTO the reviewer rejected: [note] is the reason for rejection.
+  /// A reworked CHECKLIST item (2026-11-25): the part of the app it belongs to (SHOP | PHOTOS | BOARDS | INSTALLATION; null on older
+  /// items) and the checklist label ("Shop front visible"). [note] is the reviewer's own remark for that one item.
+  final String? section;
+  final String label;
+
+  /// A checklist item the reviewer sent back that is not a photo or a board detail (type OTHER): it shows in its section, with its remark.
+  bool get isSectionNote => type == 'OTHER';
+
+  /// The section an OTHER item shows in; one without a section (an older item, or a key the server does not know) belongs to the shop.
+  String get sectionKey => (section ?? '').isEmpty ? 'SHOP' : section!;
+
+  /// A photo or board detail the reviewer rejected (not just "rework"): [note] is the reason for rejection.
   final bool rejected;
-  final String type; // REPLACE_PHOTO | ADDITIONAL_PHOTO | FIX_MEASUREMENT | OTHER
+  final String type; // REPLACE_PHOTO | ADDITIONAL_PHOTO | FIX_MEASUREMENT (size) | FIX_QUANTITY | FIX_MEDIA_TYPE | OTHER
+
+  /// A request to check / correct one detail of a board (its size, quantity or media type). The server asks for no answer to resubmit.
+  bool get isBoardFix => boardFixTypes.contains(type);
   final String id;
   final String? category;
   final int? resolvedInVersion;
@@ -732,6 +760,8 @@ class ReworkItem {
         note: (j['note'] ?? '').toString(),
         resolved: j['resolved'] == true,
         rejected: j['rejected'] == true,
+        section: _s(j['section']),
+        label: (j['label'] ?? '').toString(),
       );
 }
 
@@ -773,6 +803,9 @@ class ReworkEntry {
         reworkId: id,
         itemId: i.id.isEmpty ? null : i.id,
         rejected: i.rejected,
+        itemType: i.type,
+        label: i.label,
+        section: i.section ?? '',
       );
 
   factory ReworkEntry.fromJson(Json j) => ReworkEntry(
@@ -930,6 +963,12 @@ class ShopDetail {
     return own ?? shared;
   }
 
+  /// This photo was resubmitted: it replaced an earlier (flagged) photo and went for review with the current version.
+  bool isResubmitted(ShopPhoto? p) => p != null && p.replaces != null && !p.isDraft && p.version == version;
+
+  /// How many photos of the board [boardKey] were resubmitted in the current version.
+  int resubmittedCount(String boardKey) => photos.where((p) => p.mediaKey == boardKey && isResubmitted(p)).length;
+
   /// Photo categories the server requires for [board] beyond the seven standard ones (for example NAME_BOARD): its own required
   /// list plus anything `progress.missing` names for it. Each gets a capture tile in the board's section.
   List<PhotoCategoryDef> extraTilesFor(BoardItem board) {
@@ -996,32 +1035,38 @@ class ShopDetail {
     return null;
   }
 
-  /// The open FIX_MEASUREMENT request that names this board (`mediaKey`), as a note for the board card; null when there is none.
-  ReworkNote? measurementReworkFor(String mediaKey) {
-    if (mediaKey.isEmpty) return null;
-    for (final r in reworks.where((r) => r.isOpen)) {
-      for (final i in r.items) {
-        if (i.type == 'FIX_MEASUREMENT' && !i.resolved && i.mediaKey == mediaKey) return r.noteFor(i);
-      }
-    }
-    return null;
+  /// Every open request to check / correct a detail of this board (`mediaKey`): its size (FIX_MEASUREMENT), quantity (FIX_QUANTITY) or
+  /// media type (FIX_MEDIA_TYPE), each as a note (with `itemType`) for the board card. Empty when there is none.
+  List<ReworkNote> boardReworksFor(String mediaKey) {
+    if (mediaKey.isEmpty) return const [];
+    return [
+      for (final r in reworks.where((r) => r.isOpen))
+        for (final i in r.items)
+          if (i.isBoardFix && !i.resolved && i.mediaKey == mediaKey) r.noteFor(i),
+    ];
   }
 
-  /// Open FIX_MEASUREMENT requests that cannot sit on a board card: web reviewers may send them without a `mediaKey`, or with the
-  /// key of a board that is not in [boardKeys] any more. They are shown as a general "Measurement rework requested" banner so the
-  /// note is never lost. [forBoard] is the board key the item named (empty when it named none).
+  /// The first open board request that names this board, as a note for the board card; null when there is none.
+  ReworkNote? measurementReworkFor(String mediaKey) => boardReworksFor(mediaKey).firstOrNull;
+
+  /// Open board requests (size, quantity or media type) that cannot sit on a board card: web reviewers may send them without a
+  /// `mediaKey`, or with the key of a board that is not in [boardKeys] any more. They are shown as a general banner so the note is
+  /// never lost. [forBoard] is the board key the item named (empty when it named none).
   List<({ReworkNote note, String forBoard})> measurementReworksWithoutBoard(Iterable<String> boardKeys) {
     final keys = boardKeys.toSet();
     final out = <({ReworkNote note, String forBoard})>[];
     for (final r in reworks.where((r) => r.isOpen)) {
       for (final i in r.items) {
-        if (i.type == 'FIX_MEASUREMENT' && !i.resolved && (i.mediaKey.isEmpty || !keys.contains(i.mediaKey))) {
+        if (i.isBoardFix && !i.resolved && (i.mediaKey.isEmpty || !keys.contains(i.mediaKey))) {
           out.add((note: r.noteFor(i), forBoard: i.mediaKey));
         }
       }
     }
     return out;
   }
+
+  /// Board key to its readable number ("GSB-02"), for texts that name a board.
+  Map<String, String> get boardLabels => {for (final b in mediaItems) b.key: b.label};
 
   factory ShopDetail.fromJson(Json j) {
     final progress = _m(j['progress']);

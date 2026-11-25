@@ -8,8 +8,10 @@ import '../../../core/widgets/common_widgets.dart';
 import '../data/live_services.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import '../data/rework_alert.dart' show FlaggedSection;
 import 'approval_history_screen.dart';
 import 'live_widgets.dart';
+import 'rework_alert.dart' show SectionReworkBanner;
 import 'versions_section.dart';
 
 /// Review: notes for the reviewer, what is still missing, and the reviews / reworks / versions of this shop.
@@ -56,7 +58,9 @@ class _ReviewTabState extends State<ReviewTab> {
             child: TextButton.icon(onPressed: () => _openHistory(context), icon: const Icon(Icons.timeline), label: const Text('Approval history')),
           ),
           const SizedBox(height: 4),
-          for (final r in openReworks) ...[_ReworkCard(r), const SizedBox(height: 12)],
+          // Checklist items about the shop as a whole (for example "Correct shop"), with the reviewer's own remark for each.
+          SectionReworkBanner(items: FlaggedSection.of(d, section: 'SHOP'), title: 'Reviewer asked for changes to the shop'),
+          for (final r in openReworks) ...[_ReworkCard(r, boardLabels: d.boardLabels), const SizedBox(height: 12)],
           if (ctrl.canEdit)
             SectionCard(
               title: 'Before you submit',
@@ -100,7 +104,7 @@ class _ReviewTabState extends State<ReviewTab> {
             icon: Icons.flag_outlined,
             child: d.reworks.isEmpty
                 ? const Text('No reworks requested.', style: TextStyle(color: AdinnColors.muted))
-                : Column(children: [for (final r in d.reworks) _ReworkCard(r, compact: true)]),
+                : Column(children: [for (final r in d.reworks) _ReworkCard(r, compact: true, boardLabels: d.boardLabels)]),
           ),
         ],
       ),
@@ -131,9 +135,12 @@ class _ReviewRow extends StatelessWidget {
 }
 
 class _ReworkCard extends StatelessWidget {
-  const _ReworkCard(this.r, {this.compact = false});
+  const _ReworkCard(this.r, {this.compact = false, this.boardLabels = const {}});
   final ReworkEntry r;
   final bool compact;
+
+  /// Board key to "GSB-01", so a board request names the board by its number.
+  final Map<String, String> boardLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -160,7 +167,7 @@ class _ReworkCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 3),
               child: Text(
-                '- ${reworkItemText(i)}',
+                '- ${reworkItemText(i, boardLabels: boardLabels)}',
                 style: const TextStyle(fontSize: 13),
               ),
             ),

@@ -2,21 +2,15 @@
 
 Base `{BASE}` = `/api/v1`, Bearer token, envelope `{success, data, meta}`. Scenario: shop SM-0234, `siteId = 67f0...a1`, `submissionId = 6801...b2`. The same calls with a full shop are in 09; `10` shows the tested output.
 
-## 1. Who reviews, and the two review modes
+## 1. Who reviews (no turn order, since 2026-11-25)
 
 `POST /recce-review/submissions/:submissionId/decision` - roles OPERATIONS / RECCE_COORDINATOR = stage `OPS`; CLIENT_SERVICING = stage `CS`. A field worker gets 403, Admin only through `/override`.
 
-Admin setting `sequential` (`PUT /recce-review/config`):
+Review is **always parallel**. At submit OPS and CS both get the notification and the shop in their inbox; either may approve, reject or send rework first (or both at the same moment), and the shop status changes after every decision (table in section 2). The only thing that blocks a stage is its own earlier decision on the same version (`409 ... has already decided this version`).
 
-| | `false` = parallel (default for new databases) | `true` = sequential |
-|---|---|---|
-| At submit | OPS and CS both get the notification and the shop in their inbox | only the first stage; the next one after it approves |
-| CS approves first | 200 | `409 An earlier review stage must approve first` |
-| Both decide at the same moment | both 200 | n/a |
+The old `sequential` switch (`PUT /recce-review/config`, and the `sequential` flag stored on each version) is **ignored**. Existing Atlas data that still says `sequential: true` needs no change: the screen no longer shows "Waiting for Recce Operations to decide first" and CS can decide at once. The field is still accepted by the config API so older clients do not fail.
 
-An existing database keeps its old value: send `{"sequential": false}` once to switch.
-
-## 2. Outcome table (both modes)
+## 2. Outcome table
 
 | OPS | CS | Shop status |
 |---|---|---|
@@ -26,7 +20,7 @@ An existing database keeps its old value: send `{"sequential": false}` once to s
 | REJECTED | anything | `REJECTED` (reject beats rework beats approve) |
 
 Rules: each stage decides **once per version**; stale `versionNo` -> 409; `APPROVED` only when every stage approved the **current** version (v1 approvals never count for v2); a reject / rework voids the other stage's waiting review; two decisions at the same instant never roll back each other, and if both write the same outcome both calls return 200.
-Tested (`recce-19steps`, A-H): approve+approve together = APPROVED; reject+reject = REJECTED; approve+reject = REJECTED; approve+rework = REWORK_REQUIRED; same stage twice = 409; wrong stage = 403; `sequential: true` -> CS first = 409.
+Tested (`recce-19steps`, A-H): approve+approve together = APPROVED; reject+reject = REJECTED; approve+reject = REJECTED; approve+rework = REWORK_REQUIRED; same stage twice = 409; wrong stage = 403; scenario H: old `sequential: true` in config and on the version -> CS first = 200 (`UNDER_REVIEW`), OPS after = 200 (`APPROVED`).
 
 ## 3. Decision payloads
 

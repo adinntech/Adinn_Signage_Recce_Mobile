@@ -11,6 +11,7 @@ import '../data/chat_controller.dart';
 import '../data/live_services.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import '../data/rework_alert.dart';
 import 'add_boards_screen.dart';
 import 'boards_tab.dart';
 import 'chat_tab.dart';
@@ -18,6 +19,8 @@ import 'installation_tab.dart';
 import 'live_widgets.dart';
 import 'photos_tab.dart';
 import 'review_tab.dart';
+import 'rework_alert.dart';
+import 'rework_sheet.dart';
 
 /// The tabs of the shop screen, in the order the work is done: the boards first (their type and size), then the photos of each
 /// board, then the installation answers, then the review.
@@ -67,6 +70,7 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
   // (installation method and site questions), then the site installation, then review. The screen moves on by itself when the person
   // finishes a photo step, and on "Next" at the end of a board card.
   Timer? _advanceTimer;
+  var _alertOpen = false; // the rework sheet is on screen right now
   var _stepsSeeded = false; // the first read of the shop only records where it stands: it never moves the person
   final _announced = <String>{}; // boards whose photos were complete when seen: each is announced once, never again
 
@@ -79,6 +83,7 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
     unawaited(s.catalog.refresh()); // the admin may have changed the media types or questions since the phone last asked
     _tabs = TabController(length: ShopTab.count, vsync: this, initialIndex: (widget.initialTab ?? ShopTab.boards).clamp(0, ShopTab.count - 1))..addListener(_onTab);
     _ctrl.addListener(_watchSteps);
+    _ctrl.addListener(_watchAlert);
     unawaited(_ctrl.load().then((_) => _landOnFirstStep()));
     _chat = s.chat.open(widget.siteId, myId: context.read<LiveAuthController>().user?.id ?? '')..start();
     _onChatTab = _tabs.index == ShopTab.chat;
@@ -137,6 +142,50 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
     _stepsSeeded = true;
     // Rework only fixes what the reviewer flagged: the person is not pushed around the steps then.
     if (seeded && fresh.isNotEmpty && _ctrl.canEdit && !_ctrl.inRework && _tabs.index == ShopTab.photos) _boardPhotosFinished(fresh.first);
+  }
+
+  /// Tells the person what the reviewers flagged: ONE sheet per rework request (remembered for the session, so it never comes back
+  /// for the same request), then the banner on top of the screen stays. "Retake now" opens the first flagged photo.
+  void _watchAlert() {
+    if (!mounted || _alertOpen || !_ctrl.canEdit) return;
+    final alert = reworkAlertOf(_ctrl);
+    if (alert.isEmpty || !claimReworkAlert(alert.requestKey)) return;
+    _alertOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final retake = await showReworkAlertSheet(context, alert);
+      _alertOpen = false;
+      if (retake == true && mounted) await _retakeNow(alert);
+    });
+  }
+
+  /// Takes the person to what is flagged: the Photos tab (the board of the first flagged photo opened) while a photo is still waiting for
+  /// a new picture, else the Boards tab (the board whose detail was flagged), else the tab of the first checklist item sent back
+  /// (Photos, Boards, Install or, for the shop as a whole, Review).
+  void _goAlert(ReworkAlert a) {
+    final photo = a.photos.where((p) => !p.answered).firstOrNull ?? a.photos.firstOrNull;
+    if (a.rejectedPhotos + a.reworkPhotos + a.extraPhotos > 0 || (a.boardFixes.isEmpty && a.sections.isEmpty)) {
+      final key = photo?.photo.mediaKey ?? '';
+      if (key.isNotEmpty) _ctrl.focusBoard(key);
+      _tabs.animateTo(ShopTab.photos);
+    } else if (a.boardFixes.isNotEmpty) {
+      final key = a.boardFixes.first.mediaKey;
+      if (key.isNotEmpty) _ctrl.openBoardCard(key);
+      _tabs.animateTo(ShopTab.boards);
+    } else {
+      _tabs.animateTo(switch (a.sections.first.section) {
+        'PHOTOS' => ShopTab.photos,
+        'BOARDS' => ShopTab.boards,
+        'INSTALLATION' => ShopTab.install,
+        _ => ShopTab.review,
+      });
+    }
+  }
+
+  Future<void> _retakeNow(ReworkAlert a) async {
+    _goAlert(a);
+    final next = a.photos.where((p) => !p.answered).firstOrNull;
+    if (next != null && mounted) await showReworkSheet(context, ctrl: _ctrl, photo: next.photo);
   }
 
   /// A short pause (the person sees the last tile fill up), then: that board's installation requirement when it has one to fill, or
@@ -248,6 +297,7 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
     WidgetsBinding.instance.removeObserver(this);
     _advanceTimer?.cancel();
     _ctrl.removeListener(_watchSteps);
+    _ctrl.removeListener(_watchAlert);
     _tabs.dispose();
     _chat.dispose();
     _ctrl.dispose();
@@ -357,6 +407,7 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
   Widget _body(ShopDetail? d) {
     if (_ctrl.loading && d == null) return const Center(child: CircularProgressIndicator());
     if (d == null) return ErrorRetry(message: _ctrl.loadError ?? 'Could not load this shop.', onRetry: _ctrl.load);
+    final alert = reworkAlertOf(_ctrl);
     return NestedScrollView(
       headerSliverBuilder: (context, _) => [
         // On the Chat tab the shop card shrinks to one line, so the thread and the box keep the room (also with the keyboard open).
@@ -364,7 +415,11 @@ class _LiveShopScreenState extends State<LiveShopScreen> with WidgetsBindingObse
           child: AnimatedSize(
             duration: const Duration(milliseconds: 200),
             alignment: Alignment.topCenter,
-            child: _onChatTab ? _ChatStrip(d: d) : _Header(d: d, locked: !_ctrl.canEdit, assignedAt: d.assignedAt ?? _assignedAt),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _onChatTab ? _ChatStrip(d: d) : _Header(d: d, locked: !_ctrl.canEdit, assignedAt: d.assignedAt ?? _assignedAt),
+              // What the reviewers flagged stays in view on every tab until it is fixed and resubmitted.
+              if (!alert.isEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: ReworkAlertBanner(alert: alert, compact: _onChatTab, onOpen: () => _goAlert(alert))),
+            ]),
           ),
         ),
         SliverPersistentHeader(
