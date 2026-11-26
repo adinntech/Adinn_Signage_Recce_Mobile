@@ -235,7 +235,7 @@ class _UnitsScreenState extends State<UnitsScreen> {
     final i = b.units.indexOf(u);
     final ctl = _controllers(u);
     final photos = b.photosOf(u);
-    final allowed = SignageCatalog.installationsFor(b.mediaCode);
+    final allowed = SignageCatalog.selectableInstallations(b);
     final unitIssues = issues.where((x) => x.unitId == u.id).toList();
     final missingSize = !b.unitHasSize(u);
     return SectionCard(

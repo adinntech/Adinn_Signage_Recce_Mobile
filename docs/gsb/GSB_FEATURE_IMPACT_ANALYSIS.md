@@ -1,0 +1,15 @@
+# GSB Feature Impact Analysis
+
+| Existing feature | Change | Files | Possible regression | Protection | Tests |
+|---|---|---|---|---|---|
+| Media grid (13 types) | GSB tap opens "Select GSB Board Type" sheet | `board_editor_screen.dart`, `gsb/gsb_type_sheet.dart` | Other media; tests expecting instant select | Only `'GSB'` is intercepted. Cancel = no change. NLB keeps the old control. MDF+GSB is untouched. | `media_catalog_test`, `widget_test` (updated) |
+| `Board.doubleSided` | `GSB_SINGLE/GSB_DOUBLE` derived; `boardVariant` written (derived) in JSON | `models.dart`, `gsb/gsb_board.dart` | Two contradicting fields | One stored source; `boardVariant` is recomputed on write and ignored on read | `gsb_rules_test` |
+| Old GSB records (null) | Shown as Single + "not confirmed" + review item | same | Silent relabel | Nothing is written until the vendor confirms | `gsb_rules_test` |
+| Live Preview transforms | Homography label, ±0.6 perspective, distance 4.0, NaN guard | `renderer_painter.dart`, `live_preview_controller.dart`, `live_preview_tab.dart` | Reopened previews differ | Overlay JSON unchanged; old pitch values restored as saved | `live_preview_ar_test`, `gsb_preview_test` |
+| Live Preview save | Existing capture kept; GSB adds day/night PNG + 4-page PDF (`info` keys) | `live_preview_render.dart`, `gsb_comparison_pdf.dart`, `gsb_comparison_service.dart` | Duplicates, overwritten originals | One capture per save; Retry reuses it; new files only; site photo never written | `live_preview_ar_test`, `gsb_preview_test` |
+| Delete preview | Companion files deleted too | `app_controller.dart`, `PreviewCapture.companionPaths` | Deleting evidence | Only `info` companion keys; snapshot-reference check kept | full suite |
+| Camera AR | Night shader uniform, same-frame original/day/night capture, Render View (GSB) | `ar_session_controller.dart`, `native_ar_platform.dart`, `ar_preview_tab.dart`, `ArRenderer.kt`, `BackgroundRenderer.kt`, `ModelRenderer.kt`, `ArBridge.kt` | Fakes / capture break | New optional `ArRenderViewCapable`; `ArPlatform` and `capture` unchanged | `ar_*_test`, `gsb_preview_test`, APK build |
+| 3D sliders | Exact ft-in field per slider; range grows, never clamps | `preview_3d_screen.dart`, `core/utils/length_input.dart` | Slider tests, Apply/Cancel | Keys kept; only Apply commits | `scene_test`, `gsb_preview_test` |
+| 3D GSB model | 8 in / 1 in defaults, Fabrication frame view, GSB Day/Night, override panel | `signage_catalog.dart`, `signage_spec.dart`, `gsb/gsb_scene.dart`, `preview_3d_screen.dart` | Other media; 2D depth label | Gated on `'GSB'`; 2D module code untouched (its GSB depth label now reads 8 in) | 2 expectations updated 9 → 8 in |
+| Overrides | `Board.gsbOverrides`, add/revert | `data/models/gsb_override.dart`, `app_controller.dart`, `gsb/gsb_override_sheet.dart` | Silent approval | Always "Requires Engineering Review"; reason mandatory; history kept | `gsb_rules_test` |
+| Approval / history / submit | none | – | – | Snapshots copy board JSON (optional fields) | full suite |

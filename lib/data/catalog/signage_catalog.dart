@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import 'question_equivalence.dart';
+import 'site_checklists.dart';
 
 /// How many display faces a media type has.
 enum MediaSidedness {
@@ -85,6 +87,40 @@ class InstallationType {
   final IconData icon;
 }
 
+/// Illustration used by the small installation diagrams on the GSB Double
+/// Side selection cards. Kept as data here so the catalog stays the single
+/// source of truth for the option order; the painter lives in the board UI.
+enum InstallationArt {
+  projecting,
+  doublePole,
+  singlePole,
+  rooftop,
+  hanging,
+  generic,
+}
+
+/// One selectable installation card.
+///
+/// [code] is null only for a presentation-only option whose backend contract
+/// has not been approved yet. Such an option is never persisted.
+class InstallationChoice {
+  const InstallationChoice({
+    required this.name,
+    required this.description,
+    required this.art,
+    this.code,
+    this.icon,
+  });
+
+  final String name;
+  final String description;
+  final InstallationArt art;
+  final String? code;
+  final IconData? icon;
+
+  bool get canPersist => code != null;
+}
+
 class SiteQuestion {
   const SiteQuestion({
     required this.id,
@@ -121,6 +157,62 @@ class SiteQuestion {
     if (v is String) return v.trim().isNotEmpty;
     return true;
   }
+}
+
+/// One selectable media group in the Add Media Type popup: a media code plus
+/// its fabrication subtype (GSB single/double, NLB single/box frame).
+class MediaOption {
+  const MediaOption({
+    required this.key,
+    required this.label,
+    required this.mediaCode,
+    this.doubleSided,
+    this.nlbSubtype,
+  });
+
+  /// Stable key, e.g. `GSB_SINGLE`, `NLB_BOX_FRAME`, `ACRYLIC`.
+  final String key;
+  final String label;
+  final String mediaCode;
+  final bool? doubleSided;
+  final String? nlbSubtype;
+}
+
+/// A confirmed media group with its number of physical boards.
+class MediaGroupPlan {
+  const MediaGroupPlan(this.option, this.quantity);
+
+  final MediaOption option;
+  final int quantity;
+}
+
+/// Result of [SignageCatalog.planCommonAnswers].
+class CommonAnswerPlan {
+  const CommonAnswerPlan({
+    required this.toCopy,
+    required this.wouldOverwrite,
+    required this.notCommon,
+    required this.sourceUnanswered,
+    this.toCopyChecklist = const [],
+    this.wouldOverwriteChecklist = const [],
+  });
+
+  /// Checklist-only questions (not a Site Question) that are common.
+  final List<ChecklistQuestion> toCopyChecklist;
+  final List<ChecklistQuestion> wouldOverwriteChecklist;
+
+  /// Common, answered at the source and still empty at the target.
+  final List<SiteQuestion> toCopy;
+
+  /// Common and answered at the source, but the target already has an
+  /// answer (only replaced after explicit confirmation).
+  final List<SiteQuestion> wouldOverwrite;
+
+  /// Required target questions with no matching source definition.
+  final List<SiteQuestion> notCommon;
+
+  /// Matching questions the source itself has not answered.
+  final List<SiteQuestion> sourceUnanswered;
 }
 
 /// Static master data for the signage media types (6 original + single /
@@ -161,6 +253,10 @@ class SignageCatalog {
   static const mdfGsb = "MDF_GSB";
   static const mdfGsbDouble = "MDF_GSB_DS";
 
+  /// Standalone MDF board. Deliberately NOT mapped to [mdfGsb]: no approved
+  /// MDF-only fabrication / installation specification exists yet.
+  static const mdf = 'MDF';
+
   /// Freestanding boards placed outside the shop.
   static bool isStandee(String? mediaCode) =>
       mediaCode == singleStandee || mediaCode == doubleStandee;
@@ -174,7 +270,9 @@ class SignageCatalog {
       name: 'GSB Board (Glow Sign Board)',
       description: 'Back-lit flex/ACP box with LED modules inside an MS frame.',
       icon: Icons.lightbulb_outline,
-      depthFt: 0.75,
+      // 8 in outside-to-outside box depth (Signage Fabrication Rulebook
+      // 1.0, GSB Single / Double). Was 0.75 ft (9 in) before.
+      depthFt: 8 / 12,
       illuminated: true,
       installations: [
         shopFascia,
@@ -291,12 +389,12 @@ class SignageCatalog {
     MediaType(
       code: foamVinyl,
       template: 'foam',
-      thicknessMm: 5,
+      thicknessMm: 3, // rigid foam board: 3 mm substrate
       shortName: 'Foam Vinyl',
       name: 'Foam Board with Vinyl',
       description: 'Printed vinyl on a thin foam / sun-board substrate.',
       icon: Icons.layers_outlined,
-      depthFt: 0.02,
+      depthFt: 3 / 304.8,
       illuminated: false,
       installations: [wallMount, directWall],
       color: Color(0xFF6D4C41),
@@ -332,7 +430,8 @@ class SignageCatalog {
       code: oneWayVision,
       template: 'owv',
       thicknessMm: 0.2,
-      shortName: 'One-Way',
+      // Display label only; the stored code stays OWV.
+      shortName: 'One-Way Vision',
       name: 'One-Way Vision',
       description: 'Perforated printed film applied on glass.',
       icon: Icons.blur_on,
@@ -422,6 +521,19 @@ class SignageCatalog {
       installations: [singlePole, doublePole, supportPipe, rooftop],
       color: Color(0xFF880E4F),
     ),
+    MediaType(
+      code: mdf,
+      // No approved standalone-MDF template, thickness, depth or LED rule
+      // yet: left unconfigured on purpose (pending review).
+      shortName: 'MDF',
+      name: 'MDF',
+      description: 'MDF display board.',
+      icon: Icons.dashboard_outlined,
+      depthFt: 0,
+      illuminated: false,
+      installations: [],
+      color: Color(0xFF8D6E3F),
+    ),
   ];
 
   /// The 13 selectable business media entries, in catalog order.
@@ -440,6 +552,109 @@ class SignageCatalog {
     mdfGsb,
     mdfGsbDouble,
   ];
+
+  // MDF is selectable ([selectableCodes]) but deliberately not part of
+  // [catalogCodes] until an approved reference / template exists.
+
+  /// Media offered when adding NEW media to a recce, in display order.
+  /// The other catalog entries stay known (serialization, history, editing
+  /// of saved items) but are no longer selectable.
+  static const selectableCodes = [
+    gsb,
+    nlb,
+    foamVinyl,
+    clearAcrylic,
+    oneWayVision,
+    plainVinyl,
+    mdf,
+  ];
+
+  static List<MediaType> get selectableMedia => [
+    for (final c in selectableCodes) media(c)!,
+  ];
+
+  /// Distinct media groups offered by the Add Media Type popup (the seven
+  /// approved media, with GSB / NLB split into their fabrication subtypes).
+  static const mediaOptions = <MediaOption>[
+    MediaOption(
+      key: 'GSB_SINGLE',
+      label: 'GSB Single Side',
+      mediaCode: gsb,
+      doubleSided: false,
+    ),
+    MediaOption(
+      key: 'GSB_DOUBLE',
+      label: 'GSB Double Side',
+      mediaCode: gsb,
+      doubleSided: true,
+    ),
+    MediaOption(
+      key: 'NLB_SINGLE_FRAME',
+      label: 'NLB Single Frame',
+      mediaCode: nlb,
+      doubleSided: false,
+      nlbSubtype: 'NLB_SINGLE_FRAME',
+    ),
+    MediaOption(
+      key: 'NLB_BOX_FRAME',
+      label: 'NLB Box Frame',
+      mediaCode: nlb,
+      doubleSided: true,
+      nlbSubtype: 'NLB_BOX_FRAME',
+    ),
+    MediaOption(key: foamVinyl, label: 'Foam Vinyl', mediaCode: foamVinyl),
+    MediaOption(key: clearAcrylic, label: 'Acrylic', mediaCode: clearAcrylic),
+    MediaOption(
+      key: oneWayVision,
+      label: 'One-Way Vision',
+      mediaCode: oneWayVision,
+    ),
+    MediaOption(key: plainVinyl, label: 'Plain Vinyl', mediaCode: plainVinyl),
+    MediaOption(key: mdf, label: 'MDF', mediaCode: mdf),
+  ];
+
+  /// Validates a popup configuration. Returns an error message or null.
+  static String? validateGroupPlans(int totalBoards, List<MediaGroupPlan> p) {
+    if (totalBoards < 1) return 'At least one board is required.';
+    if (p.isEmpty) return 'Select at least one media type.';
+    if (p.length > totalBoards) {
+      return 'Media types cannot exceed the number of boards.';
+    }
+    if (p.map((e) => e.option.key).toSet().length != p.length) {
+      return 'Each media type can be selected only once.';
+    }
+    if (p.any((e) => e.quantity < 1)) {
+      return 'Every media type needs at least one board.';
+    }
+    final sum = p.fold<int>(0, (s, e) => s + e.quantity);
+    if (sum != totalBoards) {
+      return 'Allocated boards ($sum) must equal the total ($totalBoards).';
+    }
+    return null;
+  }
+
+  /// Default allocation: one board each, the remainder on the first group.
+  static List<int> defaultAllocation(int totalBoards, int groups) {
+    if (groups < 1) return const [];
+    return [
+      for (var i = 0; i < groups; i++)
+        i == 0 ? totalBoards - (groups - 1) : 1,
+    ];
+  }
+
+  /// Short card subtitle for the Add Media Type screen.
+  static const _cardSubtitles = {
+    gsb: 'Glow Sign Board',
+    nlb: 'Non-Lit Board',
+    foamVinyl: 'Foam Board with Vinyl',
+    clearAcrylic: 'Clear Acrylic Board',
+    oneWayVision: 'Perforated Glass Film',
+    plainVinyl: 'Printed Vinyl Sticker',
+    mdf: 'MDF Display Board',
+  };
+
+  static String cardSubtitle(MediaType m) =>
+      _cardSubtitles[m.code] ?? m.description;
 
   /// Catalog version recorded when a legacy media type is mapped.
   static const catalogVersion = 2;
@@ -564,6 +779,214 @@ class SignageCatalog {
       icon: Icons.view_week_outlined,
     ),
   ];
+
+  // ---------------------------------------------------------------------------
+  // GSB Double Side installation options
+  // ---------------------------------------------------------------------------
+
+  /// Canonical backend codes offered for a NEW GSB Double Side board.
+  ///
+  /// "Projecting Mount" reuses the existing approved [flangeBracket] code
+  /// (a double-sided board projecting from a wall). There is deliberately no
+  /// code for Hanging Mount: no backend-supported value exists yet, so it is
+  /// shown as a presentation-only card and is never written to [Board].
+  static const gsbDoubleInstallationCodes = [
+    flangeBracket,
+    doublePole,
+    singlePole,
+    rooftop,
+  ];
+
+  /// Exact five-card order for new GSB Double Side selections.
+  static const gsbDoubleChoices = <InstallationChoice>[
+    InstallationChoice(
+      name: 'Projecting Mount',
+      description: 'Projects outwards from a wall.',
+      art: InstallationArt.projecting,
+      icon: Icons.open_in_full,
+      code: flangeBracket,
+    ),
+    InstallationChoice(
+      name: 'Double Pole',
+      description: 'Supported by two ground-mounted poles.',
+      art: InstallationArt.doublePole,
+      icon: Icons.view_column_outlined,
+      code: doublePole,
+    ),
+    InstallationChoice(
+      name: 'Single Pole',
+      description: 'Supported by one central pole.',
+      art: InstallationArt.singlePole,
+      icon: Icons.signpost_outlined,
+      code: singlePole,
+    ),
+    InstallationChoice(
+      name: 'Rooftop',
+      description: 'Mounted on a roof or terrace.',
+      art: InstallationArt.rooftop,
+      icon: Icons.roofing_outlined,
+      code: rooftop,
+    ),
+    InstallationChoice(
+      name: 'Hanging Mount',
+      description: 'Suspended from an overhead structure.',
+      // No GSB Single icon exists: keeps the original hanging illustration
+      // (InstallationArtPainter) because no icon is set.
+      art: InstallationArt.hanging,
+    ),
+  ];
+
+  /// True when [b] is a GSB Double Side board (the only scoped variant).
+  static bool isGsbDouble(Board? b) =>
+      b != null && b.mediaCode == gsb && b.doubleSided == true;
+
+  /// Installation choices offered for [b].
+  ///
+  /// Every other media type keeps its existing catalog options unchanged.
+  static List<InstallationChoice> choicesForBoard(Board b) {
+    if (isGsbDouble(b)) return gsbDoubleChoices;
+    if (isNlbBox(b)) return nlbBoxChoices;
+    return [
+      for (final i in installationsFor(b.mediaCode))
+        if (newInstallationCodes(b).contains(i.code))
+        InstallationChoice(
+          name: i.name,
+          description: i.description,
+          art: InstallationArt.generic,
+          code: i.code,
+          icon: i.icon,
+        ),
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // NLB Box Frame / Foam Vinyl / Acrylic installation options
+  // ---------------------------------------------------------------------------
+
+  /// NLB Box Frame (NON_LIT_BOX) installation codes for NEW selections.
+  /// "Projecting Mount" reuses the approved [flangeBracket] code. Hanging
+  /// Mount is intentionally absent.
+  static const nlbBoxInstallationCodes = [
+    doublePole,
+    rooftop,
+    flangeBracket,
+    singlePole,
+  ];
+
+  static const nlbBoxChoices = <InstallationChoice>[
+    InstallationChoice(
+      name: 'Double Pole',
+      description: 'Supported by two ground-mounted poles.',
+      art: InstallationArt.doublePole,
+      icon: Icons.view_column_outlined,
+      code: doublePole,
+    ),
+    InstallationChoice(
+      name: 'Rooftop',
+      description: 'Mounted on a roof or terrace.',
+      art: InstallationArt.rooftop,
+      icon: Icons.roofing_outlined,
+      code: rooftop,
+    ),
+    InstallationChoice(
+      name: 'Projecting Mount',
+      description: 'Projects outwards from a wall.',
+      art: InstallationArt.projecting,
+      icon: Icons.open_in_full,
+      code: flangeBracket,
+    ),
+    InstallationChoice(
+      name: 'Single Pole',
+      description: 'Supported by one central pole.',
+      art: InstallationArt.singlePole,
+      icon: Icons.signpost_outlined,
+      code: singlePole,
+    ),
+  ];
+
+  static bool isNlbBox(Board? b) => b != null && b.isNlbBoxFrame;
+
+  /// Codes hidden from NEW selections of a media type (still valid on a saved
+  /// record that already carries them).
+  static const _hiddenForNew = <String, Set<String>>{
+    foamVinyl: {directWall},
+  };
+
+  /// Acrylic offers Wall Mount only.
+  static const _onlyForNew = <String, List<String>>{
+    clearAcrylic: [wallMount],
+  };
+
+  /// Installation codes offered when choosing for [b] now.
+  static List<String> newInstallationCodes(Board b) {
+    if (isGsbDouble(b)) return gsbDoubleInstallationCodes;
+    if (isNlbBox(b)) return nlbBoxInstallationCodes;
+    final only = _onlyForNew[b.mediaCode];
+    if (only != null) return only;
+    final m = media(b.mediaCode);
+    if (m == null) return const [];
+    final hidden = _hiddenForNew[b.mediaCode] ?? const <String>{};
+    return [for (final c in m.installations) if (!hidden.contains(c)) c];
+  }
+
+  /// Same list as [newInstallationCodes] but as [InstallationType]s, for
+  /// screens that still render the generic list.
+  static List<InstallationType> selectableInstallations(Board b) => [
+    for (final c in newInstallationCodes(b))
+      if (installation(c) != null) installation(c)!,
+  ];
+
+  /// Historic values kept readable on old records; never offered for a new
+  /// selection and never converted automatically.
+  static const gsbLegacyInstallationCodes = {
+    shopFascia,
+    wallMount,
+    supportPipe,
+  };
+
+  /// Validation helper: a historic GSB value stays valid only on the very
+  /// record that already carries it; every other combination follows the
+  /// normal media contract.
+  static bool allowsInstallation(Board b, String? code) {
+    if (code == null) return false;
+    if (installation(code) == null) return false;
+    if (newInstallationCodes(b).contains(code)) return true;
+    // A historic value stays valid only on the record that carries it.
+    final m = media(b.mediaCode);
+    return code == b.installationCode &&
+        m != null &&
+        m.installations.contains(code);
+  }
+
+  /// Label shown in the Installation Type step header. GSB Double Side uses
+  /// the five-card wording; every other combination keeps the catalog name.
+  static String installationLabel(Board b, String? code) {
+    if (isGsbDouble(b)) {
+      for (final choice in gsbDoubleChoices) {
+        if (choice.code != null && choice.code == code) return choice.name;
+      }
+    }
+    if (isNlbBox(b)) {
+      for (final choice in nlbBoxChoices) {
+        if (choice.code != null && choice.code == code) return choice.name;
+      }
+    }
+    final legacy = legacyInstallationOf(b);
+    if (legacy != null && legacy.code == code) {
+      return '${legacy.name} (saved earlier)';
+    }
+    return installation(code)?.name ?? 'Depends on media';
+  }
+
+  /// Historic selection no longer offered among the new cards, if any.
+  static InstallationType? legacyInstallationOf(Board b) {
+    final code = b.installationCode;
+    if (code == null) return null;
+    final m = media(b.mediaCode);
+    if (m == null || !m.installations.contains(code)) return null;
+    if (newInstallationCodes(b).contains(code)) return null;
+    return installation(code);
+  }
 
   static MediaType? media(String? code) {
     for (final m in allMediaTypes) {
@@ -1201,16 +1624,410 @@ class SignageCatalog {
     return result;
   }
 
-  /// Visible required questions that have not been answered yet.
+  // ---------------------------------------------------------------------------
+  // Per-unit installation (reuses SignageUnit.installationCode overrides)
+  // ---------------------------------------------------------------------------
+
+  /// Installation used for group-level questions and summaries: the group's
+  /// own code, else the first unit's effective code. Never written anywhere.
+  static String? primaryInstallation(Board b) {
+    if (b.installationCode != null) return b.installationCode;
+    for (final u in b.activeUnits) {
+      final c = b.installationOf(u);
+      if (c != null) return c;
+    }
+    return null;
+  }
+
+  /// True when the active units of [b] do not all share one installation.
+  static bool hasMixedInstallations(Board b) {
+    if (b.activeUnits.length < 2) return false;
+    final codes = {for (final u in b.activeUnits) b.installationOf(u)};
+    return codes.length > 1;
+  }
+
+  /// Every active unit resolves to an installation valid for the media.
+  static bool installationComplete(Board b) {
+    if (media(b.mediaCode) == null) return false;
+    final units = b.activeUnits;
+    if (units.isEmpty) return allowsInstallation(b, b.installationCode);
+    return units.every((u) {
+      final c = b.installationOf(u);
+      if (c == null) return false;
+      // A historic value is valid on the record that already carries it.
+      return allowsInstallation(b, c) ||
+          (u.installationCode == c &&
+              (media(b.mediaCode)?.installations.contains(c) ?? false));
+    });
+  }
+
+  /// Why physical board [u] cannot be drawn / previewed yet (null = ready).
+  ///
+  /// Illustrative drawing readiness depends only on THIS board: the media,
+  /// its own effective installation (unit override, else the group's) and its
+  /// own size. Site questions, photos, suggestions and other boards / media
+  /// groups never block it.
+  static String? unitDrawingBlocker(Board b, SignageUnit u) {
+    final name = unitName(b, u);
+    if (media(b.mediaCode) == null) return 'Select the media type';
+    final inst = b.installationOf(u);
+    if (inst == null) return '$name: select the installation type';
+    if (!allowsInstallation(b, inst) &&
+        !(media(b.mediaCode)?.installations.contains(inst) ?? false)) {
+      return '$name: installation not valid for this media';
+    }
+    if (!b.unitHasSize(u)) return '$name: enter width and height';
+    return null;
+  }
+
+  /// Boards of [b] that can be drawn / previewed.
+  static List<SignageUnit> drawingReadyUnits(Board b) => [
+    for (final u in b.activeUnits)
+      if (unitDrawingBlocker(b, u) == null) u,
+  ];
+
+  /// Display text for lists / reports: one name, or "Mixed".
+  static String installationSummary(Board b, {String empty = 'Not set'}) {
+    if (hasMixedInstallations(b)) {
+      final names = [
+        for (final c in {for (final u in b.activeUnits) b.installationOf(u)})
+          installation(c)?.name ?? 'Not set',
+      ];
+      return 'Mixed (${names.join(' / ')})';
+    }
+    return installation(primaryInstallation(b))?.name ?? empty;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Media-based board names (display only; identity is always the id)
+  // ---------------------------------------------------------------------------
+
+  /// "GSB Single", "GSB Double", "NLB Single", "NLB Box", "Acrylic", ...
+  static String mediaNameLabel(Board b) {
+    final m = media(b.mediaCode);
+    if (m == null) return 'Board';
+    if (m.code == gsb) return b.doubleSided == true ? 'GSB Double' : 'GSB Single';
+    if (m.code == nlb) {
+      if (b.isNlbBoxFrame) return 'NLB Box';
+      if (b.isNlbSingleFrame) return 'NLB Single';
+      return 'NLB';
+    }
+    return m.shortName;
+  }
+
+  /// "GSB Single 01" for the unit at its position in the group.
+  static String unitName(Board b, SignageUnit u) {
+    if (media(b.mediaCode) == null) return b.unitLabel(u);
+    final i = b.units.indexWhere((e) => e.id == u.id);
+    return '${mediaNameLabel(b)} ${(i < 0 ? 1 : i + 1).toString().padLeft(2, '0')}';
+  }
+
+  /// True for a name the app generated itself (never a manual edit).
+  static bool isAutoBoardName(String name) {
+    final n = name.trim();
+    if (n.isEmpty || RegExp(r'^Board \d+$').hasMatch(n)) return true;
+    final labels = {
+      'GSB Single',
+      'GSB Double',
+      'NLB Single',
+      'NLB Box',
+      'NLB',
+      for (final m in allMediaTypes) m.shortName,
+    };
+    final m = RegExp(r'^(.+) (\d{2})$').firstMatch(n);
+    return m != null && labels.contains(m.group(1));
+  }
+
+  /// First free "<media label> NN" among [others] (names, not identities).
+  static String nextBoardName(Board b, Iterable<Board> others) {
+    final label = mediaNameLabel(b);
+    final used = {
+      for (final o in others)
+        if (o.id != b.id) o.name.trim(),
+    };
+    for (var n = 1; ; n++) {
+      final name = '$label ${n.toString().padLeft(2, '0')}';
+      if (!used.contains(name)) return name;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per physical board Site Question answers
+  // ---------------------------------------------------------------------------
+
+  /// First active unit of [b] (owner of the historical [Board.answers]).
+  static SignageUnit? firstUnit(Board b) =>
+      b.activeUnits.isEmpty ? null : b.activeUnits.first;
+
+  /// The ONE answer map of unit [u] (single source of truth per unit):
+  /// the group's first unit keeps using [Board.answers] (historical storage,
+  /// also read by older records / single-board groups and the legacy 2D
+  /// geometry), every other unit uses its own [SignageUnit.siteAnswers].
+  /// Answers are therefore never shared between two physical boards.
+  static Map<String, dynamic> answersOf(Board b, SignageUnit? u) {
+    if (u == null) return b.answers;
+    final first = firstUnit(b);
+    if (first == null || first.id == u.id) return b.answers;
+    return u.siteAnswers;
+  }
+
+  /// Questions of unit [u] for its OWN effective installation.
+  static List<SiteQuestion> questionsForUnit(Board b, SignageUnit u) =>
+      questionsFor(b.mediaCode, b.installationOf(u));
+
+  /// Visible required questions of unit [u] that are not answered yet.
+  static List<SiteQuestion> missingAnswersFor(Board b, SignageUnit u) {
+    // Effective answers: an earlier checklist answer of the SAME (verified
+    // equivalent) question counts, so nothing is asked twice.
+    final a = QuestionEquivalence.effectiveSiteAnswers(b, u);
+    return [
+      for (final q in questionsForUnit(b, u))
+        if (q.required && q.isVisible(a) && !q.isAnswered(a)) q,
+    ];
+  }
+
+  /// True when [q] is installation-specific for installation [inst].
+  static bool isInstallationSpecific(String? inst, String id) =>
+      (_installation[inst] ?? const []).any((e) => e.id == id);
+
+  /// Section of [q] for unit [u] (its own installation).
+  static String questionSectionFor(Board b, SignageUnit u, SiteQuestion q) {
+    if (isInstallationSpecific(b.installationOf(u), q.id)) {
+      return 'Installation-Specific Questions';
+    }
+    if ((_media[b.mediaCode] ?? const []).any((e) => e.id == q.id)) {
+      return 'Media-Specific Questions';
+    }
+    return 'Common Site Questions';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy common Site Question answers
+  // ---------------------------------------------------------------------------
+
+  /// A question may be carried to another board only when it is genuinely
+  /// common: not installation-specific on either side (mounting / structure
+  /// details belong to one board) and not a measured value (numbers with a
+  /// unit are board-specific dimensions).
+  static bool _copyable(
+    Board sb,
+    SignageUnit su,
+    Board tb,
+    SignageUnit tu,
+    SiteQuestion q,
+  ) =>
+      !isInstallationSpecific(sb.installationOf(su), q.id) &&
+      !isInstallationSpecific(tb.installationOf(tu), q.id) &&
+      !(q.type == QuestionType.number && q.unit != null);
+
+  /// Same canonical id AND same definition (type, unit, choices, condition).
+  static bool sameQuestionDefinition(SiteQuestion a, SiteQuestion b) =>
+      a.id == b.id &&
+      a.type == b.type &&
+      a.unit == b.unit &&
+      a.showIfId == b.showIfId &&
+      a.showIfValue == b.showIfValue &&
+      a.options.length == b.options.length &&
+      [for (var i = 0; i < a.options.length; i++) a.options[i] == b.options[i]]
+          .every((e) => e);
+
+  /// Section of a question for [b]: installation-specific, media-specific
+  /// or common (same precedence as [questionsFor]).
+  static String questionSection(Board b, SiteQuestion q) {
+    final inst = primaryInstallation(b);
+    if ((_installation[inst] ?? const []).any((e) => e.id == q.id)) {
+      return 'Installation-Specific Questions';
+    }
+    if ((_media[b.mediaCode] ?? const []).any((e) => e.id == q.id)) {
+      return 'Media-Specific Questions';
+    }
+    return 'Common Site Questions';
+  }
+
+  /// Picks the source unit for automatic carry-over of common answers into
+  /// unit [tu] of [tb]: only when the target has not answered any common
+  /// question yet, and every candidate source agrees on the shared values.
+  /// Conflicting sources are returned (never auto-picked).
+  static ({
+    Board? board,
+    SignageUnit? unit,
+    List<(Board, SignageUnit)> conflicting,
+  })
+  autoFillSourceForUnit(Board tb, SignageUnit tu, Iterable<Board> boards) {
+    const none = (
+      board: null,
+      unit: null,
+      conflicting: <(Board, SignageUnit)>[],
+    );
+    final cands = <(Board, SignageUnit), CommonAnswerPlan>{};
+    for (final ob in boards) {
+      if (media(ob.mediaCode) == null) continue;
+      for (final ou in ob.activeUnits) {
+        if (ob.id == tb.id && ou.id == tu.id) continue;
+        final p = planUnitAnswers(ob, ou, tb, tu);
+        // Target already has common answers of its own: never auto-fill.
+        if (p.wouldOverwrite.isNotEmpty) return none;
+        if (p.toCopy.isNotEmpty) cands[(ob, ou)] = p;
+      }
+    }
+    if (cands.isEmpty) return none;
+    final seen = <String, Object?>{};
+    final owner = <String, (Board, SignageUnit)>{};
+    final conflicting = <(Board, SignageUnit)>{};
+    for (final e in cands.entries) {
+      final a = answersOf(e.key.$1, e.key.$2);
+      for (final q in e.value.toCopy) {
+        final v = a[q.id];
+        if (seen.containsKey(q.id) && '${seen[q.id]}' != '$v') {
+          conflicting
+            ..add(owner[q.id]!)
+            ..add(e.key);
+        } else {
+          seen[q.id] = v;
+          owner[q.id] = e.key;
+        }
+      }
+    }
+    if (conflicting.isNotEmpty) {
+      return (board: null, unit: null, conflicting: conflicting.toList());
+    }
+    final best = cands.entries.reduce(
+      (a, b) => b.value.toCopy.length > a.value.toCopy.length ? b : a,
+    );
+    return (
+      board: best.key.$1,
+      unit: best.key.$2,
+      conflicting: const <(Board, SignageUnit)>[],
+    );
+  }
+
+  /// Board-level wrapper (first units) kept for existing callers.
+  static ({Board? source, List<Board> conflicting}) autoFillSource(
+    Board target,
+    Iterable<Board> others,
+  ) {
+    final tu = firstUnit(target);
+    if (tu == null) return (source: null, conflicting: const []);
+    final r = autoFillSourceForUnit(
+      target,
+      tu,
+      others.where((o) => o.id != target.id),
+    );
+    return (
+      source: r.board,
+      conflicting: [
+        for (final b in {for (final c in r.conflicting) c.$1}) b,
+      ],
+    );
+  }
+
+  /// Plan for copying answers from unit [su] of [sb] to unit [tu] of [tb].
+  /// Matches by canonical id AND identical definition, for the units' own
+  /// installations; installation-specific and measured questions are never
+  /// common. Nothing is written.
+  static CommonAnswerPlan planUnitAnswers(
+    Board sb,
+    SignageUnit su,
+    Board tb,
+    SignageUnit tu,
+  ) {
+    final copy = <SiteQuestion>[];
+    final overwrite = <SiteQuestion>[];
+    final notCommon = <SiteQuestion>[];
+    final manual = <SiteQuestion>[];
+    final sa = answersOf(sb, su);
+    final ta = answersOf(tb, tu);
+    final sourceQs = {for (final q in questionsForUnit(sb, su)) q.id: q};
+    for (final tq in questionsForUnit(tb, tu)) {
+      if (!tq.isVisible(ta)) continue;
+      final sq = sourceQs[tq.id];
+      if (sq == null ||
+          !sameQuestionDefinition(sq, tq) ||
+          !_copyable(sb, su, tb, tu, tq)) {
+        if (tq.required && !tq.isAnswered(ta)) notCommon.add(tq);
+        continue;
+      }
+      if (!sq.isVisible(sa) || !sq.isAnswered(sa)) {
+        if (tq.required && !tq.isAnswered(ta)) manual.add(tq);
+        continue;
+      }
+      (tq.isAnswered(ta) ? overwrite : copy).add(tq);
+    }
+    // Checklist-only questions that are common to both boards: same id and
+    // answer format, not installation specific, not evidence, not already a
+    // Site Question (those are handled above).
+    final cCopy = <ChecklistQuestion>[];
+    final cOver = <ChecklistQuestion>[];
+    final srcCl = {
+      for (final q in SiteChecklists.questionsFor(
+        sb.mediaCode,
+        sb.installationOf(su),
+      ))
+        q.id: q,
+    };
+    final mapped = QuestionEquivalence.mappedChecklistIds(tb, tu);
+    for (final tq in SiteChecklists.questionsFor(
+      tb.mediaCode,
+      tb.installationOf(tu),
+    )) {
+      if (mapped.contains(tq.id) ||
+          tq.installations != null ||
+          tq.type == ChecklistResponseType.photoEvidence) {
+        continue;
+      }
+      final sq = srcCl[tq.id];
+      if (sq == null ||
+          sq.installations != null ||
+          sq.type != tq.type ||
+          sq.options.length != tq.options.length ||
+          !sq.options.every(tq.options.contains)) {
+        continue;
+      }
+      final sr = su.checklist[tq.id];
+      if (!sq.isAnswered(sr) || (sr?.isNa ?? false) && !tq.allowNa) continue;
+      (tq.isAnswered(tu.checklist[tq.id]) ? cOver : cCopy).add(tq);
+    }
+    return CommonAnswerPlan(
+      toCopy: copy,
+      wouldOverwrite: overwrite,
+      notCommon: notCommon,
+      sourceUnanswered: manual,
+      toCopyChecklist: cCopy,
+      wouldOverwriteChecklist: cOver,
+    );
+  }
+
+  /// Board-level wrapper (first units) kept for existing callers.
+  static CommonAnswerPlan planCommonAnswers(Board source, Board target) {
+    final su = firstUnit(source), tu = firstUnit(target);
+    if (su == null || tu == null) {
+      return const CommonAnswerPlan(
+        toCopy: [],
+        wouldOverwrite: [],
+        notCommon: [],
+        sourceUnanswered: [],
+      );
+    }
+    return planUnitAnswers(source, su, target, tu);
+  }
+
+  /// Visible required questions not answered yet, over EVERY active
+  /// physical board of [board] (each with its own installation and its own
+  /// answers). A question missing on two boards is listed twice.
   static List<SiteQuestion> missingAnswers(Board board) {
-    return questionsFor(board.mediaCode, board.installationCode)
-        .where(
-          (q) =>
-              q.required &&
-              q.isVisible(board.answers) &&
-              !q.isAnswered(board.answers),
-        )
-        .toList();
+    if (board.activeUnits.isEmpty) {
+      return questionsFor(board.mediaCode, primaryInstallation(board))
+          .where(
+            (q) =>
+                q.required &&
+                q.isVisible(board.answers) &&
+                !q.isAnswered(board.answers),
+          )
+          .toList();
+    }
+    return [
+      for (final u in board.activeUnits) ...missingAnswersFor(board, u),
+    ];
   }
 
   static String answerText(SiteQuestion q, Object? value) {
@@ -1239,6 +2056,7 @@ class SignageCatalog {
     'Front view',
     'Left angle',
     'Right angle',
+    'Back view',
     'Close-up',
     'Long shot',
     'Surroundings',

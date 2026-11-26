@@ -600,7 +600,7 @@ class _UnitSummaryCard extends StatelessWidget {
                 '${SignageCatalog.media(b.mediaCode)?.shortName ?? 'Media not set'}'
                 '${SignageCatalog.isDoubleSided(b) ? ' (double-sided)' : ''}'
                 ' – ${b.quantity} unit${b.quantity == 1 ? '' : 's'} • '
-                '${SignageCatalog.installation(b.installationCode)?.name ?? 'Installation not set'}',
+                '${SignageCatalog.installationSummary(b, empty: 'Installation not set')}',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),

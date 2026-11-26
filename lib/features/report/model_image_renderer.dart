@@ -18,8 +18,23 @@ import 'report_pdf.dart';
 /// inserting a wrong or generic model.
 abstract class ModelImageRenderer {
   Future<ReportImage?> drawing(SignageModelSpec spec, DrawingView view);
-  Future<ReportImage?> model(SignageModelSpec spec, {String brand = 'ADINN'});
+
+  /// [yaw] picks the review angle (radians). The default is the existing
+  /// front isometric view; [kRearIsoYaw] shows the opposite side.
+  Future<ReportImage?> model(
+    SignageModelSpec spec, {
+    String brand = 'ADINN',
+    double yaw = kFrontIsoYaw,
+  });
 }
+
+/// Front isometric review angle used by the measurement sheet.
+const kFrontIsoYaw = 0.6;
+
+/// Opposite-side isometric angle (front + 180 degrees), so the rear face of a
+/// double-sided board is visible. Rendering is offscreen: the user's own 3D
+/// camera is never touched.
+const kRearIsoYaw = kFrontIsoYaw + 3.141592653589793;
 
 /// Offscreen dart:ui rendering (no device surface involved).
 class OffscreenModelImageRenderer implements ModelImageRenderer {
@@ -55,13 +70,17 @@ class OffscreenModelImageRenderer implements ModelImageRenderer {
   );
 
   @override
-  Future<ReportImage?> model(SignageModelSpec spec, {String brand = 'ADINN'}) {
+  Future<ReportImage?> model(
+    SignageModelSpec spec, {
+    String brand = 'ADINN',
+    double yaw = kFrontIsoYaw,
+  }) {
     final model = ParametricModelBuilder.build(spec, brand: brand);
     return _png((c) {
       c.drawRect(Offset.zero & size, Paint()..color = Colors.white);
       Scene3DPainter(
         scene: model.scene,
-        camera: const Camera3D(yaw: 0.6, pitch: 0.22),
+        camera: Camera3D(yaw: yaw, pitch: 0.22),
         paintGizmo: false,
       ).paint(c, size);
     });

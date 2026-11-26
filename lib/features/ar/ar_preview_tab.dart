@@ -13,10 +13,17 @@ import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
+import '../../data/storage/media_storage.dart';
 import '../board/board_editor_screen.dart';
+import '../gsb/gsb_board.dart';
+import '../gsb/gsb_comparison_pdf.dart';
+import '../gsb/gsb_comparison_service.dart';
+import '../gsb/gsb_rules.dart';
 import '../preview_live/capture_utils.dart';
 import '../preview_live/live_preview_tab.dart' show PngWriter;
 import '../preview_live/preview_gallery.dart';
+import '../preview_live/live_preview_render.dart'
+    show kNightDisclaimer, kNightDoubleNote;
 import 'ar_editor_panels.dart';
 import 'ar_model_builder.dart';
 import 'ar_scene_controller.dart';
@@ -314,8 +321,13 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
       return;
     }
     setState(() => _saving = true);
+    final gsb = GsbBoard.isGsb(b);
     try {
-      final result = await ar.capture();
+      // GSB: one camera frame rendered as original / day / night so the
+      // comparison shares the exact same pose and placement.
+      final result = gsb && ar.supportsRenderView
+          ? await ar.captureRenderSet()
+          : await ar.capture();
       if (result == null) {
         if (mounted) {
           showSnack(context, ar.error ?? 'Capture failed', error: true);
@@ -344,12 +356,19 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
           'scaleAdjusted': '${primary.transform.scaleAdjusted}',
           'objectCount': '${shown.length}',
           if (scene.layoutName != null) 'layoutName': scene.layoutName!,
+          if (gsb) 'boardVariant': GsbBoard.variantOf(b)!.key,
+          if (gsb) 'renderMode': ar.nightMode ? 'night' : 'day',
+          'arTracking': 'world-tracked (ARCore anchors)',
         },
         layoutId: scene.layoutId,
         visibleUnitIds: shown.map((p) => p.unitId).toSet().toList(),
         placementIds: shown.map((p) => p.placementId).toList(),
       );
       app.addPreview(shop.id, b.id, capture);
+      final storage = widget.writer == null ? media : null;
+      if (gsb && result.isRenderSet && storage != null) {
+        await _attachArComparison(shop, b, capture, result, storage);
+      }
       if (!mounted) return;
       // Inline banner on the camera view (a SnackBar would cover the
       // capture button and block "capture another").
@@ -365,6 +384,65 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
       }
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Saves the untouched camera frame and the night render as separate new
+  /// files, then the 4-page comparison PDF (same structure as Live
+  /// Preview). A PDF failure never loses the saved AR capture.
+  Future<void> _attachArComparison(
+    Shop shop,
+    Board b,
+    PreviewCapture capture,
+    ArCaptureResult result,
+    MediaStorage storage,
+  ) async {
+    final app = context.read<AppController>();
+    try {
+      final originalPath = await writeNewMediaFile(
+        storage,
+        result.originalPng!,
+        'ar',
+        'png',
+      );
+      capture.info['originalPath'] = originalPath;
+      final nightPath = await writeNewMediaFile(
+        storage,
+        result.nightPng!,
+        'ar',
+        'png',
+      );
+      capture.info['nightPath'] = nightPath;
+      final unit = b.unitById(capture.unitId) ?? b.units.first;
+      final data = gsbComparisonData(
+        app: app,
+        shop: shop,
+        board: b,
+        unit: unit,
+        source: 'Camera AR',
+        capturedAt: capture.createdAt,
+        original: await PdfPicture.of(result.originalPng!),
+        day: await PdfPicture.of(result.png),
+        night: await PdfPicture.of(result.nightPng!),
+      );
+      final pdf = await buildGsbComparisonPdf(data);
+      capture.info['comparisonPdf'] = await writeNewMediaFile(
+        storage,
+        pdf,
+        'reports',
+        'pdf',
+      );
+      app.touchBoard(shop.id, b);
+    } catch (e) {
+      app.touchBoard(shop.id, b); // keep whatever was written
+      if (mounted) {
+        showSnack(
+          context,
+          'AR capture saved; comparison PDF failed ($e). Capture again '
+          'to retry.',
+          error: true,
+        );
+      }
     }
   }
 
@@ -442,7 +520,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
         builder: (_) => BoardEditorScreen(
           shopId: widget.shopId,
           boardId: p.groupId,
-          initialStep: BoardEditorScreen.measurementsStep,
+          initialStep: BoardEditorScreen.boardDetailsStep,
         ),
       ),
     );
@@ -773,6 +851,23 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
               style: const TextStyle(color: Colors.white, fontSize: 11.5),
             ),
           ),
+          // Render View (Day / Night): GSB Single / Double only, and only
+          // when the AR engine can grade the camera view.
+          if (ar.supportsRenderView &&
+              GsbBoard.isGsb(app.board(widget.shopId, widget.boardId)))
+            IconButton(
+              key: const ValueKey('ar_render_view'),
+              tooltip: ar.nightMode
+                  ? 'Render View: Night (tap for Day)'
+                  : 'Render View: Day (tap for Night)',
+              visualDensity: VisualDensity.compact,
+              color: iconColor,
+              onPressed: () => ar.setNightMode(!ar.nightMode),
+              icon: Icon(
+                ar.nightMode ? Icons.nightlight_round : Icons.wb_sunny_outlined,
+                size: 20,
+              ),
+            ),
           IconButton(
             key: const ValueKey('ar_save_layout'),
             tooltip: widget.editable
@@ -1022,6 +1117,13 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
                           ),
                         if (ar.error != null && ar.phase != ArPhase.starting)
                           _banner(ar.error!),
+                        if (ar.nightMode)
+                          _banner(
+                            'Night View – $kNightDisclaimer'
+                            '${GsbBoard.variantOf(app.board(widget.shopId, widget.boardId))?.isDouble == true ? ' $kNightDoubleNote' : ''}',
+                            key: const ValueKey('ar_night_banner'),
+                            color: const Color(0xCC1B2846),
+                          ),
                         if (scene.awaitingPlacement &&
                             (failure == 'no_surface' ||
                                 (placingItem?.mayNeedManualPlacement ?? false)))

@@ -5,8 +5,10 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/models/models.dart';
 import '../drawing/signage_geometry.dart';
+import '../gsb/gsb_view.dart';
 import '../preview3d/scene3d.dart';
 import '../preview3d/signage_scene_builder.dart';
+import 'live_preview_render.dart';
 
 /// Geometry of one signage unit (its own size / installation override).
 SignageGeometry unitGeometry(Board b, SignageUnit u) {
@@ -20,6 +22,8 @@ SignageGeometry unitGeometry(Board b, SignageUnit u) {
     height: b.heightOf(u),
     unit: b.unit,
     doubleSided: b.doubleSided,
+    gsbLedSide: b.gsbLedSide,
+    nlbSubtype: b.nlbSubtype,
   );
   return SignageGeometry.fromBoard(tmp, unit: u);
 }
@@ -48,12 +52,50 @@ class LivePreviewController extends ChangeNotifier {
   bool showMeasurements = false;
   bool showModels = true;
 
+  /// Day / Night render view (GSB only in the UI). View state only: it
+  /// never changes any overlay transform.
+  RenderView view = RenderView.day;
+
+  /// GSB: side of the board the photo looks at (null = front).
+  GsbPhotoView? photoView;
+
+  bool get isGsb => board.mediaCode == 'GSB';
+
+  /// Switches the view preset of the selected board. The vendor's manual
+  /// adjustment is kept: yaw = new base + (yaw − old base). Custom keeps the
+  /// current yaw as is.
+  void setPhotoView(GsbPhotoView v) {
+    final old = photoView ?? GsbPhotoView.front;
+    photoView = v;
+    final o = selected;
+    if (o != null) {
+      if (v != GsbPhotoView.custom) {
+        final offset = old == GsbPhotoView.custom
+            ? 0.0
+            : wrapYaw(o.yaw - old.baseYaw);
+        o.yaw = effectiveYaw(v, offset);
+      }
+    }
+    notifyListeners();
+  }
+
+  void setView(RenderView v) {
+    if (view == v) return;
+    view = v;
+    notifyListeners();
+  }
+
   final Map<String, (SignageGeometry, Scene)> _scenes = {};
 
   static const minScale = 0.05;
   static const maxScale = 3.0;
-  static const minPitch = -0.15;
-  static const maxPitch = 0.9;
+
+  /// Perspective = camera elevation relative to the board (radians).
+  /// Symmetric so boards mounted above the camera (seen from below, the
+  /// usual street photo) are reachable; the old 0.9 rad top-down limit
+  /// mostly squashed the board vertically.
+  static const minPitch = -0.6;
+  static const maxPitch = 0.6;
 
   int get selectedIndex =>
       overlays.isEmpty ? -1 : _selected.clamp(0, overlays.length - 1);
@@ -76,6 +118,13 @@ class LivePreviewController extends ChangeNotifier {
       brand: brand,
       dimensions: true,
     );
+    if (board.mediaCode == 'GSB' || board.mediaCode == 'NLB') {
+      // Live Preview shows ONLY the board width / height. Mounting /
+      // clearance dimensions stay in the data (and in the 3D Isometric view).
+      scene.dims.removeWhere(
+        (d) => !d.label.startsWith('W ') && !d.label.startsWith('H '),
+      );
+    }
     _scenes[unit.id] = (g, scene);
     return scene;
   }
@@ -120,11 +169,24 @@ class LivePreviewController extends ChangeNotifier {
       );
     }
     final n = index ?? overlays.length;
-    return PreviewOverlay(unitId: unitId, cx: 0.5 + 0.06 * (n % 4), cy: 0.45);
+    return PreviewOverlay(
+      unitId: unitId,
+      cx: 0.5 + 0.06 * (n % 4),
+      cy: 0.45,
+      yaw: _initialYaw,
+    );
   }
 
+  PreviewOverlay _withBaseYaw(PreviewOverlay o) {
+    o.yaw = _initialYaw;
+    return o;
+  }
+
+  /// Start orientation from the photo's GSB view preset.
+  double get _initialYaw => (photoView ?? GsbPhotoView.front).baseYaw;
+
   void addUnit(String unitId) {
-    overlays.add(defaultFor(unitId));
+    overlays.add(_withBaseYaw(defaultFor(unitId)));
     _selected = overlays.length - 1;
     notifyListeners();
   }
@@ -142,10 +204,38 @@ class LivePreviewController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _edit(void Function(PreviewOverlay o) f) {
+  void _edit(
+    void Function(PreviewOverlay o) f, [
+    List<double> inputs = const [],
+  ]) {
     final o = selected;
     if (o == null) return;
+    // `NaN.clamp(a, b)` is not NaN-safe (it yields a bound): reject
+    // non-finite inputs before any clamping.
+    if (!inputs.every((v) => v.isFinite)) return;
+    final before = o.copy();
     f(o);
+    // Never keep a non-finite (NaN / infinite) transform: such a state
+    // collapses or flips the model. Restore the last valid values.
+    if (![
+      o.cx,
+      o.cy,
+      o.scale,
+      o.rotation,
+      o.yaw,
+      o.pitch,
+      o.opacity,
+    ].every((v) => v.isFinite)) {
+      o
+        ..cx = before.cx
+        ..cy = before.cy
+        ..scale = before.scale
+        ..rotation = before.rotation
+        ..yaw = before.yaw
+        ..pitch = before.pitch
+        ..opacity = before.opacity;
+      return;
+    }
     notifyListeners();
   }
 
@@ -154,35 +244,39 @@ class LivePreviewController extends ChangeNotifier {
     o
       ..cx = (o.cx + delta.dx).clamp(-0.5, 1.5).toDouble()
       ..cy = (o.cy + delta.dy).clamp(-0.5, 1.5).toDouble();
-  });
+  }, [delta.dx, delta.dy]);
 
   void setPosition(double cx, double cy) => _edit((o) {
     o
       ..cx = cx.clamp(-0.5, 1.5).toDouble()
       ..cy = cy.clamp(-0.5, 1.5).toDouble();
-  });
+  }, [cx, cy]);
 
   void setScale(double s) =>
-      _edit((o) => o.scale = s.clamp(minScale, maxScale).toDouble());
+      _edit((o) => o.scale = s.clamp(minScale, maxScale).toDouble(), [s]);
 
   void setRotation(double r) => _edit((o) {
     var a = r % (2 * math.pi);
     if (a > math.pi) a -= 2 * math.pi;
     o.rotation = a;
-  });
+  }, [r]);
 
-  void setYaw(double y) => _edit((o) => o.yaw = y.clamp(-1.4, 1.4).toDouble());
+  /// Full turn: any angle, normalised to (−π, π] (old saved values within
+  /// ±1.4 rad stay as they are).
+  void setYaw(double y) => _edit((o) => o.yaw = wrapYaw(y), [y]);
 
   void setPitch(double p) =>
-      _edit((o) => o.pitch = p.clamp(minPitch, maxPitch).toDouble());
+      _edit((o) => o.pitch = p.clamp(minPitch, maxPitch).toDouble(), [p]);
 
   void setOpacity(double v) =>
-      _edit((o) => o.opacity = v.clamp(0.1, 1).toDouble());
+      _edit((o) => o.opacity = v.clamp(0.1, 1).toDouble(), [v]);
 
   void resetSelected() {
     final o = selected;
     if (o == null) return;
-    overlays[selectedIndex] = defaultFor(o.unitId, index: selectedIndex);
+    overlays[selectedIndex] = _withBaseYaw(
+      defaultFor(o.unitId, index: selectedIndex),
+    );
     notifyListeners();
   }
 
@@ -219,6 +313,7 @@ class LivePreviewController extends ChangeNotifier {
     required Shop shop,
     required String path,
     required DateTime at,
+    Map<String, String>? info,
   }) {
     final primary = selected?.unitId ?? board.units.first.id;
     return PreviewCapture(
@@ -233,6 +328,7 @@ class LivePreviewController extends ChangeNotifier {
       path: path,
       createdAt: at,
       overlays: overlays.map((o) => o.copy()).toList(),
+      info: info,
     );
   }
 

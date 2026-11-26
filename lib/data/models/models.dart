@@ -2,12 +2,14 @@ import 'dart:math' as math;
 
 import 'ar_layout.dart';
 import 'enums.dart';
+import 'gsb_override.dart';
 import 'media_reference.dart';
 import 'panorama.dart';
 import 'site_survey.dart';
 
 export 'ar_layout.dart';
 export 'enums.dart';
+export 'gsb_override.dart';
 export 'media_reference.dart';
 export 'panorama.dart';
 export 'site_survey.dart';
@@ -394,6 +396,7 @@ class SitePhoto {
     this.geo,
     List<String>? unitIds,
     SiteMarkup? markup,
+    this.gsbView,
   }) : annotations = annotations ?? [],
        unitIds = unitIds ?? [],
        markup = markup ?? SiteMarkup();
@@ -421,6 +424,11 @@ class SitePhoto {
   /// [annotations] so the classic editor data is never rewritten.
   SiteMarkup markup;
 
+  /// GSB only: which side of the proposed board this photo looks at
+  /// (`front`, `left`, `right`, `back`, `custom`). Null = not chosen
+  /// (front). Presentation metadata; the photo file is never touched.
+  String? gsbView;
+
   /// Built-in sample photo (rendered in Dart) used for demos/emulators.
   bool get isDemo => path.startsWith(demoPrefix);
 
@@ -439,6 +447,7 @@ class SitePhoto {
     'geo': geo?.toJson(),
     if (unitIds.isNotEmpty) 'unitIds': unitIds,
     if (!markup.isEmpty) 'markup': markup.toJson(),
+    if (gsbView != null) 'gsbView': gsbView,
   };
 
   factory SitePhoto.fromJson(Map<String, dynamic> j) => SitePhoto(
@@ -452,6 +461,7 @@ class SitePhoto {
     geo: GeoFix.fromJson(j['geo']),
     unitIds: _strings(j['unitIds']),
     markup: SiteMarkup.fromJson(j['markup']),
+    gsbView: j['gsbView'] is String ? j['gsbView'] as String : null,
   );
 }
 
@@ -508,7 +518,9 @@ class SignageUnit {
     MeasurementDetails? measurements,
     Map<String, ChecklistResponse>? checklist,
     ElectricalSurvey? electrical,
+    Map<String, dynamic>? siteAnswers,
   }) : measurements = measurements ?? MeasurementDetails(),
+       siteAnswers = siteAnswers ?? {},
        checklist = checklist ?? {},
        electrical = electrical ?? ElectricalSurvey();
 
@@ -535,6 +547,12 @@ class SignageUnit {
   /// Electrical availability survey.
   ElectricalSurvey electrical;
 
+  /// Site Question answers (question id → value) of this physical board.
+  /// Used for every unit except the group's first unit, whose answers stay
+  /// in [Board.answers] (the historical storage, read by older records and
+  /// single-board groups). See `SignageCatalog.answersOf`. Additive field.
+  Map<String, dynamic> siteAnswers;
+
   bool get hasOwnSize => (width ?? 0) > 0 && (height ?? 0) > 0;
 
   SignageUnit copyWith({required String id}) =>
@@ -552,9 +570,13 @@ class SignageUnit {
     if (checklist.isNotEmpty)
       'checklist': ChecklistResponse.mapToJson(checklist),
     if (!electrical.isEmpty) 'electrical': electrical.toJson(),
+    if (siteAnswers.isNotEmpty) 'siteAnswers': siteAnswers,
   };
 
   factory SignageUnit.fromJson(Map<String, dynamic> j) => SignageUnit(
+    siteAnswers: j['siteAnswers'] is Map
+        ? Map<String, dynamic>.from(j['siteAnswers'] as Map)
+        : null,
     id: _s(j['id']),
     width: _dn(j['width']),
     height: _dn(j['height']),
@@ -689,6 +711,28 @@ class PreviewCapture {
   /// All units shown in this capture.
   Set<String> get unitIds => {unitId, ...overlays.map((o) => o.unitId)};
 
+  /// [info] keys of generated companion files (GSB day / night renders,
+  /// AR original frame, comparison PDF). Additive and optional: older
+  /// captures simply have none.
+  static const companionKeys = [
+    'originalPath',
+    'dayPath',
+    'nightPath',
+    'comparisonPdf',
+  ];
+
+  /// Generated companion files of this capture (never the site photo).
+  List<String> get companionPaths => [
+    for (final k in companionKeys)
+      if ((info[k] ?? '').isNotEmpty && info[k] != path) info[k]!,
+  ];
+
+  /// Comparison PDF generated with this capture, if any.
+  String? get comparisonPdf {
+    final p = info['comparisonPdf'];
+    return p == null || p.isEmpty ? null : p;
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'kind': kind.name,
@@ -766,7 +810,11 @@ class Board {
     this.doubleSided,
     this.legacyMediaCode,
     Map<String, dynamic>? answersArchive,
+    List<GsbSpecOverride>? gsbOverrides,
+    this.gsbLedSide,
+    this.nlbSubtype,
   }) : answersArchive = answersArchive ?? {},
+       gsbOverrides = gsbOverrides ?? [],
        comparisons = comparisons ?? [],
        answers = answers ?? {},
        photos = photos ?? [],
@@ -828,6 +876,32 @@ class Board {
   /// Site answers that stopped applying after a media / installation change.
   /// Kept so switching back restores them (no silent data loss).
   Map<String, dynamic> answersArchive;
+
+  /// GSB fabrication spec overrides (depth / profile / wall thickness)
+  /// proposed by the vendor. History is kept; reverted entries stay.
+  List<GsbSpecOverride> gsbOverrides;
+
+  /// GSB Double: side of the ONE physical LED set (`front` / `rear`).
+  /// Null = front. Never changes LED quantities.
+  String? gsbLedSide;
+
+  bool get gsbLedOnRear => gsbLedSide == 'rear';
+
+  /// NLB fabrication subtype: `NLB_SINGLE_FRAME` (rulebook NON_LIT) or
+  /// `NLB_BOX_FRAME` (NON_LIT_BOX). Null = never chosen (legacy NLB keeps
+  /// its previous behaviour). Additive; the media category stays `NLB`.
+  String? nlbSubtype;
+
+  bool get isNlb => mediaCode == 'NLB';
+  bool get isNlbBoxFrame => isNlb && nlbSubtype == 'NLB_BOX_FRAME';
+  bool get isNlbSingleFrame => isNlb && nlbSubtype == 'NLB_SINGLE_FRAME';
+
+  /// Canonical GSB fabrication variant key derived from the stored
+  /// [doubleSided] choice: `GSB_SINGLE` / `GSB_DOUBLE`, or null when the
+  /// media is not GSB or the sidedness was never chosen explicitly.
+  String? get gsbVariantKey => mediaCode != 'GSB' || doubleSided == null
+      ? null
+      : (doubleSided! ? 'GSB_DOUBLE' : 'GSB_SINGLE');
 
   /// Media Group ID.
   String get groupId => id;
@@ -934,6 +1008,12 @@ class Board {
     if (doubleSided != null) 'doubleSided': doubleSided,
     if (legacyMediaCode != null) 'legacyMediaCode': legacyMediaCode,
     if (answersArchive.isNotEmpty) 'answersArchive': answersArchive,
+    // Derived, write-only (always recomputed from mediaCode + doubleSided).
+    if (gsbVariantKey != null) 'boardVariant': gsbVariantKey,
+    if (gsbOverrides.isNotEmpty)
+      'gsbOverrides': gsbOverrides.map((o) => o.toJson()).toList(),
+    if (gsbLedSide != null) 'gsbLedSide': gsbLedSide,
+    if (nlbSubtype != null) 'nlbSubtype': nlbSubtype,
   };
 
   factory Board.fromJson(Map<String, dynamic> j) {
@@ -966,6 +1046,13 @@ class Board {
           : null,
       answersArchive: j['answersArchive'] is Map
           ? Map<String, dynamic>.from(j['answersArchive'] as Map)
+          : null,
+      gsbOverrides: _list(j['gsbOverrides'], GsbSpecOverride.fromJson),
+      gsbLedSide: j['gsbLedSide'] is String ? j['gsbLedSide'] as String : null,
+      nlbSubtype:
+          j['nlbSubtype'] == 'NLB_SINGLE_FRAME' ||
+              j['nlbSubtype'] == 'NLB_BOX_FRAME'
+          ? j['nlbSubtype'] as String
           : null,
       unitSeq: math.max(
         (j['unitSeq'] as num?)?.toInt() ?? units.length,

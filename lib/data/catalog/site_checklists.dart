@@ -1,4 +1,5 @@
 import '../models/models.dart';
+import 'question_equivalence.dart';
 import 'signage_catalog.dart';
 
 /// How a checklist question is answered.
@@ -585,8 +586,23 @@ class SiteChecklists {
 
   /// Completion of unit [u] of [b] for the current configuration.
   /// Responses to questions that no longer apply are kept but ignored.
-  static ChecklistStatus statusOf(Board b, SignageUnit u) =>
-      statusFor(b.mediaCode, b.installationOf(u), u.checklist);
+  static ChecklistStatus statusOf(Board b, SignageUnit u) => statusFor(
+    b.mediaCode,
+    b.installationOf(u),
+    // A question answered through its (verified equivalent) Site Question
+    // counts as answered here too.
+    QuestionEquivalence.projectedChecklist(b, u),
+  );
+
+  /// Required checklist questions still open that are NOT also a Site
+  /// Question (those are counted once, as Site Questions).
+  static List<ChecklistQuestion> uniqueMissing(Board b, SignageUnit u) {
+    final mapped = QuestionEquivalence.mappedChecklistIds(b, u);
+    return [
+      for (final q in statusOf(b, u).missingRequired)
+        if (!mapped.contains(q.id)) q,
+    ];
+  }
 
   static ChecklistStatus statusFor(
     String? mediaCode,

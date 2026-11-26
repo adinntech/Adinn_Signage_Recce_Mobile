@@ -7,6 +7,7 @@ import '../../../core/widgets/common_widgets.dart';
 import '../data/notifications_controller.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import '../bridge/live_saran_shop_screen.dart';
 import 'live_shop_screen.dart';
 import 'live_widgets.dart';
 
@@ -67,7 +68,7 @@ class NotificationsScreen extends StatelessWidget {
       NotificationType.recceReviewed => ShopTab.review,
       _ => null, // the shop opens on the step the person is at
     };
-    navigator.push(MaterialPageRoute<void>(builder: (_) => LiveShopScreen(siteId: siteId, initialTab: tab)));
+    navigator.push(MaterialPageRoute<void>(builder: (_) => tab == null ? LiveSaranShopScreen(siteId: siteId) : LiveShopScreen(siteId: siteId, initialTab: tab)));
   }
 
   @override

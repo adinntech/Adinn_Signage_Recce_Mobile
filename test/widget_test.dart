@@ -265,15 +265,34 @@ void main() {
       host(c, BoardEditorScreen(shopId: 's_lakshmi', boardId: b.id)),
     );
     await tester.pumpAndSettle();
+    // Media Type is the first step for a new board.
     expect(find.text('GSB'), findsOneWidget);
     // Catalog v2: legacy Wall Paint is no longer offered for new groups.
     expect(find.text('Wall Paint'), findsNothing);
-    expect(find.text('MDF+GSB DS'), findsOneWidget);
+    expect(find.text('MDF+GSB DS'), findsNothing);
+    expect(find.text('MDF'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('media_GSB')));
+    tester.widget<InkWell>(find.byKey(const Key('media_GSB'))).onTap!();
+    await tester.pumpAndSettle();
+    // GSB asks for the board type first.
+    await tester.tap(find.byKey(const Key('gsb_type_single')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('gsb_type_continue')));
     await tester.pumpAndSettle();
     expect(b.mediaCode, 'GSB');
-    await tester.tap(find.byKey(const Key('inst_double_pole')));
+    // Auto-named after the media; Board Details (step 2) is next.
+    expect(b.name, 'GSB Single 01');
+    expect(
+      tester.widget<Stepper>(find.byType(Stepper)).currentStep,
+      BoardEditorScreen.boardDetailsStep,
+    );
+    await tapVisible(tester, find.byKey(const Key('step_next_1')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Stepper>(find.byType(Stepper)).currentStep,
+      BoardEditorScreen.installationStep,
+    );
+    await tapVisible(tester, find.byKey(const Key('inst_double_pole')));
     await tester.pumpAndSettle();
     expect(b.installationCode, 'double_pole');
     // Labels are Text.rich ("label *"), so match by substring.

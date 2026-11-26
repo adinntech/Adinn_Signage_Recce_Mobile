@@ -176,6 +176,9 @@ class SignageModelSpec {
     required Map<SpecField, SpecSource> sources,
     this.mediaSelected = true,
     this.installationSelected = true,
+    this.gsbLedRear = false,
+    this.nlbBoxFrame = false,
+    this.nlbSingleFrame = false,
   }) : values = Map.unmodifiable(values),
        sources = Map.unmodifiable(sources);
 
@@ -191,6 +194,15 @@ class SignageModelSpec {
   final MeasureUnit displayUnit;
   final bool mediaSelected;
   final bool installationSelected;
+
+  /// GSB Double: the single LED set faces the rear (Night View only).
+  final bool gsbLedRear;
+
+  /// NLB Box Frame (NON_LIT_BOX): fully covered 4-in box.
+  final bool nlbBoxFrame;
+
+  /// NLB Single Frame (NON_LIT): slim open frame, pipes visible.
+  final bool nlbSingleFrame;
   final Map<SpecField, double> values;
   final Map<SpecField, SpecSource> sources;
 
@@ -200,6 +212,9 @@ class SignageModelSpec {
     mediaCode,
     installationCode,
     isDoubleSided,
+    gsbLedRear,
+    nlbBoxFrame,
+    nlbSingleFrame,
     for (final f in SpecField.values)
       if (values.containsKey(f)) '${f.name}=${values[f]}',
   ].join('|');
@@ -242,6 +257,9 @@ class SignageModelSpec {
     },
     mediaSelected: mediaSelected,
     installationSelected: installationSelected,
+    gsbLedRear: gsbLedRear,
+    nlbBoxFrame: nlbBoxFrame,
+    nlbSingleFrame: nlbSingleFrame,
   );
 
   /// Resolves the spec of unit [u] of [b] (pure; never writes).
@@ -252,11 +270,12 @@ class SignageModelSpec {
     final instSelected =
         inst != null && SignageCatalog.installation(inst) != null;
     if (!instSelected) {
-      inst = media?.installations.first ?? SignageCatalog.shopFascia;
+      inst = media?.installations.firstOrNull ?? SignageCatalog.shopFascia;
     }
     final installation = inst;
     final m = u.measurements;
-    final a = b.answers;
+    // This physical board's own Site Question answers.
+    final a = SignageCatalog.answersOf(b, u);
     final values = <SpecField, double>{};
     final sources = <SpecField, SpecSource>{};
     final ft = MeasureUnit.ft.mmFactor;
@@ -305,7 +324,14 @@ class SignageModelSpec {
 
     // Depth for rigid boards.
     if (!thin) {
-      put(SpecField.depth, (media?.depthFt ?? 0.25) * ft);
+      put(
+        SpecField.depth,
+        b.isNlbSingleFrame
+            ? 25.4
+            : b.isNlbBoxFrame
+            ? 4 * 25.4
+            : (media?.depthFt ?? 0.25) * ft,
+      );
     }
 
     // Mounting height (ground clearance).
@@ -389,7 +415,12 @@ class SignageModelSpec {
 
     // Template-specific construction.
     if (tpl == 'gsb' || tpl == 'nonlit' || tpl == 'sandwich') {
-      put(SpecField.frameThickness, tpl == 'sandwich' ? 25 : 40);
+      // GSB main frame: 1 × 1 in MS SHS (rulebook); others unchanged.
+      put(SpecField.frameThickness, switch (tpl) {
+        'sandwich' => 25,
+        'gsb' when code == SignageCatalog.gsb => 25.4,
+        _ => 40,
+      });
     }
     if (const {'foam', 'acrylic', 'acp2d', 'acp3d', 'sandwich'}.contains(tpl)) {
       put(SpecField.materialThickness, media!.thicknessMm);
@@ -422,6 +453,9 @@ class SignageModelSpec {
       sources: sources,
       mediaSelected: media != null,
       installationSelected: instSelected,
+      gsbLedRear: b.gsbLedOnRear,
+      nlbBoxFrame: b.isNlbBoxFrame,
+      nlbSingleFrame: b.isNlbSingleFrame,
     );
   }
 

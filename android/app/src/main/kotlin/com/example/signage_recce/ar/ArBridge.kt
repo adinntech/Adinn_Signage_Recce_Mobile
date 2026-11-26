@@ -133,6 +133,19 @@ class ArBridge(private val activity: Activity, messenger: BinaryMessenger) :
                     }
                 }
             }
+            // --- GSB Render View (illustrative night) ------------------
+            "setRenderMode" -> {
+                current?.renderer?.nightMode = call.argument<Boolean>("night") ?: false
+                result.success(null)
+            }
+            "captureSet" -> {
+                val view = current ?: return result.error("capture", "AR session is not running", null)
+                view.renderer.requestCaptureSet { images, error ->
+                    main.post {
+                        if (images != null) result.success(images) else result.error("capture", error, null)
+                    }
+                }
+            }
             // --- Multi-object scene ------------------------------------
             "registerModel" -> {
                 val view = current ?: return result.success(false)

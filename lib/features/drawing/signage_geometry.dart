@@ -38,6 +38,9 @@ class SignageGeometry {
     this.baseDepthFt = 0,
     this.supportType,
     this.spec,
+    this.gsbLedRear = false,
+    this.nlbBoxFrame = false,
+    this.nlbSingleFrame = false,
   });
 
   static const defaultWidthFt = 10.0;
@@ -89,6 +92,16 @@ class SignageGeometry {
   /// recorded values. Null for GSB / NLB / ACP and legacy media, which keep
   /// the original scene builder.
   final SignageModelSpec? spec;
+
+  /// GSB Double: the single physical LED set faces the rear (Night View
+  /// glow only; never a quantity).
+  final bool gsbLedRear;
+
+  /// NLB Box Frame (rulebook NON_LIT_BOX): fully flex-covered 4-in box.
+  final bool nlbBoxFrame;
+
+  /// NLB Single Frame (NON_LIT): slim open steel frame, pipes visible.
+  final bool nlbSingleFrame;
 
   double get topFt => bottomFt + heightFt;
   double get areaSqFt => widthFt * heightFt;
@@ -185,18 +198,27 @@ class SignageGeometry {
     double? recFt(String id) => rec[id] == null ? null : rec[id]! / 304.8;
     final selectedMedia = SignageCatalog.media(b.mediaCode);
     final media = selectedMedia ?? SignageCatalog.mediaTypes.first;
-    var inst = b.installationCode;
+    // The unit's own installation (override, else the group's).
+    var inst = mu != null ? b.installationOf(mu) : b.installationCode;
     final installationSelected =
         inst != null && SignageCatalog.installation(inst) != null;
-    if (!installationSelected) inst = media.installations.first;
+    if (!installationSelected) inst = media.installations.isEmpty
+          ? SignageCatalog.shopFascia
+          : media.installations.first;
     final installation = inst;
-    final a = b.answers;
+    // This physical board's own answers (group map for the first unit).
+    final a = SignageCatalog.answersOf(b, mu);
 
-    final hasSize = b.hasSize;
-    final w = (widthFt ?? (hasSize ? b.widthFt : defaultWidthFt))
+    // An explicitly requested unit uses its OWN size (different sizes);
+    // without a unit the historical group size is used as before.
+    final unitSized = unit != null && b.unitHasSize(unit);
+    final hasSize = unitSized || b.hasSize;
+    final ownW = unitSized ? b.unit.toFeet(b.widthOf(unit)!) : b.widthFt;
+    final ownH = unitSized ? b.unit.toFeet(b.heightOf(unit)!) : b.heightFt;
+    final w = (widthFt ?? (hasSize ? ownW : defaultWidthFt))
         .clamp(0.1, 2000.0)
         .toDouble();
-    final h = (heightFt ?? (hasSize ? b.heightFt : defaultHeightFt))
+    final h = (heightFt ?? (hasSize ? ownH : defaultHeightFt))
         .clamp(0.1, 2000.0)
         .toDouble();
 
@@ -240,14 +262,22 @@ class SignageGeometry {
     return SignageGeometry(
       widthFt: w,
       heightFt: h,
+      nlbBoxFrame: b.isNlbBoxFrame,
+      nlbSingleFrame: b.isNlbSingleFrame,
       depthFt:
-          recFt('board_depth') ?? (media.depthFt < 0.05 ? 0.05 : media.depthFt),
+          recFt('board_depth') ??
+          (b.isNlbSingleFrame
+              ? 1 / 12
+              : b.isNlbBoxFrame
+              ? 4 / 12
+              : (media.depthFt < 0.05 ? 0.05 : media.depthFt)),
       clearanceFt: clearance,
       bottomFt: bottom,
       buildingHeightFt: buildingH.toDouble(),
       poleGapFt: poleGap,
       projectionFt: projection,
       doubleSided: SignageCatalog.isDoubleSided(b),
+      gsbLedRear: b.gsbLedOnRear,
       mediaCode: media.code,
       installationCode: installation,
       unit: b.unit,
@@ -327,6 +357,9 @@ class SignageGeometry {
       other.poleGapFt == poleGapFt &&
       other.projectionFt == projectionFt &&
       other.doubleSided == doubleSided &&
+      other.gsbLedRear == gsbLedRear &&
+      other.nlbBoxFrame == nlbBoxFrame &&
+      other.nlbSingleFrame == nlbSingleFrame &&
       other.mediaCode == mediaCode &&
       other.installationCode == installationCode &&
       other.unit == unit &&
@@ -351,6 +384,9 @@ class SignageGeometry {
     poleGapFt,
     projectionFt,
     doubleSided,
+    gsbLedRear,
+    nlbBoxFrame,
+    nlbSingleFrame,
     mediaCode,
     installationCode,
     unit,

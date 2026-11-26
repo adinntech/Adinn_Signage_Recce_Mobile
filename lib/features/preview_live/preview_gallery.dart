@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -9,6 +10,17 @@ import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
+
+/// Opens / shares a saved GSB day-night comparison PDF.
+Future<void> openComparisonPdf(String path, String shopName) async {
+  final file = File(path);
+  if (!await file.exists()) return;
+  final safe = shopName.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
+  await Printing.sharePdf(
+    bytes: await file.readAsBytes(),
+    filename: 'GSB_Day_Night_$safe.pdf',
+  );
+}
 
 /// Thumbnail of a saved preview image (falls back when the file is gone).
 class PreviewThumb extends StatelessWidget {
@@ -181,6 +193,25 @@ class PreviewViewerScreen extends StatelessWidget {
           style: const TextStyle(color: Colors.white),
         ),
         actions: [
+          if (capture.comparisonPdf != null)
+            IconButton(
+              key: const ValueKey('open-comparison-pdf'),
+              tooltip: 'Day / Night comparison PDF',
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              onPressed: () async {
+                final shop = context.read<AppController>().shop(capture.shopId);
+                try {
+                  await openComparisonPdf(
+                    capture.comparisonPdf!,
+                    shop?.name ?? board.name,
+                  );
+                } catch (e) {
+                  if (context.mounted) {
+                    showSnack(context, 'Could not open PDF: $e', error: true);
+                  }
+                }
+              },
+            ),
           if (shopId != null)
             IconButton(
               key: const ValueKey('delete-preview'),

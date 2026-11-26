@@ -16,11 +16,13 @@ import '../location/gps_widgets.dart';
 import '../panorama/panorama_list_screen.dart';
 import '../photos/site_photo_view.dart';
 import '../submission/submission_screen.dart';
+import '../report/recce_pdf_card.dart';
 import '../report/reports_screen.dart';
 import '../review_comments/shop_comments_screen.dart';
 import '../survey/feasibility.dart';
 import '../survey/markup_entry.dart';
 import '../survey/readiness.dart';
+import 'add_media_sheet.dart';
 import 'shop_form_screen.dart';
 
 class ShopDetailScreen extends StatelessWidget {
@@ -28,12 +30,33 @@ class ShopDetailScreen extends StatelessWidget {
 
   final String shopId;
 
-  void _openBoard(BuildContext context, String boardId) {
+  void _openBoard(
+    BuildContext context,
+    String boardId, {
+    BoardIssue? issue,
+  }) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => BoardEditorScreen(shopId: shopId, boardId: boardId),
+        builder: (_) => BoardEditorScreen(
+          shopId: shopId,
+          boardId: boardId,
+          initialUnitId: issue?.unitId,
+          initialStep: issue == null
+              ? null
+              : BoardEditorScreen.stepFor(issue.section),
+        ),
       ),
     );
+  }
+
+  /// "+ Add media type": board-count popup first; boards are created only
+  /// after the vendor confirms the whole configuration.
+  Future<void> _addMedia(BuildContext context) async {
+    final c = context.read<AppController>();
+    final created = await runAddMedia(context, c, shopId);
+    if (created.isNotEmpty && context.mounted) {
+      _openBoard(context, created.first.id);
+    }
   }
 
   @override
@@ -179,7 +202,8 @@ class ShopDetailScreen extends StatelessWidget {
             _ProgressCard(
               shop: shop,
               editable: editable,
-              onContinue: (boardId) => _openBoard(context, boardId),
+              onContinue: (boardId, issue) =>
+                  _openBoard(context, boardId, issue: issue),
             ),
           ],
           const SizedBox(height: 16),
@@ -211,10 +235,7 @@ class ShopDetailScreen extends StatelessWidget {
               if (editable)
                 TextButton.icon(
                   key: const Key('add_board'),
-                  onPressed: () {
-                    final b = context.read<AppController>().addBoard(shop.id);
-                    _openBoard(context, b.id);
-                  },
+                  onPressed: () => _addMedia(context),
                   icon: const Icon(Icons.add),
                   label: const Text('Add media type'),
                 ),
@@ -239,6 +260,10 @@ class ShopDetailScreen extends StatelessWidget {
               onOpen: () => _openBoard(context, b.id),
             ),
             const SizedBox(height: 10),
+          ],
+          if (shop.boards.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            RecceReportCard(shopId: shop.id),
           ],
         ],
       ),
@@ -403,7 +428,6 @@ class _BoardCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.read<AppController>();
     final media = SignageCatalog.media(board.mediaCode);
-    final inst = SignageCatalog.installation(board.installationCode);
     final issues = c.boardIssues(board);
     final rejected = c
         .openIssues(shop)
@@ -453,7 +477,10 @@ class _BoardCard extends StatelessWidget {
                     Text(
                       [
                         media?.shortName ?? 'Media not set',
-                        inst?.name ?? 'Installation not set',
+                        SignageCatalog.installationSummary(
+                          board,
+                          empty: 'Installation not set',
+                        ),
                       ].join(' • '),
                       style: const TextStyle(
                         fontSize: 12,
@@ -806,7 +833,10 @@ class _ProgressCard extends StatelessWidget {
 
   final Shop shop;
   final bool editable;
-  final ValueChanged<String> onContinue;
+
+  /// Opens the pending media group at the physical board + section of
+  /// [BoardIssue].
+  final void Function(String boardId, BoardIssue? issue) onContinue;
 
   @override
   Widget build(BuildContext context) {
@@ -816,6 +846,10 @@ class _ProgressCard extends StatelessWidget {
     final pending = shop.boards
         .where((b) => c.boardIssues(b).isNotEmpty)
         .toList();
+    // First pending issue (its physical board + section) to continue at.
+    final next = pending.isEmpty
+        ? null
+        : c.boardIssueDetails(pending.first).first;
     return SectionCard(
       key: const Key('recce_progress'),
       title: 'Recce progress',
@@ -844,11 +878,12 @@ class _ProgressCard extends StatelessWidget {
             const SizedBox(height: 8),
             FilledButton.icon(
               key: const Key('continue_recce'),
-              onPressed: () => onContinue(pending.first.id),
+              onPressed: () => onContinue(pending.first.id, next),
               icon: const Icon(Icons.play_arrow),
               label: Text(
-                'Continue: ${pending.first.name} – '
-                '${c.boardIssues(pending.first).first}',
+                'Continue: '
+                '${pending.first.unitById(next?.unitId) != null && pending.first.activeUnits.length > 1 ? SignageCatalog.unitName(pending.first, pending.first.unitById(next!.unitId)!) : pending.first.name}'
+                ' – ${next?.text ?? ''}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

@@ -55,9 +55,9 @@ Future<Uint8List?> renderAnnotatedPhoto(
   if (photo.isDemo) {
     DemoShopfrontPainter(photo.demoSeed).paint(canvas, size);
   } else {
-    final file = File(photo.path);
-    if (!await file.exists()) return null;
-    final codec = await ui.instantiateImageCodec(await file.readAsBytes());
+    final raw = await readPhotoBytes(photo.path);
+    if (raw == null) return null;
+    final codec = await ui.instantiateImageCodec(raw);
     final frame = await codec.getNextFrame();
     final img = frame.image;
     canvas.drawImageRect(

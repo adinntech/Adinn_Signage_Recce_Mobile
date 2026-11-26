@@ -1,5 +1,6 @@
 import '../../core/utils/formatters.dart';
 import '../../data/catalog/measurement_fields.dart';
+import '../../data/catalog/question_equivalence.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/catalog/site_checklists.dart';
 import '../../data/models/models.dart';
@@ -97,6 +98,8 @@ ReportBuild buildReportData(
   Shop live, {
   required DateTime now,
   String generatedBy = '',
+  /// Media-wise (separate) report: only these media groups. Null = all.
+  Set<String>? groupIds,
 }) {
   final useSnapshot = reportUsesSnapshot(live);
   final s = useSnapshot ? live.latestSubmission!.shopSnapshot : live;
@@ -154,9 +157,15 @@ ReportBuild buildReportData(
   };
 
   // Overview ---------------------------------------------------------------
+  // Totals describe the report's scope (one media group for a separate
+  // report); full-shop totals are kept under separate keys.
+  final scoped = [
+    for (final b in s.boards)
+      if (groupIds == null || groupIds.contains(b.id)) b,
+  ];
   var units = 0, complete = 0;
   final feasRows = <List<String>>[];
-  for (final b in s.boards) {
+  for (final b in scoped) {
     for (final u in b.activeUnits) {
       units++;
       final cl = SiteChecklists.statusOf(b, u);
@@ -169,23 +178,36 @@ ReportBuild buildReportData(
       ]);
     }
   }
+  final scopedIssues = groupIds == null
+      ? c.shopIssues(s)
+      : [
+          for (final b in scoped)
+            for (final i in c.boardIssues(b)) '${b.name}: $i',
+        ];
   final overview = {
+    'scope': groupIds == null
+        ? 'Combined report – all media types'
+        : 'Separate report – '
+              '${scoped.map(SignageCatalog.mediaNameLabel).join(', ')}',
     'mediaSummary': [
-      for (final b in s.boards)
+      for (final b in scoped)
+        // Existing wording (media short name) is kept for the summary.
         '${SignageCatalog.media(b.mediaCode)?.shortName ?? b.name}'
             '${SignageCatalog.isDoubleSided(b) ? ' (double-sided)' : ''} – '
             '${b.quantity} Unit${b.quantity == 1 ? '' : 's'}',
     ],
-    'mediaGroups': s.boards.length,
+    'mediaGroups': scoped.length,
     'units': units,
+    'shopMediaGroups': s.boards.length,
+    'shopUnits': s.boards.fold<int>(0, (t, b) => t + b.activeUnits.length),
     'mediaTypes': [
-      for (final code in s.boards.map((b) => b.mediaCode).toSet())
+      for (final code in scoped.map((b) => b.mediaCode).toSet())
         if (code != null) SignageCatalog.media(code)?.name ?? code,
     ],
     'completeUnits': complete,
     'completionPercent': units == 0 ? 0 : (complete * 100 / units).round(),
-    'openIssues': c.shopIssues(s).length,
-    'issues': c.shopIssues(s).take(12).toList(),
+    'openIssues': scopedIssues.length,
+    'issues': scopedIssues.take(12).toList(),
     'feasibility': shopFeasibility(s).label,
     'feasibilityRows': feasRows,
   };
@@ -193,7 +215,11 @@ ReportBuild buildReportData(
   // Items & images ----------------------------------------------------------
   final images = <ReportImageRef>[];
   var imageCount = 0;
-  bool canAdd() => imageCount < kMaxReportImages;
+  // Required drawing / model images (4 per physical board) are reserved so
+  // optional photographs can never push them out of the image budget.
+  var requiredLeft =
+      scoped.fold<int>(0, (t, b) => t + b.activeUnits.length) * 4;
+  bool canAdd() => imageCount + requiredLeft < kMaxReportImages;
   String addImage(ReportImageRef Function(String key) make) {
     final key = 'img_${imageCount++}';
     images.add(make(key));
@@ -202,6 +228,7 @@ ReportBuild buildReportData(
 
   final groups = <Map<String, dynamic>>[];
   for (final b in s.boards) {
+    if (groupIds != null && !groupIds.contains(b.id)) continue;
     final media = SignageCatalog.media(b.mediaCode);
     final items = <Map<String, dynamic>>[];
     for (final u in b.activeUnits) {
@@ -209,20 +236,38 @@ ReportBuild buildReportData(
       // Measurement sheet: 2D front + side drawing and the 3D model view,
       // all generated from the same canonical spec as the item table.
       final sheet = <String, dynamic>{};
-      for (final (kind, view, caption) in [
-        (ReportImageKind.drawing2d, DrawingView.front, '2D front elevation'),
-        (ReportImageKind.drawing2d, DrawingView.side, '2D side elevation'),
-        (ReportImageKind.model3d, null, '3D model view'),
+      // Two 3D review angles per physical board: front and opposite-side
+      // isometric (shows the rear face of double-sided boards).
+      for (final (kind, view, slot, caption) in [
+        (
+          ReportImageKind.drawing2d,
+          DrawingView.front.name,
+          'front',
+          '2D front elevation',
+        ),
+        (
+          ReportImageKind.drawing2d,
+          DrawingView.side.name,
+          'side',
+          '2D side elevation',
+        ),
+        (ReportImageKind.model3d, null, 'model', '3D front isometric view'),
+        (
+          ReportImageKind.model3d,
+          'rear',
+          'model_rear',
+          '3D opposite-side isometric view',
+        ),
       ]) {
-        if (!canAdd()) break;
-        sheet[view?.name ?? 'model'] = addImage(
+        requiredLeft--;
+        sheet[slot] = addImage(
           (key) => ReportImageRef(
             key: key,
             kind: kind,
             caption: '$caption – ${_unitLabel(b, u)}',
             boardId: b.id,
             unitId: u.id,
-            view: view?.name,
+            view: view,
           ),
         );
       }
@@ -324,16 +369,24 @@ ReportBuild buildReportData(
       'media': media?.name ?? 'Media not set',
       'mediaShort': media?.shortName ?? b.name,
       'installation':
-          SignageCatalog.installation(b.installationCode)?.name ?? 'Not set',
+          SignageCatalog.installationSummary(b),
       'quantity': b.quantity,
       'sizeMode': b.isSameSize ? 'Same size' : 'Different sizes',
+      // Each physical board's own final answers (own installation).
       'siteAnswers': [
-        for (final q in SignageCatalog.questionsFor(
-          b.mediaCode,
-          b.installationCode,
-        ))
-          if (q.isVisible(b.answers) && b.answers[q.id] != null)
-            [q.label, SignageCatalog.answerText(q, b.answers[q.id])],
+        for (final u in b.activeUnits)
+          for (final q in SignageCatalog.questionsForUnit(b, u))
+            if (q.isVisible(QuestionEquivalence.effectiveSiteAnswers(b, u)) &&
+                QuestionEquivalence.effectiveSiteAnswers(b, u)[q.id] != null)
+              [
+                b.activeUnits.length > 1
+                    ? '${SignageCatalog.unitName(b, u)} – ${q.label}'
+                    : q.label,
+                SignageCatalog.answerText(
+                  q,
+                  QuestionEquivalence.effectiveSiteAnswers(b, u)[q.id],
+                ),
+              ],
       ],
       'note': b.textNote,
       'items': items,
@@ -411,15 +464,21 @@ Map<String, dynamic> _item(AppController c, Shop s, Board b, SignageUnit u) {
   // Checklist.
   final cl = SiteChecklists.statusOf(b, u);
   final def = SiteChecklists.definitionFor(b.mediaCode);
+  // Questions answered as Site Questions are exported there only (no
+  // duplicates); evidence photos are exported from Site Photos.
+  final mapped = QuestionEquivalence.mappedChecklistIds(b, u);
+  final projected = QuestionEquivalence.projectedChecklist(b, u);
   final checklistRows = [
     for (final q in cl.applicable)
-      [
-        q.text,
-        q.isAnswered(u.checklist[q.id])
-            ? q.answerText(u.checklist[q.id])
-            : (q.required ? 'NOT ANSWERED (required)' : '—'),
-        u.checklist[q.id]?.remarks ?? '',
-      ],
+      if (!mapped.contains(q.id) &&
+          q.type != ChecklistResponseType.photoEvidence)
+        [
+          q.text,
+          q.isAnswered(projected[q.id])
+              ? q.answerText(projected[q.id])
+              : (q.required ? 'NOT ANSWERED (required)' : '—'),
+          u.checklist[q.id]?.remarks ?? '',
+        ],
   ];
 
   // Electrical.

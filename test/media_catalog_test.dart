@@ -34,7 +34,7 @@ Board _gsb(AppController c, {int qty = 1}) {
 
 void main() {
   group('B. Catalog', () {
-    test('21-22 exactly 13 selectable media, unique canonical ids', () {
+    test('21-22 exactly 13 catalog media (MDF pending), unique ids', () {
       final codes = SignageCatalog.catalogMedia.map((m) => m.code).toList();
       expect(codes, hasLength(13));
       expect(codes, [
@@ -145,7 +145,7 @@ void main() {
         ..installationCode = SignageCatalog.doublePole;
       expect(
         c.boardIssues(b),
-        contains('Installation type not valid for One-Way'),
+        contains('Installation type not valid for One-Way Vision'),
       );
     });
   });
@@ -360,19 +360,92 @@ void main() {
         host(c, BoardEditorScreen(shopId: 's_lakshmi', boardId: b.id)),
       );
       await tester.pumpAndSettle();
-      for (final code in SignageCatalog.catalogCodes) {
+      // Board Details opens first; move to the media catalog.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('step_next_0')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(const Key('step_next_0')));
+      await tester.pumpAndSettle();
+      for (final code in SignageCatalog.selectableCodes) {
         expect(find.byKey(Key('media_$code')), findsOneWidget, reason: code);
       }
-      expect(find.byKey(const Key('media_WALL')), findsNothing);
-      await tester.tap(find.byKey(const Key('media_GSB')));
+      for (final code in ['SANDWICH', 'ACP2D', 'ACP', 'MDF_GSB', 'WALL']) {
+        expect(find.byKey(Key('media_$code')), findsNothing, reason: code);
+      }
+      // GSB opens the "Select GSB Board Type" sheet; cancel changes nothing.
+      tester
+          .widget<InkWell>(find.byKey(const Key('media_GSB')))
+          .onTap!();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('gsb_type_title')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('gsb_type_cancel')));
+      await tester.pumpAndSettle();
+      expect(b.mediaCode, isNull);
+      tester
+          .widget<InkWell>(find.byKey(const Key('media_GSB')))
+          .onTap!();
+      await tester.pumpAndSettle();
+      // Continue is disabled until a type is chosen.
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('gsb_type_continue')))
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.byKey(const Key('gsb_type_single')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('gsb_type_continue')));
       await tester.pumpAndSettle();
       expect(b.mediaCode, SignageCatalog.gsb);
-      // Reopen the media step to choose the display faces.
+      expect(b.doubleSided, isFalse);
+      expect(b.gsbVariantKey, 'GSB_SINGLE');
+      // Reopen the media step: the old bottom single/double control is
+      // replaced by the board-type summary for GSB.
       await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(
         host(
           c,
-          BoardEditorScreen(shopId: 's_lakshmi', boardId: b.id, initialStep: 0),
+          BoardEditorScreen(
+            shopId: 's_lakshmi',
+            boardId: b.id,
+            initialStep: BoardEditorScreen.mediaTypeStep,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sides_double')), findsNothing);
+      expect(find.byKey(const Key('gsb_variant_summary')), findsOneWidget);
+      // (Below the fold in the stepper: invoke like the sidedness control.)
+      tester
+          .widget<TextButton>(find.byKey(const Key('gsb_variant_change')))
+          .onPressed!();
+      await tester.pumpAndSettle();
+      // The saved choice is restored in the sheet.
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('gsb_type_continue')))
+            .onPressed,
+        isNotNull,
+      );
+      await tester.tap(find.byKey(const Key('gsb_type_double')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('gsb_type_continue')));
+      await tester.pumpAndSettle();
+      expect(b.doubleSided, isTrue);
+      expect(b.gsbVariantKey, 'GSB_DOUBLE');
+
+      // NLB keeps the original single / double control.
+      final n = c.addBoard('s_lakshmi')..mediaCode = SignageCatalog.nlb;
+      await tester.pumpWidget(
+        host(
+          c,
+          BoardEditorScreen(
+            shopId: 's_lakshmi',
+            boardId: n.id,
+            initialStep: BoardEditorScreen.mediaTypeStep,
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -381,14 +454,22 @@ void main() {
           .widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>))
           .onSelectionChanged!({true});
       await tester.pumpAndSettle();
-      expect(b.doubleSided, isTrue);
+      expect(n.doubleSided, isTrue);
 
       // Legacy group: explicit mapping.
       final v = c.addBoard('s_lakshmi')
         ..mediaCode = SignageCatalog.vinyl
         ..installationCode = SignageCatalog.glassPasting;
+      await tester.pumpWidget(const SizedBox()); // fresh editor state
       await tester.pumpWidget(
-        host(c, BoardEditorScreen(shopId: 's_lakshmi', boardId: v.id)),
+        host(
+          c,
+          BoardEditorScreen(
+            shopId: 's_lakshmi',
+            boardId: v.id,
+            initialStep: BoardEditorScreen.mediaTypeStep,
+          ),
+        ),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('legacy_media_card')), findsOneWidget);

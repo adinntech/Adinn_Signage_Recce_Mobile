@@ -7,6 +7,7 @@ import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
+import '../../state/live_link.dart';
 import '../../state/version_diff.dart';
 import '../board/board_editor_screen.dart';
 import '../shop/shop_detail_screen.dart';
@@ -33,6 +34,8 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
 
   Future<void> _submit() async {
     final c = context.read<AppController>();
+    final link = c.liveLink(widget.shopId);
+    if (link != null) return _submitLive(link);
     try {
       final sub = c.submitShop(widget.shopId, remarks: _remarks.text);
       await showDialog<void>(
@@ -61,6 +64,38 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
       if (!mounted) return;
       showSnack(context, e.message, error: true);
     }
+  }
+
+  bool _sending = false;
+
+  /// A shop of the server: saved and submitted there; the server's own checks decide.
+  Future<void> _submitLive(LiveShopLink link) async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    final out = await link.submit(_remarks.text);
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (!out.ok) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Complete these before submitting'),
+          content: SingleChildScrollView(child: Text(out.problems.map((p) => '• $p').join('\n'))),
+          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+        ),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.check_circle, color: AdinnColors.success, size: 48),
+        title: Text('Submitted v${out.version ?? ''}'),
+        content: const Text('The recce has been sent for approval. You will see the decision in the Submitted tab.'),
+        actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+      ),
+    );
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -160,7 +195,7 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
                               children: [
                                 Text(
                                   '${b.name} – ${SignageCatalog.media(b.mediaCode)?.shortName ?? '?'}'
-                                  ' • ${SignageCatalog.installation(b.installationCode)?.name ?? '?'}'
+                                  ' • ${SignageCatalog.installationSummary(b, empty: '?')}'
                                   ' • ${b.isSameSize ? fmtSize(b.width, b.height, b.unit) : 'different sizes'}'
                                   '${b.quantity > 1 ? ' • qty ${b.quantity}' : ''}',
                                   style: const TextStyle(fontSize: 13),

@@ -1,6 +1,8 @@
+import 'dart:typed_data';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show consolidateHttpClientResponseBytes;
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -21,6 +23,15 @@ class SitePhotoImage extends StatelessWidget {
       return CustomPaint(
         painter: DemoShopfrontPainter(photo.demoSeed),
         child: const SizedBox.expand(),
+      );
+    }
+    if (photo.path.startsWith('http')) {
+      return Image.network(
+        photo.path,
+        fit: BoxFit.fill,
+        cacheWidth: cacheWidth,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => Container(color: AdinnColors.line, alignment: Alignment.center, child: const Icon(Icons.broken_image_outlined, color: AdinnColors.muted)),
       );
     }
     return Image.file(
@@ -236,4 +247,25 @@ class DemoShopfrontPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant DemoShopfrontPainter oldDelegate) =>
       oldDelegate.seed != seed;
+}
+
+/// The bytes of a photo: a file on the device, or (a photo of the server) the picture behind its link. Null when it cannot be read.
+Future<Uint8List?> readPhotoBytes(String path) async {
+  try {
+    if (path.startsWith('http')) {
+      final client = HttpClient();
+      try {
+        final res = await (await client.getUrl(Uri.parse(path))).close();
+        if (res.statusCode != 200) return null;
+        return await consolidateHttpClientResponseBytes(res);
+      } finally {
+        client.close();
+      }
+    }
+    final file = File(path);
+    if (!await file.exists()) return null;
+    return await file.readAsBytes();
+  } catch (_) {
+    return null;
+  }
 }

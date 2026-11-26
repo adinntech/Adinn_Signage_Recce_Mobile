@@ -60,11 +60,16 @@ void main() {
       _host(c, BoardEditorScreen(shopId: 's_lakshmi', boardId: b.id)),
     );
     await tester.pumpAndSettle();
+    // Media Type is the first step; Board Details is second.
+    expect(
+      tester.widget<Stepper>(find.byType(Stepper)).currentStep,
+      BoardEditorScreen.mediaTypeStep,
+    );
     // Catalog v2: the 13 business media are offered; legacy standees are
     // not offered for new groups but existing groups keep working.
-    expect(find.text('Choose one of 13 media types'), findsOneWidget);
+    expect(find.text('Choose one of 7 media types'), findsOneWidget);
     expect(find.text('Standee 1S'), findsNothing);
-    expect(find.byKey(const Key('media_SANDWICH')), findsOneWidget);
+    expect(find.byKey(const Key('media_MDF')), findsOneWidget);
 
     // An existing (legacy) double-sided standee group.
     b
@@ -78,11 +83,17 @@ void main() {
     // Single installation → auto-selected.
     expect(b.installationCode, SignageCatalog.freeStanding);
 
-    // Go to the measurements step.
-    await _tap(tester, find.text('Measurements'));
-    expect(find.text('How many signage units are required?'), findsOneWidget);
-    // Quantity 1: no size question.
-    expect(find.text('Are all signage units the same size?'), findsNothing);
+    // Quantity and sizes live on the second step (Board Details).
+    await _tap(tester, find.byKey(const Key('step_next_0')));
+    expect(
+      tester.widget<Stepper>(find.byType(Stepper)).currentStep,
+      BoardEditorScreen.boardDetailsStep,
+    );
+    expect(find.byKey(const Key('board_details_content')), findsOneWidget);
+    expect(find.text('Number of Boards'), findsOneWidget);
+    // Quantity 1: no size-mode question.
+    expect(find.text('Board Size'), findsOneWidget);
+    expect(find.byKey(const Key('size_same')), findsNothing);
     expect(
       find.text(
         'Quantity = physical double-sided standees (each has 2 faces).',
@@ -94,7 +105,8 @@ void main() {
     await _tap(tester, find.byKey(const Key('qty_plus')));
     expect(b.quantity, 3);
     expect(b.units, hasLength(3));
-    expect(find.text('Are all signage units the same size?'), findsOneWidget);
+    expect(find.text('Board Size'), findsOneWidget);
+    expect(find.byKey(const Key('size_same')), findsOneWidget);
 
     // Same size: one width/height for all.
     await _show(tester, find.byKey(const Key('board_width')));
@@ -203,9 +215,10 @@ void main() {
     c.loginWithPin('5678');
     final shop = c.shop('s_sriranga')!;
     final b = shop.boards.first;
-    completeAnswers(b);
     c.setShopLocation(shop, gpsAt(10.86270, 78.68970));
     c.increaseQuantity(shop.id, b, 2);
+    // Each physical board answers its own questions.
+    completeAnswers(b);
     c.submitShop(shop.id);
     c.logout();
     c.loginWithPin(DemoAccounts.businessPin);

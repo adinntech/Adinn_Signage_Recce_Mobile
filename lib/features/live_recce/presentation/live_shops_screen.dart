@@ -8,13 +8,16 @@ import '../data/chat_controller.dart';
 import '../data/notifications_controller.dart';
 import '../data/recce_controllers.dart';
 import '../data/recce_models.dart';
+import '../bridge/live_saran_shop_screen.dart';
 import 'live_shop_screen.dart';
 import 'live_widgets.dart';
 
 /// Opens one shop; [tab] is one of [ShopTab] (a notification about a message opens the Chat tab). Null: the shop opens on the step
 /// the person is at (see [LiveShopScreen.initialTab]).
 void openShop(BuildContext context, String siteId, {int? tab}) {
-  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LiveShopScreen(siteId: siteId, initialTab: tab)));
+  // No tab asked for: the shop opens on the shop detail / board screens fed with the live data. A tab (a notification about a
+  // message or a review) opens the classic tabbed screen.
+  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => tab == null ? LiveSaranShopScreen(siteId: siteId) : LiveShopScreen(siteId: siteId, initialTab: tab)));
 }
 
 /// Assigned Shops: search + status filter chips. Optionally limited to one project.

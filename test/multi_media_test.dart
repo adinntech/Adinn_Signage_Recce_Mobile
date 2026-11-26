@@ -652,9 +652,10 @@ void main() {
       final c = await _vendor();
       final shop = c.shop('s_sriranga')!;
       final b = shop.boards.first;
-      completeAnswers(b);
       c.setShopLocation(shop, gpsAt(10.86270, 78.68970));
       c.increaseQuantity(shop.id, b, 2);
+      // Each physical board answers its own questions.
+      completeAnswers(b);
       c.submitShop(shop.id);
       final v1Units = shop.latestSubmission!.shopSnapshot.boards.first.units
           .map((u) => u.id)

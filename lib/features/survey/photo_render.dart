@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -15,10 +14,9 @@ import 'site_markup_painter.dart';
 /// Returns null when the file is missing or unreadable.
 Future<ui.Image?> decodeImageFile(String path, {int maxSide = 2048}) async {
   try {
-    final file = File(path);
-    if (!await file.exists()) return null;
-    final bytes = await file.readAsBytes();
-    return decodeImageBytes(bytes, maxSide: maxSide);
+    final bytes = await readPhotoBytes(path);
+    if (bytes == null) return null;
+    return await decodeImageBytes(bytes, maxSide: maxSide);
   } catch (_) {
     return null;
   }

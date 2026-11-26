@@ -51,32 +51,46 @@ class _PhotoSectionState extends State<PhotoSection> {
     return showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
+      // Seven angles: scrollable so small phones never overflow.
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Which angle is this photo?',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-              ),
-            ),
-            for (final l in SignageCatalog.photoLabels)
-              ListTile(
-                leading: Icon(
-                  l == current
-                      ? Icons.radio_button_checked
-                      : Icons.photo_outlined,
-                  color: AdinnColors.red,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Which angle is this photo?',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
                 ),
-                title: Text(l),
-                onTap: () => Navigator.pop(ctx, l),
               ),
-          ],
+              for (final l in SignageCatalog.photoLabels)
+                ListTile(
+                  leading: Icon(
+                    l == current
+                        ? Icons.radio_button_checked
+                        : Icons.photo_outlined,
+                    color: AdinnColors.red,
+                  ),
+                  title: Text(l),
+                  onTap: () => Navigator.pop(ctx, l),
+                ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Every media type asks "Which angle is this photo?" after capture; the
+  /// angle is the photo's label and sets Live Preview's starting turn.
+  Future<String> _labelForNewPhoto() async {
+    return await _pickLabel() ??
+        SignageCatalog.photoLabels[min(
+          widget.board.photos.length,
+          SignageCatalog.photoLabels.length - 1,
+        )];
   }
 
   /// GPS fix for a photo geotag, or null (never throws, never blocks long).
@@ -134,12 +148,7 @@ class _PhotoSectionState extends State<PhotoSection> {
       final height = decoded.height;
       decoded.dispose();
       if (!mounted) return;
-      final label =
-          await _pickLabel() ??
-          SignageCatalog.photoLabels[min(
-            widget.board.photos.length,
-            SignageCatalog.photoLabels.length - 1,
-          )];
+      final label = await _labelForNewPhoto();
       final geo = await geoFuture;
       final photo = SitePhoto(
         id: newId('ph'),

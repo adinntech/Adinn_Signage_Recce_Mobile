@@ -23,6 +23,11 @@ internal class ModelFace(
     val labelColor: Int,
     val emissive: Boolean,
     val layer: Int,
+    /** Night View: a self-lit face that does NOT glow (e.g. unlit rear flex). */
+    val glow: Boolean = emissive,
+    /** One-way-vision micro-perforation pitch in metres (null = solid). */
+    val perfPitch: Float = 0f,
+    val perfHole: Float = 0.5f,
 )
 
 /**
@@ -82,6 +87,9 @@ internal class ModelData(
                     labelColor = int(f["lc"], Color.WHITE),
                     emissive = f["e"] == true,
                     layer = int(f["k"], 0),
+                    glow = (f["g"] as? Boolean) ?: (f["e"] == true),
+                    perfPitch = (f["pf"] as? Number)?.toFloat() ?: 0f,
+                    perfHole = (f["ph"] as? Number)?.toFloat() ?: 0.5f,
                 )
             }
             require(faces.isNotEmpty()) { "Signage model has no faces" }
@@ -92,7 +100,7 @@ internal class ModelData(
     }
 }
 
-internal class DrawItem(val buffer: FloatBuffer, val vertexCount: Int, val textureId: Int, val layer: Int)
+internal class DrawItem(val buffer: FloatBuffer, val vertexCount: Int, val textureId: Int, val layer: Int, val perforated: Boolean = false)
 
 /**
  * GPU-ready geometry of one [ModelData]. Built once per signage item and
@@ -116,6 +124,15 @@ internal class ModelRenderer {
     private var uLight = 0
     private var uUseTexture = 0
     private var uTexture = 0
+    private var uNight = 0
+    private var uPerforated = 0
+
+    /**
+     * Illustrative night view (0 = day, 1 = night): unlit faces take the
+     * evening grade, emissive (lit GSB) faces stay bright. Render-only –
+     * geometry and quantities never change. GL thread only.
+     */
+    var night = 0f
 
     /** Model of the original single-model API (creation param / setModel). */
     private var defaultMesh: ModelMesh? = null
@@ -136,6 +153,8 @@ internal class ModelRenderer {
         uLight = GLES20.glGetUniformLocation(program, "u_Light")
         uUseTexture = GLES20.glGetUniformLocation(program, "u_UseTexture")
         uTexture = GLES20.glGetUniformLocation(program, "u_Texture")
+        uNight = GLES20.glGetUniformLocation(program, "u_Night")
+        uPerforated = GLES20.glGetUniformLocation(program, "u_Perforated")
         GlUtil.checkError("ModelRenderer.create")
     }
 
@@ -151,7 +170,7 @@ internal class ModelRenderer {
         val plain = mutableMapOf<Int, MutableList<Float>>()
         for (face in data.faces) {
             if (face.label != null && face.points.size == 12) {
-                items += texturedItem(face)
+                items += texturedItem(face, face.perfPitch > 0f)
                 continue
             }
             val out = plain.getOrPut(face.layer) { mutableListOf() }
@@ -185,11 +204,12 @@ internal class ModelRenderer {
         out += Color.alpha(c) / 255f
         out += u
         out += v
-        out += if (face.emissive) 1f else 0f
+        // 1 = self-lit and glowing at night, 0.5 = self-lit by day only.
+        out += if (face.emissive) (if (face.glow) 1f else 0.5f) else 0f
     }
 
     /** Quad (TL, TR, BR, BL) with the label painted into a texture. */
-    private fun texturedItem(face: ModelFace): DrawItem {
+    private fun texturedItem(face: ModelFace, perforated: Boolean): DrawItem {
         val p = face.points
         fun dist(a: Int, b: Int): Float {
             val dx = p[a * 3] - p[b * 3]
@@ -234,7 +254,7 @@ internal class ModelRenderer {
         for (idx in intArrayOf(0, 1, 2, 0, 2, 3)) {
             appendVertex(values, face, idx, uv[idx * 2], uv[idx * 2 + 1])
         }
-        return DrawItem(GlUtil.floatBuffer(values.toFloatArray()), 6, ids[0], face.layer)
+        return DrawItem(GlUtil.floatBuffer(values.toFloatArray()), 6, ids[0], face.layer, perforated)
     }
 
     /** Draws the single-model API mesh. */
@@ -253,6 +273,7 @@ internal class ModelRenderer {
         GLES20.glUniformMatrix4fv(uModel, 1, false, model, 0)
         GLES20.glUniform3f(uLight, LIGHT[0], LIGHT[1], LIGHT[2])
         GLES20.glUniform1i(uTexture, 0)
+        GLES20.glUniform1f(uNight, night)
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
         GLES20.glDisable(GLES20.GL_CULL_FACE)
         GLES20.glEnable(GLES20.GL_BLEND)
@@ -278,6 +299,7 @@ internal class ModelRenderer {
             } else {
                 GLES20.glUniform1f(uUseTexture, 0f)
             }
+            GLES20.glUniform1f(uPerforated, if (item.perforated) 1f else 0f)
             bind(item.buffer)
             GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, item.vertexCount)
         }
@@ -338,10 +360,12 @@ internal class ModelRenderer {
             varying vec4 v_Color;
             varying vec2 v_Uv;
             varying float v_Shade;
+            varying float v_Emissive;
             void main() {
                 vec3 n = normalize((u_Model * vec4(a_Normal, 0.0)).xyz);
                 float lambert = 0.58 + 0.42 * max(dot(n, u_Light), 0.0);
-                v_Shade = mix(lambert, 1.0, a_Emissive);
+                v_Shade = mix(lambert, 1.0, step(0.25, a_Emissive));
+                v_Emissive = a_Emissive;
                 v_Color = a_Color;
                 v_Uv = a_Uv;
                 gl_Position = u_Mvp * vec4(a_Position, 1.0);
@@ -352,12 +376,25 @@ internal class ModelRenderer {
             precision mediump float;
             uniform float u_UseTexture;
             uniform sampler2D u_Texture;
+            uniform float u_Night;
+            uniform float u_Perforated;
             varying vec4 v_Color;
             varying vec2 v_Uv;
             varying float v_Shade;
+            varying float v_Emissive;
             void main() {
+                if (u_Perforated > 0.5) {
+                    // Fine micro-perforation grid in film-local (UV) space.
+                    vec2 g = fract(v_Uv * 60.0);
+                    vec2 c = g - 0.5;
+                    if (length(c) < 0.18) discard;
+                }
                 vec4 base = u_UseTexture > 0.5 ? texture2D(u_Texture, v_Uv) : v_Color;
-                gl_FragColor = vec4(base.rgb * v_Shade, max(base.a, 0.35));
+                vec3 rgb = base.rgb * v_Shade;
+                vec3 lit = min(rgb * 1.12 + vec3(0.04), vec3(1.0));
+                vec3 dusk = rgb * vec3(0.42, 0.50, 0.70) + vec3(0.02, 0.03, 0.07);
+                vec3 nightRgb = v_Emissive > 0.75 ? lit : dusk;
+                gl_FragColor = vec4(mix(rgb, nightRgb, u_Night), max(base.a, 0.35));
             }
         """
     }

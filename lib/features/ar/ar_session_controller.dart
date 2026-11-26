@@ -287,6 +287,17 @@ class UnavailableArPlatform implements ArPlatform {
   Widget buildView(BuildContext context) => const SizedBox.shrink();
 }
 
+/// Optional engine capability (GSB Render View): an illustrative night
+/// grade of the live camera view and a capture of ONE camera frame rendered
+/// three ways. Engines without it keep the original single capture.
+abstract class ArRenderViewCapable {
+  Future<void> setNightMode(bool night);
+
+  /// `original` (camera only, no models), `day` and `night` PNGs of the
+  /// same frame and pose. Null when unavailable.
+  Future<Map<String, Uint8List>?> captureRenderSet();
+}
+
 /// Result of a successful AR capture.
 class ArCaptureResult {
   const ArCaptureResult({
@@ -294,12 +305,23 @@ class ArCaptureResult {
     required this.transform,
     required this.capturedAt,
     this.surface,
+    this.originalPng,
+    this.nightPng,
   });
 
+  /// Day render with the model(s) (the regular AR capture).
   final Uint8List png;
   final ArModelTransform transform;
   final DateTime capturedAt;
   final String? surface;
+
+  /// Same camera frame without any model (render-set captures only).
+  final Uint8List? originalPng;
+
+  /// Same frame and pose in the illustrative night view.
+  final Uint8List? nightPng;
+
+  bool get isRenderSet => originalPng != null && nightPng != null;
 }
 
 /// State machine of the Camera AR screen. Pure Dart: unit-testable with a
@@ -396,10 +418,38 @@ class ArSessionController extends ChangeNotifier {
   }
 
   void _set(ArPhase p, {String? error, String? code}) {
+    final started = p == ArPhase.scanning && _phase == ArPhase.starting;
     _phase = p;
     _error = error;
     _errorCode = code;
+    // A (re)started native view begins in day mode: re-apply night.
+    if (started && _night) _applyNight();
     if (!_disposed) notifyListeners();
+  }
+
+  bool _night = false;
+
+  /// Illustrative night view of the live camera (GSB Render View).
+  bool get nightMode => _night;
+
+  bool get supportsRenderView => platform is ArRenderViewCapable;
+
+  ArRenderViewCapable? get _renderView {
+    final Object p = platform;
+    return p is ArRenderViewCapable ? p : null;
+  }
+
+  void _applyNight() {
+    _renderView?.setNightMode(_night).catchError((Object _) {});
+  }
+
+  /// Switches day / night. Only the presentation changes: anchors, model
+  /// transforms and dimensions are untouched.
+  void setNightMode(bool night) {
+    if (_night == night) return;
+    _night = night;
+    _applyNight();
+    _changed();
   }
 
   void _changed() {
@@ -679,6 +729,37 @@ class ArSessionController extends ChangeNotifier {
       _set(ArPhase.placed);
       return ArCaptureResult(
         png: png,
+        transform: _transform,
+        capturedAt: _clock(),
+        surface: _surface,
+      );
+    } catch (e) {
+      if (!_disposed) _set(ArPhase.placed, error: 'Capture failed: $e');
+      return null;
+    }
+  }
+
+  /// GSB capture: original frame, day and night of the SAME camera frame
+  /// and pose. Falls back to [capture] when the engine cannot render sets.
+  Future<ArCaptureResult?> captureRenderSet() async {
+    final p = _renderView;
+    if (p == null) return capture();
+    if (!canCapture) return capture(); // reports the reason
+    _set(ArPhase.capturing);
+    try {
+      final set = await p.captureRenderSet();
+      if (_disposed) return null;
+      final day = set?['day'], original = set?['original'];
+      final night = set?['night'];
+      if (day == null || original == null || night == null) {
+        _set(ArPhase.placed, error: 'The AR engine could not capture.');
+        return null;
+      }
+      _set(ArPhase.placed);
+      return ArCaptureResult(
+        png: day,
+        originalPng: original,
+        nightPng: night,
         transform: _transform,
         capturedAt: _clock(),
         surface: _surface,
