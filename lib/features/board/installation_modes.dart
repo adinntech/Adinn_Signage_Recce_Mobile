@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -26,14 +27,14 @@ class InstallationModeSwitch extends StatelessWidget {
       child: SegmentedButton<bool>(
         key: const Key('inst_mode_selector'),
         showSelectedIcon: false,
-        segments: const [
+        segments: [
           ButtonSegment(
             value: false,
-            label: Text('Same Installation', key: Key('inst_mode_same')),
+            label: Text(context.ui('Same Installation'), key: Key('inst_mode_same')),
           ),
           ButtonSegment(
             value: true,
-            label: Text('Different Installations', key: Key('inst_mode_diff')),
+            label: Text(context.ui('Different Installations'), key: Key('inst_mode_diff')),
           ),
         ],
         selected: {different},
@@ -167,8 +168,7 @@ Future<int> showCopyCommonAnswersSheet(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Copy Common Answers',
+                Text(context.ui('Copy Common Answers'),
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
                 ),
                 const SizedBox(height: 10),
@@ -176,7 +176,7 @@ Future<int> showCopyCommonAnswersSheet(
                   key: const Key('copy_source'),
                   initialValue: sources.indexOf(source),
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Copy from'),
+                  decoration: InputDecoration(labelText: context.ui('Copy from')),
                   items: [
                     for (var i = 0; i < sources.length; i++)
                       DropdownMenuItem(
@@ -191,7 +191,7 @@ Future<int> showCopyCommonAnswersSheet(
                       set(() => source = v == null ? source : sources[v]),
                 ),
                 const SizedBox(height: 4),
-                Text('Copy to: ${label(target)}',
+                Text(context.uf('Copy to: {0}', [label(target)]),
                     style: const TextStyle(color: AdinnColors.muted)),
                 const SizedBox(height: 12),
                 _line(
@@ -209,15 +209,14 @@ Future<int> showCopyCommonAnswersSheet(
                   SwitchListTile(
                     key: const Key('copy_overwrite'),
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Also replace existing answers'),
+                    title: Text(context.ui('Also replace existing answers')),
                     value: overwrite,
                     onChanged: (v) => set(() => overwrite = v),
                   ),
                 const SizedBox(height: 8),
-                Text(
-                  'Copied answers stay editable and are not linked to the '
+                Text(context.ui('Copied answers stay editable and are not linked to the '
                   'source. Remaining required questions must still be '
-                  'answered.',
+                  'answered.'),
                   style: const TextStyle(
                     fontSize: 12,
                     color: AdinnColors.muted,
@@ -230,7 +229,7 @@ Future<int> showCopyCommonAnswersSheet(
                     TextButton(
                       key: const Key('copy_cancel'),
                       onPressed: () => Navigator.pop(ctx, 0),
-                      child: const Text('Cancel'),
+                      child: Text(context.ui('Cancel')),
                     ),
                     const Spacer(),
                     FilledButton(
@@ -244,7 +243,7 @@ Future<int> showCopyCommonAnswersSheet(
                           ? null
                           : () =>
                                 Navigator.pop(ctx, onCopy(source, overwrite)),
-                      child: const Text('Copy'),
+                      child: Text(context.ui('Copy')),
                     ),
                   ],
                 ),

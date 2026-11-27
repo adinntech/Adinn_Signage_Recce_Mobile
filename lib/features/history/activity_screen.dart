@@ -1,9 +1,10 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../../core/widgets/language_switcher.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import '../shop/shop_tile.dart';
@@ -49,14 +50,17 @@ class _ActivityScreenState extends State<ActivityScreen> {
     // Group by calendar day.
     final groups = <String, List<ActivityEvent>>{};
     for (final e in events) {
-      groups.putIfAbsent(fmtDate(e.at), () => []).add(e);
+      groups.putIfAbsent(context.fmtDateL(e.at), () => []).add(e);
     }
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          shop == null ? 'Activity Timeline' : 'Timeline • ${shop.name}',
+          shop == null
+              ? context.ui('Activity Timeline')
+              : '${context.ui('Timeline')} • ${shop.name}',
         ),
+        actions: const [LanguageSwitcher(), SizedBox(width: 8)],
       ),
       body: Column(
         children: [
@@ -69,7 +73,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: Text(f.value),
+                      label: Text(context.ui(f.value)),
                       selected: _kind == f.key,
                       onSelected: (_) => setState(() => _kind = f.key),
                     ),
@@ -79,9 +83,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
           ),
           Expanded(
             child: events.isEmpty
-                ? const EmptyState(
+                ? EmptyState(
                     icon: Icons.timeline,
-                    title: 'No activity yet',
+                    title: context.ui('No activity yet'),
                   )
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -188,7 +192,7 @@ class ActivityTile extends StatelessWidget {
                       Text(event.message, style: const TextStyle(fontSize: 13)),
                       const SizedBox(height: 4),
                       Text(
-                        '${event.actorName}${event.actorRole == null ? '' : ' (${event.actorRole!.label})'} • ${fmtRelative(event.at)}',
+                        '${event.actorName}${event.actorRole == null ? '' : ' (${context.ui(event.actorRole!.label)})'} • ${context.fmtRelativeL(event.at)}',
                         style: const TextStyle(
                           fontSize: 11,
                           color: AdinnColors.muted,

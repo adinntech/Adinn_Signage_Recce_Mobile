@@ -273,8 +273,7 @@ Future<Uint8List> buildGsbComparisonPdf(GsbComparisonData d) async {
         _ink,
       ),
       pw.SizedBox(height: 6),
-      pw.Text(
-        'Unedited site capture kept as recce evidence.',
+      pw.Text('Unedited site capture kept as recce evidence.',
         style: const pw.TextStyle(fontSize: 8.5, color: _muted),
       ),
     ]),

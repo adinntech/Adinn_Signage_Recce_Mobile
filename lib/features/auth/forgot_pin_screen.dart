@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common_widgets.dart';
 import '../../state/app_controller.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Three-step dummy OTP reset: registered mobile → verify OTP → new PIN.
 class ForgotPinScreen extends StatefulWidget {
@@ -70,7 +72,7 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
       setState(() => _error = err);
       return;
     }
-    showSnack(context, 'PIN reset successfully. Log in with your new PIN.');
+    showSnack(context, context.ui('PIN reset successfully. Log in with your new PIN.'));
     Navigator.of(context).pop();
   }
 
@@ -96,7 +98,7 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
   Widget build(BuildContext context) {
     final digits = [FilteringTextInputFormatter.digitsOnly];
     return Scaffold(
-      appBar: AppBar(title: const Text('Forgot PIN')),
+      appBar: AdinnAppBar(title: Text(context.ui('Forgot PIN'))),
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
@@ -155,8 +157,8 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
                     : const SizedBox.shrink(),
                 steps: [
                   Step(
-                    title: const Text('Registered mobile'),
-                    subtitle: const Text('We will send an OTP'),
+                    title: Text(context.ui('Registered mobile')),
+                    subtitle: Text(context.ui('We will send an OTP')),
                     isActive: _step >= 0,
                     state: _step > 0 ? StepState.complete : StepState.indexed,
                     content: TextField(
@@ -165,15 +167,15 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
                       keyboardType: TextInputType.phone,
                       maxLength: 10,
                       inputFormatters: digits,
-                      decoration: const InputDecoration(
-                        labelText: 'Mobile number',
+                      decoration: InputDecoration(
+                        labelText: context.ui('Mobile number'),
                         prefixIcon: Icon(Icons.phone_android),
                         counterText: '',
                       ),
                     ),
                   ),
                   Step(
-                    title: const Text('Verify OTP'),
+                    title: Text(context.ui('Verify OTP')),
                     isActive: _step >= 1,
                     state: _step > 1 ? StepState.complete : StepState.indexed,
                     content: Column(
@@ -203,8 +205,8 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
                           keyboardType: TextInputType.number,
                           maxLength: 6,
                           inputFormatters: digits,
-                          decoration: const InputDecoration(
-                            labelText: '6-digit OTP',
+                          decoration: InputDecoration(
+                            labelText: context.ui('6-digit OTP'),
                             prefixIcon: Icon(Icons.sms_outlined),
                             counterText: '',
                           ),
@@ -213,8 +215,8 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
                     ),
                   ),
                   Step(
-                    title: const Text('Set new PIN'),
-                    subtitle: const Text('4 digits, unique to you'),
+                    title: Text(context.ui('Set new PIN')),
+                    subtitle: Text(context.ui('4 digits, unique to you')),
                     isActive: _step >= 2,
                     content: Column(
                       children: [

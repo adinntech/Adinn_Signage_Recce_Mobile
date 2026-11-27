@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -132,7 +133,7 @@ class _GsbOverrideSheetState extends State<_GsbOverrideSheet> {
     Navigator.of(context).pop();
     showSnack(
       context,
-      '${_field.label} override saved – Requires Engineering Review',
+      context.uf('{0} override saved – Requires Engineering Review', [_field.label]),
     );
   }
 
@@ -146,18 +147,17 @@ class _GsbOverrideSheetState extends State<_GsbOverrideSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Edit / Override GSB specification',
+            Text(context.ui('Edit / Override GSB specification'),
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<GsbOverrideField>(
               key: const Key('gsb_ov_field'),
               initialValue: _field,
-              decoration: const InputDecoration(labelText: 'Specification'),
+              decoration: InputDecoration(labelText: context.ui('Specification')),
               items: [
                 for (final f in GsbOverrideField.values)
-                  DropdownMenuItem(value: f, child: Text(f.label)),
+                  DropdownMenuItem(value: f, child: Text(context.ui(f.label))),
               ],
               onChanged: (f) => setState(() {
                 _field = f ?? _field;
@@ -168,11 +168,10 @@ class _GsbOverrideSheetState extends State<_GsbOverrideSheet> {
             InfoRow('Approved default', _fmt(_default(_field))),
             InfoRow('Current value', _fmt(current)),
             if (_field == GsbOverrideField.wallThickness)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 4),
-                child: Text(
-                  'Wall thickness is not given in the rulebook. Changing it '
-                  'never changes the outside profile size.',
+                child: Text(context.ui('Wall thickness is not given in the rulebook. Changing it '
+                  'never changes the outside profile size.'),
                   style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
                 ),
               ),
@@ -183,8 +182,8 @@ class _GsbOverrideSheetState extends State<_GsbOverrideSheet> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration: const InputDecoration(
-                labelText: 'Proposed value',
+              decoration: InputDecoration(
+                labelText: context.ui('Proposed value'),
                 suffixText: 'in',
               ),
             ),
@@ -194,8 +193,8 @@ class _GsbOverrideSheetState extends State<_GsbOverrideSheet> {
               controller: _reason,
               minLines: 2,
               maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Reason (required)',
+              decoration: InputDecoration(
+                labelText: context.ui('Reason (required)'),
                 alignLabelWithHint: true,
               ),
             ),
@@ -219,11 +218,10 @@ class _GsbOverrideSheetState extends State<_GsbOverrideSheet> {
                 color: const Color(0xFFFFF4E5),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Text(
-                'Status after saving: Requires Engineering Review. The 3D '
+              child: Text(context.ui('Status after saving: Requires Engineering Review. The 3D '
                 'preview shows the change provisionally; it is not '
                 'fabrication-approved. The original default and the full '
-                'override history are kept and the change can be reverted.',
+                'override history are kept and the change can be reverted.'),
                 style: TextStyle(fontSize: 11.5, color: AdinnColors.warning),
               ),
             ),
@@ -242,7 +240,7 @@ class _GsbOverrideSheetState extends State<_GsbOverrideSheet> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(context.ui('Cancel')),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -250,7 +248,7 @@ class _GsbOverrideSheetState extends State<_GsbOverrideSheet> {
                   child: FilledButton(
                     key: const Key('gsb_ov_save'),
                     onPressed: _save,
-                    child: const Text('Save for review'),
+                    child: Text(context.ui('Save for review')),
                   ),
                 ),
               ],

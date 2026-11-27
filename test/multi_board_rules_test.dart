@@ -57,7 +57,7 @@ void main() {
       );
       expect(
         SignageCatalog.mediaNameLabel(_group(c, 'NLB', nlb: 'NLB_BOX_FRAME')),
-        'NLB Box',
+        'NLB Double',
       );
       expect(SignageCatalog.mediaNameLabel(_group(c, 'ACRYLIC')), 'Acrylic');
       expect(
@@ -208,12 +208,12 @@ void main() {
 
     test('only definitions that match are copied', () async {
       final (_, src, dst) = await setup();
-      src.answers['access_method'] = 'Ladder';
-      src.answers['owner_permission'] = true;
+      // Vendor policy keeps existing_board as the shared common question.
+      src.answers['existing_board'] = true;
       src.answers['gsb_only_thing'] = 'x'; // not a real question
       final plan = SignageCatalog.planCommonAnswers(src, dst);
       final ids = plan.toCopy.map((q) => q.id).toSet();
-      expect(ids, containsAll(['access_method', 'owner_permission']));
+      expect(ids, contains('existing_board'));
       expect(ids, isNot(contains('gsb_only_thing')));
     });
 
@@ -238,39 +238,36 @@ void main() {
 
     test('fills empty answers, keeps manual ones unless overwrite', () async {
       final (c, src, dst) = await setup();
-      src.answers['access_method'] = 'Ladder';
-      src.answers['owner_permission'] = true;
-      dst.answers['access_method'] = 'Crane / Hydra';
-      final n = c.copyCommonAnswers(_shop, src, dst);
-      expect(n, greaterThan(0));
-      expect(dst.answers['access_method'], 'Crane / Hydra');
-      expect(dst.answers['owner_permission'], true);
+      src.answers['existing_board'] = true;
+      dst.answers['existing_board'] = false; // manual answer
+      c.copyCommonAnswers(_shop, src, dst);
+      expect(dst.answers['existing_board'], false, reason: 'manual kept');
 
       final m = c.copyCommonAnswers(_shop, src, dst, overwrite: true);
       expect(m, greaterThan(0));
-      expect(dst.answers['access_method'], 'Ladder');
+      expect(dst.answers['existing_board'], true);
     });
 
     test('copied answers are independent values', () async {
       final (c, src, dst) = await setup();
-      src.answers['owner_permission'] = true;
+      src.answers['existing_board'] = true;
       c.copyCommonAnswers(_shop, src, dst);
-      dst.answers['owner_permission'] = false;
-      expect(src.answers['owner_permission'], true);
-      src.answers['owner_permission'] = null;
-      expect(dst.answers['owner_permission'], false);
+      dst.answers['existing_board'] = false;
+      expect(src.answers['existing_board'], true);
+      src.answers['existing_board'] = null;
+      expect(dst.answers['existing_board'], false);
     });
 
     test('copying never completes Site Questions by itself', () async {
       final (c, src, dst) = await setup();
-      src.answers['owner_permission'] = true;
+      src.answers['existing_board'] = true;
       c.copyCommonAnswers(_shop, src, dst);
       expect(SignageCatalog.missingAnswers(dst), isNotEmpty);
     });
 
     test('provenance stays out of the answers map', () async {
       final (c, src, dst) = await setup();
-      src.answers['owner_permission'] = true;
+      src.answers['existing_board'] = true;
       c.copyCommonAnswers(_shop, src, dst);
       final ids = SignageCatalog.questionsFor(
         dst.mediaCode,
@@ -281,10 +278,10 @@ void main() {
 
     test('source deleted after copying leaves the target intact', () async {
       final (c, src, dst) = await setup();
-      src.answers['owner_permission'] = true;
+      src.answers['existing_board'] = true;
       c.copyCommonAnswers(_shop, src, dst);
       await c.deleteBoard(_shop, src.id);
-      expect(dst.answers['owner_permission'], true);
+      expect(dst.answers['existing_board'], true);
     });
   });
 

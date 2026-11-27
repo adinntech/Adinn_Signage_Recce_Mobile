@@ -19,7 +19,11 @@ class DrawingInfo {
     required this.date,
     this.statusLabel = '',
     this.notes = const [],
+    this.summaryTitle = 'SITE DETAILS SUMMARY',
   });
+
+  /// Heading of the notes column (Tamil in Tamil mode).
+  final String summaryTitle;
 
   final String projectName;
   final String shopName;
@@ -1156,7 +1160,7 @@ class Drawing2DPainter extends CustomPainter {
     final r = _notesRect;
     _text(
       canvas,
-      'SITE NOTES',
+      info.summaryTitle,
       Offset(r.left + 4, r.top - 4),
       size: 13,
       weight: FontWeight.w800,
@@ -1178,7 +1182,9 @@ class Drawing2DPainter extends CustomPainter {
       final last = i == maxLines - 1 && lines.length > maxLines;
       _text(
         canvas,
-        last ? '… +${lines.length - maxLines + 1} more' : '• ${lines[i].$1}',
+        last
+            ? '… +${lines.length - maxLines + 1} more (full list below the sheet)'
+            : '• ${lines[i].$1}',
         Offset(r.left + 4, y),
         size: 11,
         color: last ? _muted : lines[i].$2,
@@ -1207,7 +1213,13 @@ class Drawing2DPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: s,
-        style: TextStyle(color: color, fontSize: size, fontWeight: weight),
+        style: TextStyle(
+          color: color,
+          fontSize: size,
+          fontWeight: weight,
+          // Tamil glyphs come from the bundled Noto Sans Tamil.
+          fontFamilyFallback: const ['NotoSansTamil'],
+        ),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,

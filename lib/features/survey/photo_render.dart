@@ -18,7 +18,8 @@ Future<ui.Image?> decodeImageFile(String path, {int maxSide = 2048}) async {
     final file = File(path);
     if (!await file.exists()) return null;
     final bytes = await file.readAsBytes();
-    return decodeImageBytes(bytes, maxSide: maxSide);
+    // Awaited so a decode failure is caught here (documented: null).
+    return await decodeImageBytes(bytes, maxSide: maxSide);
   } catch (_) {
     return null;
   }

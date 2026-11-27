@@ -25,8 +25,8 @@ extension NlbVariantX on NlbVariant {
   };
 
   String get label => switch (this) {
-    NlbVariant.singleFrame => 'NLB Single Frame',
-    NlbVariant.boxFrame => 'NLB Box Frame',
+    NlbVariant.singleFrame => 'NLB Single Side',
+    NlbVariant.boxFrame => 'NLB Double Side',
   };
 
   static NlbVariant? fromKey(String? key) => switch (key) {

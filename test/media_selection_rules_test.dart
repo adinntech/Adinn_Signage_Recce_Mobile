@@ -11,8 +11,14 @@ Board _b(String media, {String? inst, bool? dbl, String? nlb}) => Board(
   nlbSubtype: nlb,
 );
 
-List<String?> _names(Board b) =>
-    SignageCatalog.choicesForBoard(b).map((c) => c.name).toList();
+/// Standard options: "+ Other" is the approved extra FINAL option of every
+/// applicable media and is asserted separately.
+List<InstallationChoice> _std(Board b) => [
+  for (final c in SignageCatalog.choicesForBoard(b))
+    if (c.code != SignageCatalog.otherInstallation) c,
+];
+
+List<String?> _names(Board b) => _std(b).map((c) => c.name).toList();
 
 void main() {
   group('Add Media Type', () {
@@ -91,7 +97,7 @@ void main() {
     test('NLB Single Frame unchanged', () {
       final b = _b('NLB', dbl: false, nlb: 'NLB_SINGLE_FRAME');
       expect(
-        SignageCatalog.choicesForBoard(b).map((c) => c.code),
+        _std(b).map((c) => c.code),
         SignageCatalog.media('NLB')!.installations,
       );
     });
@@ -117,7 +123,7 @@ void main() {
 
     test('Other media keep existing mappings', () {
       expect(
-        SignageCatalog.choicesForBoard(_b('PLAIN_VINYL')).map((c) => c.code),
+        _std(_b('PLAIN_VINYL')).map((c) => c.code),
         SignageCatalog.media('PLAIN_VINYL')!.installations,
       );
       expect(_names(_b('MDF')), isEmpty);
@@ -143,7 +149,7 @@ void main() {
     });
 
     test('Hanging Mount keeps the original painter illustration', () {
-      final h = SignageCatalog.choicesForBoard(_b('GSB', dbl: true)).last;
+      final h = _std(_b('GSB', dbl: true)).last;
       expect(h.name, 'Hanging Mount');
       expect(h.icon, isNull);
       expect(h.art, InstallationArt.hanging);
@@ -151,7 +157,7 @@ void main() {
     });
 
     test('other media stay on the generic icon path', () {
-      for (final c in SignageCatalog.choicesForBoard(_b('ACRYLIC'))) {
+      for (final c in _std(_b('ACRYLIC'))) {
         expect(c.art, InstallationArt.generic);
         expect(c.icon, isNotNull);
       }

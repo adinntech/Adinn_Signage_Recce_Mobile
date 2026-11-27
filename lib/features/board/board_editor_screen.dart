@@ -10,6 +10,7 @@ import '../../data/catalog/question_equivalence.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/catalog/site_checklists.dart';
 import '../../data/models/models.dart';
+import '../../data/models/photo_requirement.dart';
 import '../../state/app_controller.dart';
 import '../gsb/gsb_board.dart';
 import '../gsb/gsb_rules.dart';
@@ -25,9 +26,46 @@ import 'installation_choice_card.dart';
 import 'board_picker.dart';
 import 'installation_modes.dart';
 import '../shop/add_media_sheet.dart';
+import '../../data/catalog/vendor_question_policy.dart';
+import '../../core/widgets/language_switcher.dart';
+import '../../l10n/l10n.dart';
+import '../notes/other_spec_dialog.dart';
+import 'gst_field.dart';
 import 'media_tabs.dart';
 import 'quantity_size_section.dart';
 import 'site_questions_form.dart';
+
+/// Display-only helpers: generated names get a Tamil prefix, custom names
+/// are never touched.
+String _unitNameL(BuildContext context, Board b, SignageUnit u) {
+  final n = SignageCatalog.unitName(b, u);
+  return SignageCatalog.isAutoBoardName(n) ? context.generatedBoardName(n) : n;
+}
+
+String _boardNameL(BuildContext context, Board b) =>
+    SignageCatalog.isAutoBoardName(b.name)
+    ? context.generatedBoardName(b.name)
+    : b.name;
+
+String _installationSummaryL(BuildContext context, Board b) {
+  const empty = 'Installation not set';
+  if (!context.isTamil) {
+    return SignageCatalog.installationSummary(b, empty: empty);
+  }
+  if (SignageCatalog.hasMixedInstallations(b)) {
+    final names = <String>[
+      for (final u in b.activeUnits)
+        context.installationLabel(
+          SignageCatalog.installationNameOf(b, u, empty: empty),
+        ),
+    ].toSet().toList();
+    return context.uf('Mixed ({0})', [names.join(' / ')]);
+  }
+  return context.installationLabel(
+    SignageCatalog.installation(SignageCatalog.primaryInstallation(b))?.name ??
+        empty,
+  );
+}
 
 /// Step-by-step capture of one signage board:
 /// board details → media → installation → site questions → photos → notes →
@@ -85,6 +123,10 @@ class BoardEditorScreen extends StatefulWidget {
 class _BoardEditorScreenState extends State<BoardEditorScreen> {
   int _step = 0;
 
+  /// Tapping the active section heading again collapses its body. The valid
+  /// workflow step stays in [_step] so Next/Back/issue navigation are intact.
+  bool _sectionCollapsed = false;
+
   /// null = derive from the data (mixed installations => different).
   bool? _diffInstall;
 
@@ -112,10 +154,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
   void initState() {
     super.initState();
     _ctl = context.read<AppController>();
-    final b = _ctl.board(
-      widget.shopId,
-      widget.boardId,
-    );
+    final b = _ctl.board(widget.shopId, widget.boardId);
     if (b != null) {
       _name.text = b.name;
       _syncSize(b);
@@ -148,6 +187,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
     setState(() {
       if (u != null) _unitId = u.id;
       _step = BoardEditorScreen.stepFor(i.section);
+      _sectionCollapsed = false;
     });
   }
 
@@ -174,8 +214,11 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
         if (!ok) {
           showSnack(
             context,
-            'Draft could not be saved on this device. Nothing was lost – '
-            'you are still on ${cur.name}.',
+            context.uf(
+              'Draft could not be saved on this device. Nothing was lost – '
+              'you are still on {0}.',
+              [cur.name],
+            ),
             error: true,
           );
           return;
@@ -195,6 +238,52 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
   }
 
   bool _addingMedia = false;
+  bool _removing = false;
+
+  /// Removes ONLY the selected media group (its physical boards, photos,
+  /// measurements, markings and draft) after confirmation. Other media
+  /// groups are untouched; photos still referenced by submitted versions keep
+  /// their file. Afterwards the nearest remaining media opens (or Shop
+  /// Details when none is left).
+  Future<void> _removeMedia(Shop shop, Board cur) async {
+    if (_removing || _switching || _addingMedia || !_ctl.canEdit(shop)) return;
+    _removing = true;
+    try {
+      final idx = shop.boards.indexWhere((b) => b.id == cur.id);
+      final ok = await confirmDialog(
+        context,
+        title: context.t.removeMediaTitle,
+        message:
+            '${mediaTabLabel(cur, shop.boards)} will be removed.\n'
+            'Physical boards: ${cur.activeUnits.length}\n'
+            'Photos: ${cur.photos.length} • Markings: ${cur.annotationCount}\n'
+            'Voice notes: ${cur.voiceNotes.length}\n'
+            'Its measurements, photos, markings and draft answers are '
+            'removed. Other media types are not affected; earlier submitted '
+            'versions keep their own copy.',
+        confirmText: 'Remove',
+        destructive: true,
+      );
+      if (!ok || !mounted) return;
+      await _ctl.deleteBoard(widget.shopId, cur.id);
+      if (!mounted) return;
+      final rest = _ctl.shop(widget.shopId)?.boards ?? const <Board>[];
+      if (rest.isEmpty) {
+        Navigator.of(context).pop();
+        return;
+      }
+      final next = rest[(idx - 1).clamp(0, rest.length - 1)];
+      await Navigator.of(context).pushReplacement(
+        PageRouteBuilder<void>(
+          pageBuilder: (_, _, _) =>
+              BoardEditorScreen(shopId: widget.shopId, boardId: next.id),
+          transitionDuration: Duration.zero,
+        ),
+      );
+    } finally {
+      _removing = false;
+    }
+  }
 
   /// "+" beside the media tabs: same add-media flow as Shop Details. An
   /// incomplete, changed board is saved as a draft first; the new media opens
@@ -214,7 +303,9 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
           if (mounted) {
             showSnack(
               context,
-              'Draft could not be saved on this device. Nothing was lost.',
+              context.ui(
+                'Draft could not be saved on this device. Nothing was lost.',
+              ),
               error: true,
             );
           }
@@ -307,6 +398,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
   bool _mediaDone(Board b) => SignageCatalog.media(b.mediaCode) != null;
   bool _installDone(Board b) =>
       _mediaDone(b) && SignageCatalog.installationComplete(b);
+
   /// Site Questions AND the physical-board checklist of every board: the
   /// same rules as [AppController.boardIssues].
   bool _questionsDone(Board b) =>
@@ -314,8 +406,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
 
   bool _detailsDone(Board b) => b.name.trim().isNotEmpty && b.hasSize;
 
-  bool _badDimension(double? v) =>
-      v != null && (!v.isFinite || v <= 0);
+  bool _badDimension(double? v) => v != null && (!v.isFinite || v <= 0);
 
   /// Shows the validation state on Board Details when a typed dimension is
   /// invalid, even though the basic size is not complete yet.
@@ -400,6 +491,19 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
   /// cancelling the sheet leaves the recce untouched. Other media are
   /// selected directly, exactly as before.
   Future<void> _onMediaTap(AppController c, Board b, MediaType m) async {
+    if (m.code == SignageCatalog.otherMedia) {
+      // Description first; cancel leaves the recce untouched.
+      final spec = await showOtherSpecDialog(
+        context,
+        title: context.t.otherMediaTitle,
+        hint: context.t.otherMediaHint,
+        initial: b.mediaCode == m.code ? b.customMedia : null,
+      );
+      if (spec == null || !mounted) return;
+      b.customMedia = spec;
+      _selectMedia(c, b, m);
+      return;
+    }
     if (m.code == SignageCatalog.nlb) {
       await _onNlbTap(c, b, m);
       return;
@@ -510,6 +614,24 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
     Board b,
     InstallationType i,
   ) async {
+    if (i.code == SignageCatalog.otherInstallation) {
+      final spec = await showOtherSpecDialog(
+        context,
+        title: context.t.otherInstallationTitle,
+        hint: context.t.otherInstallationHint,
+        initial: b.activeUnits.firstOrNull?.customInstallation,
+      );
+      if (spec == null || !mounted) return;
+      if (!c.setCustomInstallationForAll(widget.shopId, b, spec)) return;
+      final pruned = _pruneAnswers(b);
+      c.touchBoard(widget.shopId, b);
+      _notePruned(pruned);
+      setState(() {
+        _step = 3;
+        _sectionCollapsed = false;
+      });
+      return;
+    }
     final clash = b.activeUnits.any(
       (u) => u.installationCode != null && u.installationCode != i.code,
     );
@@ -531,29 +653,80 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
     setState(() => _step = 3);
   }
 
-  void _pickUnitInstallation(
+  Future<void> _pickUnitInstallation(
     AppController c,
     Board b,
     SignageUnit u,
     String code,
-  ) {
-    if (!c.setUnitInstallation(widget.shopId, b, u, code)) return;
+  ) async {
+    if (code == SignageCatalog.otherInstallation) {
+      final spec = await showOtherSpecDialog(
+        context,
+        title: context.t.otherInstallationTitle,
+        hint: context.t.otherInstallationHint,
+        initial: u.customInstallation,
+      );
+      if (spec == null || !mounted) return;
+      if (!c.setCustomInstallationForUnit(widget.shopId, b, u, spec)) return;
+    } else if (!c.setUnitInstallation(widget.shopId, b, u, code)) {
+      return;
+    }
     final pruned = _pruneAnswers(b);
     c.touchBoard(widget.shopId, b);
     _notePruned(pruned);
     setState(() {});
   }
 
-  StepState _state(
-    bool done,
-    int index,
-    bool editable, {
-    bool error = false,
-  }) {
+  StepState _state(bool done, int index, bool editable, {bool error = false}) {
     if (done) return StepState.complete;
     if (error) return StepState.error;
     if (!editable) return StepState.disabled;
     return _step == index ? StepState.editing : StepState.indexed;
+  }
+
+  /// "Installation Measurements": the geometry inputs of each physical board
+  /// for ITS installation (same answer keys / mirrors as before; shown here
+  /// instead of the Site Questions form).
+  List<Widget> _installationMeasurements(
+    AppController c,
+    Board board,
+    SignageUnit u,
+    bool editable,
+  ) {
+    final out = <Widget>[];
+    final multi = board.activeUnits.length > 1;
+    {
+      final qs = SignageCatalog.measurementQuestionsFor(board, u);
+      if (qs.isEmpty) return out;
+      out.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 14, bottom: 10),
+          child: Text(
+            multi
+                ? context.uf('Installation Measurements – {0}', [
+                    _unitNameL(context, board, u),
+                  ])
+                : context.t.installationMeasurements,
+            key: Key('im_title_${u.id}'),
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              color: AdinnColors.red,
+            ),
+          ),
+        ),
+      );
+      out.add(
+        SiteQuestionsForm(
+          key: ValueKey('im_${u.id}_${board.installationOf(u)}_$_copyTick'),
+          questions: qs,
+          answers: QuestionEquivalence.effectiveSiteAnswers(board, u),
+          enabled: editable,
+          onChanged: (id, v) => c.setUnitAnswer(widget.shopId, board, u, id, v),
+        ),
+      );
+    }
+    return out;
   }
 
   @override
@@ -577,12 +750,18 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
     final warnings = c.boardWarnings(board, shop.geo);
     // Site Questions are per physical board: its own installation + answers.
     final unit = _unit(board);
-    final questions = unit == null
+    final allQuestions = unit == null
         ? SignageCatalog.questionsFor(
             board.mediaCode,
             SignageCatalog.primaryInstallation(board),
           )
         : SignageCatalog.questionsForUnit(board, unit);
+    // Geometry-only inputs live in the Installation step (Installation
+    // Measurements), never twice.
+    final questions = [
+      for (final q in allQuestions)
+        if (!VendorQuestionPolicy.isMeasurement(board.mediaCode, q.id)) q,
+    ];
     // Stored answers completed by an earlier equivalent checklist answer.
     final unitAnswers = unit == null
         ? board.answers
@@ -605,34 +784,34 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
 
     // Board Details is the SECOND step (after Media Type).
     final detailsStep = Step(
-        title: const Text('Board Details'),
-        subtitle: Text(
-          _detailsDone(board)
-              ? _detailsSummary(board)
-              : 'Board name, quantity and measurements',
-        ),
-        state: _state(
-          _detailsDone(board),
-          BoardEditorScreen.boardDetailsStep,
-          editable,
-          error: _detailsInvalid(board),
-        ),
-        isActive: _step >= BoardEditorScreen.boardDetailsStep,
-        content: _BoardDetailsForm(
-          shopId: widget.shopId,
-          board: board,
-          name: _name,
-          w: _w,
-          h: _h,
-          enabled: editable,
-          onChanged: () => c.touchBoard(widget.shopId, board),
-          onSizeSynced: () => setState(() => _syncSize(board)),
-        ),
-      );
+      title: Text(context.t.stepBoardDetails),
+      subtitle: Text(
+        _detailsDone(board)
+            ? _detailsSummary(board)
+            : 'Board name, quantity and measurements',
+      ),
+      state: _state(
+        _detailsDone(board),
+        BoardEditorScreen.boardDetailsStep,
+        editable,
+        error: _detailsInvalid(board),
+      ),
+      isActive: _step >= BoardEditorScreen.boardDetailsStep,
+      content: _BoardDetailsForm(
+        shopId: widget.shopId,
+        board: board,
+        name: _name,
+        w: _w,
+        h: _h,
+        enabled: editable,
+        onChanged: () => c.touchBoard(widget.shopId, board),
+        onSizeSynced: () => setState(() => _syncSize(board)),
+      ),
+    );
 
     final steps = <Step>[
       Step(
-        title: const Text('Media Type'),
+        title: Text(context.t.stepMediaType),
         subtitle: Text(
           media == null
               ? 'Choose one of ${SignageCatalog.selectableCodes.length} media types'
@@ -687,21 +866,23 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
       ),
       detailsStep,
       Step(
-        title: const Text('Installation Type'),
+        title: Text(context.t.stepInstallationType),
         subtitle: Text(
           SignageCatalog.hasMixedInstallations(board)
-              ? SignageCatalog.installationSummary(board)
-              : SignageCatalog.installationLabel(
-                  board,
-                  SignageCatalog.primaryInstallation(board),
+              ? _installationSummaryL(context, board)
+              : context.installationLabel(
+                  SignageCatalog.installation(
+                        SignageCatalog.primaryInstallation(board),
+                      )?.name ??
+                      '',
                 ),
         ),
         state: _state(_installDone(board), 2, editable),
         isActive: _step >= 2,
         content: media == null
-            ? const Text('Select a media type first.')
+            ? Text(context.t.selectMediaFirst)
             : SignageCatalog.choicesForBoard(board).isEmpty &&
-                legacyInstall == null
+                  legacyInstall == null
             ? Text(
                 'Installation options for ${media.shortName} are not '
                 'configured yet (pending approval).',
@@ -725,51 +906,60 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
                           _pickUnitInstallation(c, board, u, code),
                     )
                   else
-                  for (final choice in SignageCatalog.choicesForBoard(board)) ...[
-                    if (choice.art == InstallationArt.generic)
-                      _OptionTile(
-                        key: Key('inst_${choice.code}'),
-                        icon: choice.icon ?? Icons.help_outline,
-                        title: choice.name,
-                        subtitle: choice.description,
-                        selected: _isPicked(board, choice.code),
-                        onTap: editable && choice.canPersist
-                            ? () => _selectInstallation(
+                    for (final choice in SignageCatalog.choicesForBoard(
+                      board,
+                    )) ...[
+                      if (choice.art == InstallationArt.generic)
+                        _OptionTile(
+                          key: Key('inst_${choice.code}'),
+                          icon: choice.icon ?? Icons.help_outline,
+                          title: choice.code == SignageCatalog.otherInstallation
+                              ? context.t.otherInstallation
+                              : context.tq(choice.name),
+                          subtitle:
+                              choice.code == SignageCatalog.otherInstallation
+                              ? ''
+                              : context.installationDescription(
+                                  choice.description,
+                                ),
+                          selected: _isPicked(board, choice.code),
+                          onTap: editable && choice.canPersist
+                              ? () => _selectInstallation(
+                                  c,
+                                  board,
+                                  SignageCatalog.installation(choice.code)!,
+                                )
+                              : null,
+                        )
+                      else
+                        InstallationChoiceCard(
+                          key: Key('inst_${choice.code ?? 'hanging_mount'}'),
+                          choice: choice,
+                          selected: _isPicked(board, choice.code),
+                          enabled: editable,
+                          onTap: () {
+                            // No approved backend value yet: show the option,
+                            // but never persist an invented code.
+                            if (!choice.canPersist) {
+                              showSnack(
+                                context,
+                                context.ui(
+                                  'Hanging Mount needs an approved backend '
+                                  'installation code before it can be saved. '
+                                  'Nothing was changed.',
+                                ),
+                                error: true,
+                              );
+                              return;
+                            }
+                            _selectInstallation(
                               c,
                               board,
                               SignageCatalog.installation(choice.code)!,
-                            )
-                            : null,
-                      )
-                    else
-                      InstallationChoiceCard(
-                        key: Key(
-                          'inst_${choice.code ?? 'hanging_mount'}',
-                        ),
-                        choice: choice,
-                        selected: _isPicked(board, choice.code),
-                        enabled: editable,
-                        onTap: () {
-                          // No approved backend value yet: show the option,
-                          // but never persist an invented code.
-                          if (!choice.canPersist) {
-                            showSnack(
-                              context,
-                              'Hanging Mount needs an approved backend '
-                              'installation code before it can be saved. '
-                              'Nothing was changed.',
-                              error: true,
                             );
-                            return;
-                          }
-                          _selectInstallation(
-                            c,
-                            board,
-                            SignageCatalog.installation(choice.code)!,
-                          );
-                        },
-                      ),
-                  ],
+                          },
+                        ),
+                    ],
                   // Old GSB records keep their original value on screen; it
                   // is only replaced when the vendor explicitly picks a card.
                   if (legacyInstall != null)
@@ -790,7 +980,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
               ),
       ),
       Step(
-        title: const Text('Site Questions'),
+        title: Text(context.t.stepSiteQuestions),
         subtitle: Text(
           _installDone(board)
               ? '$sitePending required pending'
@@ -804,185 +994,211 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
         ),
         isActive: _step >= BoardEditorScreen.siteQuestionsStep,
         content: unit == null || board.installationOf(unit) == null
-            ? const Text('Select the installation type of this board first.')
+            ? Text(
+                context.ui('Select the installation type of this board first.'),
+              )
             : Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (board.activeUnits.length > 1)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: UnitSelector(
-                  board: board,
-                  selectedId: unit.id,
-                  pendingOf: (u) => c.siteQuestionsPendingFor(board, u),
-                  onSelect: (u) => _selectUnit(board, u),
-                ),
-              ),
-            Text(
-              '${SignageCatalog.unitName(board, unit)} · '
-              '${SignageCatalog.installation(board.installationOf(unit))?.name ?? '—'}'
-              ' · ${c.siteQuestionsPendingFor(board, unit)} required pending',
-              key: const Key('unit_questions_header'),
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13.5,
-                height: 1.35,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (editable &&
-                shop.boards.any(
-                  (o) => o.mediaCode != null && o.activeUnits.any(
-                    (x) => !(o.id == board.id && x.id == unit.id),
-                  ),
-                ))
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  key: const Key('copy_common_answers'),
-                  icon: const Icon(Icons.copy_all_outlined),
-                  label: const Text('Copy Common Answers'),
-                  onPressed: () async {
-                    final n = await showCopyCommonAnswersSheet(
-                      context,
-                      target: (board, unit),
-                      candidates: [
-                        for (final o in shop.boards)
-                          for (final x in o.activeUnits) (o, x),
-                      ],
-                      onCopy: (src, overwrite) => c.copyCommonAnswers(
-                        widget.shopId,
-                        src.$1,
-                        board,
-                        overwrite: overwrite,
-                        sourceUnit: src.$2,
-                        targetUnit: unit,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (board.activeUnits.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: UnitSelector(
+                        board: board,
+                        selectedId: unit.id,
+                        pendingOf: (u) => c.siteQuestionsPendingFor(board, u),
+                        onSelect: (u) => _selectUnit(board, u),
                       ),
-                    );
-                    if (n > 0 && mounted) {
-                      setState(() => _copyTick++);
-                      showSnack(context, '$n answer(s) copied.');
-                    }
-                  },
-                ),
-              ),
-            if (_autoFillNote[unit.id] != null)
-              Container(
-                key: const Key('autofill_note'),
-                margin: const EdgeInsets.only(top: 8, bottom: 12),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AdinnColors.canvas,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AdinnColors.line),
-                ),
-                child: Text(
-                  _autoFillNote[unit.id]!,
-                  style: const TextStyle(fontSize: 12.5, height: 1.35),
-                ),
-              ),
-            const SizedBox(height: 6),
-            SiteQuestionsForm(
-              key: ValueKey(
-                'sq_${unit.id}_${board.installationOf(unit)}_$_copyTick',
-              ),
-              questions: questions,
-              answers: unitAnswers,
-              enabled: editable,
-              sectionOf: (q) =>
-                  SignageCatalog.questionSectionFor(board, unit, q),
-              autoFilled: _autoFilled[unit.id] ?? const {},
-              onChanged: (id, v) {
-                _autoFilled[unit.id]?.remove(id);
-                // Saved on THIS physical board only.
-                c.setUnitAnswer(widget.shopId, board, unit, id, v);
-              },
-            ),
-            // Earlier answers of the same question that disagree (never
-            // resolved silently).
-            for (final cf in QuestionEquivalence.conflicts(board, unit))
-              Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 6),
-                child: Text(
-                  'Earlier checklist answer for "${cf.site.label}" was '
-                  '${cf.checklistText}. Choosing an answer above replaces it.',
-                  key: Key('conflict_${cf.site.id}'),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AdinnColors.warning,
+                    ),
+                  Text(
+                    '${_unitNameL(context, board, unit)} · '
+                    '${context.installationLabel(SignageCatalog.installation(board.installationOf(unit))?.name ?? '—')}'
+                    ' · ${context.uf('{0} required pending', [c.siteQuestionsPendingFor(board, unit)])}',
+                    key: const Key('unit_questions_header'),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13.5,
+                      height: 1.35,
+                    ),
                   ),
-                ),
-              ),
-            // Remaining checklist-only questions of this board (the ones that
-            // are not already a Site Question above) in the SAME form. Site
-            // evidence photos are collected in Site Photos & Annotation.
-            if (SiteChecklists.definitionFor(board.mediaCode) != null)
-              ChecklistForm(
-                key: ValueKey(
-                  'cl_${unit.id}_${board.installationOf(unit)}_$_copyTick',
-                ),
-                shopId: widget.shopId,
-                board: board,
-                unit: unit,
-                editable: editable,
-                embedded: true,
-                hideIds: {
-                  ...QuestionEquivalence.mappedChecklistIds(board, unit),
-                  'site_evidence_photo',
-                },
-              ),
-            if (board.activeUnits.length > 1 &&
-                board.activeUnits.last.id != unit.id) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  key: const Key('save_next_board'),
-                  icon: const Icon(Icons.arrow_forward),
-                  label: const Text('Save & Next Board'),
-                  onPressed: () async {
-                    await c.flush();
-                    if (!mounted) return;
-                    final i = board.activeUnits.indexWhere(
-                      (x) => x.id == unit.id,
-                    );
-                    _selectUnit(board, board.activeUnits[i + 1]);
-                  },
-                ),
-              ),
-            ],
-            if (board.activeUnits.length > 1 && sitePending > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Text(
-                  [
-                    for (final u in board.activeUnits)
-                      if (c.siteQuestionsPendingFor(board, u) > 0)
-                        '${SignageCatalog.unitName(board, u)}: '
-                            '${c.siteQuestionsPendingFor(board, u)} pending',
-                  ].join(' · '),
-                  key: const Key('units_pending_summary'),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AdinnColors.warning,
+                  const SizedBox(height: 8),
+                  if (editable &&
+                      shop.boards.any(
+                        (o) =>
+                            o.mediaCode != null &&
+                            o.activeUnits.any(
+                              (x) => !(o.id == board.id && x.id == unit.id),
+                            ),
+                      ))
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        key: const Key('copy_common_answers'),
+                        icon: const Icon(Icons.copy_all_outlined),
+                        label: Text(context.ui('Copy Common Answers')),
+                        onPressed: () async {
+                          final n = await showCopyCommonAnswersSheet(
+                            context,
+                            target: (board, unit),
+                            candidates: [
+                              for (final o in shop.boards)
+                                for (final x in o.activeUnits) (o, x),
+                            ],
+                            onCopy: (src, overwrite) => c.copyCommonAnswers(
+                              widget.shopId,
+                              src.$1,
+                              board,
+                              overwrite: overwrite,
+                              sourceUnit: src.$2,
+                              targetUnit: unit,
+                            ),
+                          );
+                          if (n > 0 && mounted) {
+                            setState(() => _copyTick++);
+                            showSnack(
+                              context,
+                              context.uf('{0} answer(s) copied.', [n]),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  if (_autoFillNote[unit.id] != null)
+                    Container(
+                      key: const Key('autofill_note'),
+                      margin: const EdgeInsets.only(top: 8, bottom: 12),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AdinnColors.canvas,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AdinnColors.line),
+                      ),
+                      child: Text(
+                        _autoFillNote[unit.id]!,
+                        style: const TextStyle(fontSize: 12.5, height: 1.35),
+                      ),
+                    ),
+                  const SizedBox(height: 6),
+                  // Geometry inputs of THIS board for its installation, kept out
+                  // of the Site Questions list below.
+                  ..._installationMeasurements(c, board, unit, editable),
+                  GstField(
+                    key: const Key('gst_shop'),
+                    shop: shop,
+                    enabled: editable,
                   ),
-                ),
+                  // Placement location and per-board notes stay in the stored model
+                  // and their separate notes workflow; they are not part of Site
+                  // Questions any more (approved recce workflow correction).
+                  SiteQuestionsForm(
+                    key: ValueKey(
+                      'sq_${unit.id}_${board.installationOf(unit)}_$_copyTick',
+                    ),
+                    questions: questions,
+                    answers: unitAnswers,
+                    enabled: editable,
+                    sectionOf: (q) =>
+                        SignageCatalog.questionSectionFor(board, unit, q),
+                    autoFilled: _autoFilled[unit.id] ?? const {},
+                    onChanged: (id, v) {
+                      _autoFilled[unit.id]?.remove(id);
+                      // Saved on THIS physical board only.
+                      c.setUnitAnswer(widget.shopId, board, unit, id, v);
+                    },
+                  ),
+                  // Earlier answers of the same question that disagree (never
+                  // resolved silently).
+                  for (final cf in QuestionEquivalence.conflicts(board, unit))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 6),
+                      child: Text(
+                        'Earlier checklist answer for "${cf.site.label}" was '
+                        '${cf.checklistText}. Choosing an answer above replaces it.',
+                        key: Key('conflict_${cf.site.id}'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AdinnColors.warning,
+                        ),
+                      ),
+                    ),
+                  // Remaining checklist-only questions of this board (the ones that
+                  // are not already a Site Question above) in the SAME form. Site
+                  // evidence photos are collected in Site Photos & Annotation.
+                  if (SiteChecklists.definitionFor(board.mediaCode) != null)
+                    ChecklistForm(
+                      key: ValueKey(
+                        'cl_${unit.id}_${board.installationOf(unit)}_$_copyTick',
+                      ),
+                      shopId: widget.shopId,
+                      board: board,
+                      unit: unit,
+                      editable: editable,
+                      embedded: true,
+                      hideIds: {
+                        ...QuestionEquivalence.mappedChecklistIds(board, unit),
+                        'site_evidence_photo',
+                      },
+                    ),
+                  if (board.activeUnits.length > 1 &&
+                      board.activeUnits.last.id != unit.id) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        key: const Key('save_next_board'),
+                        icon: const Icon(Icons.arrow_forward),
+                        label: Text(context.ui('Save & Next Board')),
+                        onPressed: () async {
+                          await c.flush();
+                          if (!mounted) return;
+                          final i = board.activeUnits.indexWhere(
+                            (x) => x.id == unit.id,
+                          );
+                          _selectUnit(board, board.activeUnits[i + 1]);
+                        },
+                      ),
+                    ),
+                  ],
+                  if (board.activeUnits.length > 1 && sitePending > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        [
+                          for (final u in board.activeUnits)
+                            if (c.siteQuestionsPendingFor(board, u) > 0)
+                              '${SignageCatalog.unitName(board, u)}: '
+                                  '${c.siteQuestionsPendingFor(board, u)} pending',
+                        ].join(' · '),
+                        key: const Key('units_pending_summary'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AdinnColors.warning,
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
       ),
       Step(
-        title: const Text('Site Photos & Annotation'),
+        title: Text(context.t.stepSitePhotos),
         subtitle: Text(
-          '${board.photos.length} photo(s) • ${board.annotationCount} marking(s)'
-          '${board.previews.isEmpty ? '' : ' • ${board.previews.length} preview(s)'}',
+          context.uf('Photos: {0} / {1} • Boards Marked: {2} / {3}', [
+                board.photoRequirement.photoCount,
+                PhotoRequirement.minPhotos,
+                board.photoRequirement.markedCount,
+                board.photoRequirement.totalUnits,
+              ]) +
+              (board.photoRequirement.isComplete
+                  ? ' • ${context.ui('Photo evidence complete')}'
+                  : ''),
         ),
-        state: _state(board.photos.isNotEmpty, 4, editable),
+        state: _state(board.photoRequirement.photoCount > 0, 4, editable),
         isActive: _step >= 4,
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             PhotoSection(
+              unitId: unit?.id,
               shopId: widget.shopId,
               board: board,
               editable: editable,
@@ -990,8 +1206,8 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
             ),
             if (board.previews.isNotEmpty) ...[
               const SizedBox(height: 12),
-              const Text(
-                'Live previews, AR captures & exports',
+              Text(
+                context.ui('Live previews, AR captures & exports'),
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
@@ -1005,7 +1221,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
         ),
       ),
       Step(
-        title: const Text('Voice & Text Notes'),
+        title: Text(context.t.stepVoiceNotes),
         subtitle: Text(
           '${board.voiceNotes.length} voice • ${board.textNote.isEmpty ? 'no' : '1'} text',
         ),
@@ -1024,9 +1240,11 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
               enabled: editable,
               maxLines: 4,
               minLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Text note',
-                hintText: 'Obstructions, owner requests, electrical points…',
+              decoration: InputDecoration(
+                labelText: context.ui('Text note'),
+                hintText: context.ui(
+                  'Obstructions, owner requests, electrical points…',
+                ),
                 alignLabelWithHint: true,
               ),
               onChanged: (t) {
@@ -1044,7 +1262,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
         ),
       ),
       Step(
-        title: const Text('2D Drawing & 3D Preview'),
+        title: Text(context.t.stepDrawing),
         subtitle: Text(
           board.drawingPath == null ? 'Auto-generated' : 'Drawing saved',
         ),
@@ -1052,10 +1270,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
             ? StepState.complete
             : (_step == 6 ? StepState.editing : StepState.indexed),
         isActive: _step >= 6,
-        content: _DrawingsStep(
-          board: board,
-          onOpen: _openView,
-        ),
+        content: _DrawingsStep(board: board, onOpen: _openView),
       ),
     ];
 
@@ -1064,38 +1279,39 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
         // The board being edited: its own name when the group has several.
         title: Text(
           unit != null && board.activeUnits.length > 1
-              ? SignageCatalog.unitName(board, unit)
-              : board.name,
+              ? _unitNameL(context, board, unit)
+              : _boardNameL(context, board),
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
           if (editable)
             IconButton(
               key: const Key('save_draft'),
-              tooltip: 'Save as Draft',
+              tooltip: context.ui('Save as Draft'),
               icon: const Icon(Icons.save_outlined),
               onPressed: () => _saveDraftNow(board),
             ),
           IconButton(
-            tooltip: '2D drawing',
+            tooltip: context.ui('2D drawing'),
             icon: const Icon(Icons.architecture),
             onPressed: () => _openView(BoardView.drawing2d),
           ),
           IconButton(
-            tooltip: '3D preview',
+            tooltip: context.ui('3D preview'),
             icon: const Icon(Icons.view_in_ar),
             onPressed: () => _openView(BoardView.preview3d),
           ),
+          const LanguageSwitcher(),
         ],
       ),
       body: Column(
         children: [
-          if (shop.boards.length > 1 || editable)
+          if (shop.boards.isNotEmpty || editable)
             MediaTabs(
               controller: c,
-              // A lone board shows only the "+" (its tab would repeat the
-              // title).
-              boards: shop.boards.length > 1 ? shop.boards : const [],
+              // The current media group is ALWAYS visible, even when it is
+              // the only group. The tab shows its real status/quantity.
+              boards: shop.boards,
               currentId: board.id,
               onSelect: (o) => _switchTo(shop, board, o),
               onAdd: editable ? () => _addMedia(shop, board) : null,
@@ -1111,39 +1327,69 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
                 keyPrefix: 'unit_bar',
                 board: board,
                 selectedId: unit.id,
-                pendingOf: (u) => issueDetails
-                    .where((i) => i.unitId == u.id)
-                    .length,
+                pendingOf: (u) =>
+                    issueDetails.where((i) => i.unitId == u.id).length,
                 onSelect: (u) => _selectUnit(board, u),
               ),
             ),
           _Header(
-            shopName: shop.name,
+            shopName: context.shopName(shop),
             board: board,
             details: issueDetails,
             onIssueTap: (i) => _goToIssue(board, i),
             issues: issues,
             warnings: warnings,
             readOnly: !editable,
+            onRemoveMedia: editable ? () => _removeMedia(shop, board) : null,
           ),
           Expanded(
+            // Clip scrolled steps to the stepper area: unclipped content
+            // slid under the AppBar / unit bar and could not be tapped.
             child: Stepper(
+              clipBehavior: Clip.hardEdge,
+              steps: _sectionCollapsed
+                  ? [
+                      for (final s in steps)
+                        Step(
+                          title: s.title,
+                          subtitle: s.subtitle,
+                          state: s.state,
+                          isActive: s.isActive,
+                          content: const SizedBox.shrink(),
+                        ),
+                    ]
+                  : steps,
               currentStep: _step,
               // Keep the expanded form fully to the right of the timeline
               // gutter so labels never cross the red stepper line.
               contentPadding: const EdgeInsets.fromLTRB(56, 4, 16, 16),
-              onStepTapped: (i) => setState(() => _step = i),
+              onStepTapped: (i) => setState(() {
+                if (i == _step && !_sectionCollapsed) {
+                  _sectionCollapsed = true; // tap active heading again -> close
+                } else {
+                  _step = i;
+                  _sectionCollapsed = false;
+                }
+              }),
               onStepContinue: () {
+                setState(() => _sectionCollapsed = false);
                 if (_step < steps.length - 1) {
                   setState(() => _step++);
                 } else {
                   _onDone();
                 }
               },
-              onStepCancel: _step == 0 ? null : () => setState(() => _step--),
+              onStepCancel: _step == 0
+                  ? null
+                  : () => setState(() {
+                      _sectionCollapsed = false;
+                      _step--;
+                    }),
               controlsBuilder: (context, details) => Padding(
                 padding: const EdgeInsets.only(top: 20, bottom: 4),
-                child: Row(
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 4,
                   children: [
                     FilledButton(
                       key: Key('step_next_${details.stepIndex}'),
@@ -1152,10 +1398,11 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
                       ),
                       onPressed: details.onStepContinue,
                       child: Text(
-                        details.stepIndex == steps.length - 1 ? 'DONE' : 'NEXT',
+                        details.stepIndex == steps.length - 1
+                            ? context.t.done
+                            : context.t.next,
                       ),
                     ),
-                    const SizedBox(width: 10),
                     if (details.stepIndex > 0)
                       TextButton(
                         key: Key('step_back_${details.stepIndex}'),
@@ -1163,12 +1410,11 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
                           minimumSize: const Size(64, 46),
                         ),
                         onPressed: details.onStepCancel,
-                        child: const Text('BACK'),
+                        child: Text(context.t.back),
                       ),
                   ],
                 ),
               ),
-              steps: steps,
             ),
           ),
         ],
@@ -1282,8 +1528,10 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
         if (_ctl.storageError != null) {
           showSnack(
             context,
-            'Could not save on this device. Nothing was lost – tap DONE '
-            'again to retry.',
+            context.ui(
+              'Could not save on this device. Nothing was lost – tap DONE '
+              'again to retry.',
+            ),
             error: true,
           );
           return;
@@ -1338,9 +1586,7 @@ class _BoardEditorScreenState extends State<BoardEditorScreen> {
       final units = b.activeUnits;
       final at = units.indexWhere((u) => u.id == cur.id);
       final order = [...units.skip(at + 1), ...units.take(at)];
-      final next = order
-          .where((u) => _blockersOf(b, u).isNotEmpty)
-          .firstOrNull;
+      final next = order.where((u) => _blockersOf(b, u).isNotEmpty).firstOrNull;
       if (next != null) {
         final section = _firstBlockerSection(b, next);
         _selectUnit(b, next);
@@ -1367,7 +1613,11 @@ class _Header extends StatelessWidget {
     required this.readOnly,
     this.details = const [],
     this.onIssueTap,
+    this.onRemoveMedia,
   });
+
+  /// Removes the selected media type (null = not allowed).
+  final VoidCallback? onRemoveMedia;
 
   final String shopName;
   final Board board;
@@ -1412,8 +1662,8 @@ class _Header extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'Board checklist',
+                                  Text(
+                                    context.ui('Board checklist'),
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
@@ -1437,8 +1687,8 @@ class _Header extends StatelessWidget {
                                     IssueList(items: issues),
                                   if (warnings.isNotEmpty) ...[
                                     const SizedBox(height: 6),
-                                    const Text(
-                                      'Suggestions (not blocking)',
+                                    Text(
+                                      context.ui('Suggestions (not blocking)'),
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
@@ -1467,9 +1717,9 @@ class _Header extends StatelessWidget {
                           child: Text(
                             ok
                                 ? (warnings.isEmpty
-                                      ? 'Board ready for submission'
+                                      ? context.t.boardReady
                                       : 'Ready • ${warnings.length} suggestion(s)')
-                                : '${issues.length} item(s) pending – tap to view',
+                                : context.t.pendingItems(issues.length),
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: ok
@@ -1485,6 +1735,17 @@ class _Header extends StatelessWidget {
               ),
               if (readOnly)
                 const TagChip('Read only', icon: Icons.lock_outline),
+              if (onRemoveMedia != null)
+                IconButton(
+                  key: const Key('remove_media'),
+                  tooltip: context.t.removeMediaTooltip,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: AdinnColors.red,
+                  ),
+                  onPressed: onRemoveMedia,
+                ),
             ],
           ),
         ],
@@ -1509,11 +1770,11 @@ class _IssueTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final u = board.unitById(issue.unitId);
     final where = switch (issue.section) {
-      IssueSection.media => 'Media Type',
-      IssueSection.details => 'Board Details',
-      IssueSection.installation => 'Installation Type',
-      IssueSection.questions => 'Site Questions',
-      IssueSection.photos => 'Site Photos & Annotation',
+      IssueSection.media => context.t.stepMediaType,
+      IssueSection.details => context.t.stepBoardDetails,
+      IssueSection.installation => context.t.stepInstallationType,
+      IssueSection.questions => context.t.stepSiteQuestions,
+      IssueSection.photos => context.t.stepSitePhotos,
     };
     return InkWell(
       key: Key('issue_${issue.section.name}_${issue.unitId ?? 'group'}'),
@@ -1531,7 +1792,7 @@ class _IssueTile extends StatelessWidget {
                 [
                   if (u != null && board.activeUnits.length > 1)
                     '${SignageCatalog.unitName(board, u)}: ',
-                  issue.text,
+                  context.ui(issue.text),
                   '  → $where',
                 ].join(),
                 style: const TextStyle(
@@ -1579,8 +1840,11 @@ class _MediaGrid extends StatelessWidget {
           // visible only on a group that already uses it.
           if (selected != null &&
               !SignageCatalog.selectableCodes.contains(selected) &&
+              selected != SignageCatalog.otherMedia &&
               SignageCatalog.media(selected) != null)
             SignageCatalog.media(selected)!,
+          // "+ Other" is always the final option.
+          SignageCatalog.media(SignageCatalog.otherMedia)!,
         ])
           _MediaCard(
             media: m,
@@ -1634,7 +1898,9 @@ class _MediaCard extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                media.shortName,
+                SignageCatalog.isOtherMedia(media.code)
+                    ? context.t.otherMedia
+                    : media.shortName,
                 style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 15,
@@ -1643,7 +1909,9 @@ class _MediaCard extends StatelessWidget {
               const SizedBox(height: 4),
               Expanded(
                 child: Text(
-                  SignageCatalog.cardSubtitle(media),
+                  SignageCatalog.isOtherMedia(media.code)
+                      ? context.t.otherMediaHint
+                      : SignageCatalog.cardSubtitle(media),
                   overflow: TextOverflow.fade,
                   style: const TextStyle(
                     fontSize: 12,
@@ -1783,8 +2051,8 @@ class _BoardDetailsForm extends StatelessWidget {
       children: [
         // The step heading already says "Board Details"; the old compact
         // form starts directly with the Board Name field.
-        const Text(
-          'Board Name',
+        Text(
+          context.ui('Board Name'),
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         ),
         const SizedBox(height: 8),
@@ -1793,7 +2061,7 @@ class _BoardDetailsForm extends StatelessWidget {
           controller: name,
           enabled: enabled,
           decoration: InputDecoration(
-            hintText: 'Board 1',
+            hintText: context.ui('Board 1'),
             prefixIcon: const Icon(Icons.label_outline),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             enabledBorder: OutlineInputBorder(
@@ -1808,8 +2076,8 @@ class _BoardDetailsForm extends StatelessWidget {
           },
         ),
         const SizedBox(height: 16),
-        const Text(
-          'Measurement Unit',
+        Text(
+          context.ui('Measurement Unit'),
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         ),
         const SizedBox(height: 8),
@@ -1868,13 +2136,8 @@ class _UnitSelector extends StatelessWidget {
         selectedForegroundColor: AdinnColors.ink,
         selectedBackgroundColor: AdinnColors.redLight,
         side: BorderSide(color: Colors.grey.shade400),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        textStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         padding: const EdgeInsets.symmetric(vertical: 12),
       ),
       onSelectionChanged: enabled
@@ -1923,7 +2186,7 @@ class _DrawingsStep extends StatelessWidget {
                 key: const Key('open_2d'),
                 onPressed: ready ? () => onOpen(BoardView.drawing2d) : null,
                 icon: const Icon(Icons.architecture),
-                label: const Text('2D Drawing'),
+                label: Text(context.ui('2D Drawing')),
               ),
             ),
             const SizedBox(width: 8),
@@ -1932,7 +2195,7 @@ class _DrawingsStep extends StatelessWidget {
                 key: const Key('open_3d'),
                 onPressed: ready ? () => onOpen(BoardView.preview3d) : null,
                 icon: const Icon(Icons.view_in_ar),
-                label: const Text('3D Preview'),
+                label: Text(context.ui('3D Preview')),
               ),
             ),
           ],
@@ -1942,12 +2205,12 @@ class _DrawingsStep extends StatelessWidget {
           key: const Key('open_camera_ar'),
           onPressed: ready ? () => onOpen(BoardView.cameraAr) : null,
           icon: const Icon(Icons.camera_alt_outlined),
-          label: const Text('Camera AR (live camera)'),
+          label: Text(context.ui('Camera AR (live camera)')),
         ),
         if (saved != null && File(saved).existsSync()) ...[
           const SizedBox(height: 10),
-          const Text(
-            'Saved drawing',
+          Text(
+            context.ui('Saved drawing'),
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
@@ -2082,7 +2345,7 @@ class _GsbVariantSummary extends StatelessWidget {
           TextButton(
             key: const Key('gsb_variant_change'),
             onPressed: enabled ? onChange : null,
-            child: const Text('Change'),
+            child: Text(context.ui('Change')),
           ),
         ],
       ),
@@ -2130,7 +2393,7 @@ class _NlbVariantSummary extends StatelessWidget {
         TextButton(
           key: const Key('nlb_variant_change'),
           onPressed: enabled ? onChange : null,
-          child: const Text('Change'),
+          child: Text(context.ui('Change')),
         ),
       ],
     ),
@@ -2156,29 +2419,31 @@ class _SidednessChoice extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Display faces',
+        Text(
+          context.ui('Display faces'),
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 6),
         SegmentedButton<bool>(
-          segments: const [
+          segments: [
             ButtonSegment(
               value: false,
-              label: Text('Single-sided', key: Key('sides_single')),
+              label: Text(context.ui('Single-sided'), key: Key('sides_single')),
             ),
             ButtonSegment(
               value: true,
-              label: Text('Double-sided', key: Key('sides_double')),
+              label: Text(context.ui('Double-sided'), key: Key('sides_double')),
             ),
           ],
           selected: {doubleSided},
           onSelectionChanged: enabled ? (v) => onChanged(v.first) : null,
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Double-sided = two display faces on one physical board. Quantity '
-          'still counts physical boards.',
+        Text(
+          context.ui(
+            'Double-sided = two display faces on one physical board. Quantity '
+            'still counts physical boards.',
+          ),
           style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
         ),
       ],

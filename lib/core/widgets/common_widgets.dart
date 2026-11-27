@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/models/enums.dart';
+import '../../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 
 /// Text-based Adinn wordmark (no image assets needed).
@@ -25,8 +26,7 @@ class AdinnLogo extends StatelessWidget {
             borderRadius: BorderRadius.circular(size * 0.28),
           ),
           alignment: Alignment.center,
-          child: Text(
-            'a',
+          child: Text(context.ui('a'),
             style: TextStyle(
               color: light ? AdinnColors.red : Colors.white,
               fontSize: size * 0.78,
@@ -36,8 +36,7 @@ class AdinnLogo extends StatelessWidget {
           ),
         ),
         SizedBox(width: size * 0.25),
-        Text(
-          'adinn',
+        Text(context.ui('adinn'),
           style: TextStyle(
             color: fg,
             fontSize: size * 0.9,
@@ -74,12 +73,18 @@ class StatusChip extends StatelessWidget {
         children: [
           Icon(status.icon, size: compact ? 12 : 14, color: c),
           const SizedBox(width: 4),
-          Text(
-            compact ? status.shortLabel : status.label,
-            style: TextStyle(
-              color: c,
-              fontSize: compact ? 11 : 12,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              compact
+                  ? context.statusShortLabel(status)
+                  : context.statusLabel(status),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: c,
+                fontSize: compact ? 11 : 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -351,7 +356,10 @@ class IssueList extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(i, style: TextStyle(color: color, fontSize: 13)),
+                  child: Text(
+                    context.ui(i),
+                    style: TextStyle(color: color, fontSize: 13),
+                  ),
                 ),
               ],
             ),
@@ -371,19 +379,19 @@ Future<bool> confirmDialog(
   final result = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: Text(message),
+      title: Text(ctx.ui(title)),
+      content: Text(ctx.ui(message)),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
+          child: Text(ctx.ui('Cancel')),
         ),
         FilledButton(
           style: destructive
               ? FilledButton.styleFrom(backgroundColor: AdinnColors.redDark)
               : null,
           onPressed: () => Navigator.pop(ctx, true),
-          child: Text(confirmText),
+          child: Text(ctx.ui(confirmText)),
         ),
       ],
     ),
@@ -406,7 +414,7 @@ void showSnack(BuildContext context, String message, {bool error = false}) {
 Future<void> dialNumber(BuildContext context, String number) async {
   final cleaned = number.replaceAll(RegExp(r'[^0-9+]'), '');
   if (cleaned.isEmpty) {
-    showSnack(context, 'No phone number available', error: true);
+    showSnack(context, context.ui('No phone number available'), error: true);
     return;
   }
   final uri = Uri(scheme: 'tel', path: cleaned);
@@ -417,7 +425,7 @@ Future<void> dialNumber(BuildContext context, String number) async {
     ok = false;
   }
   if (!ok && context.mounted) {
-    showSnack(context, 'Could not open the dialer for $cleaned', error: true);
+    showSnack(context, context.uf('Could not open the dialer for {0}', [cleaned]), error: true);
   }
 }
 

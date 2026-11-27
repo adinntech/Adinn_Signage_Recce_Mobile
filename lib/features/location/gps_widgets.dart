@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -25,7 +26,7 @@ Future<GeoFix?> captureGps(BuildContext context) async {
   showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => const PopScope(
+    builder: (_) => PopScope(
       canPop: false,
       child: AlertDialog(
         content: Row(
@@ -36,7 +37,7 @@ Future<GeoFix?> captureGps(BuildContext context) async {
               child: CircularProgressIndicator(strokeWidth: 3),
             ),
             SizedBox(width: 16),
-            Expanded(child: Text('Getting GPS location…')),
+            Expanded(child: Text(context.ui('Getting GPS location…'))),
           ],
         ),
       ),
@@ -53,7 +54,7 @@ Future<GeoFix?> captureGps(BuildContext context) async {
   } catch (e) {
     navigator.pop();
     if (context.mounted) {
-      showSnack(context, 'Could not read GPS: $e', error: true);
+      showSnack(context, context.uf('Could not read GPS: {0}', [e]), error: true);
     }
     return null;
   }
@@ -75,7 +76,7 @@ void _showLocationError(
         backgroundColor: AdinnColors.redDark,
         action: settings
             ? SnackBarAction(
-                label: 'SETTINGS',
+                label: context.ui('SETTINGS'),
                 textColor: Colors.white,
                 onPressed: () => service.openSettings(
                   appSettings: e.issue == LocationIssue.permissionDeniedForever,
@@ -109,7 +110,7 @@ Future<void> openInMaps(BuildContext context, GeoFix g, String label) async {
     }
   }
   if (!ok && context.mounted) {
-    showSnack(context, 'No maps app available on this device', error: true);
+    showSnack(context, context.ui('No maps app available on this device'), error: true);
   }
 }
 
@@ -130,7 +131,7 @@ class ShopLocationCard extends StatelessWidget {
     context.read<AppController>().setShopLocation(shop, fix);
     showSnack(
       context,
-      'GPS captured: ${fix.coordinates} (±${fix.accuracyM.round()} m)',
+      context.uf('GPS captured: {0} (±{1} m)', [fix.coordinates, fix.accuracyM.round()]),
     );
   }
 
@@ -139,16 +140,16 @@ class ShopLocationCard extends StatelessWidget {
     final g = shop.geo;
     final warnings = context.read<AppController>().shopWarnings(shop);
     return SectionCard(
-      title: 'Shop location (GPS)',
+      title: context.ui('Shop location (GPS)'),
       icon: Icons.my_location,
       trailing: g == null
-          ? const TagChip(
-              'Required',
+          ? TagChip(
+              context.ui('Required'),
               color: AdinnColors.red,
               icon: Icons.error_outline,
             )
-          : const TagChip(
-              'Captured',
+          : TagChip(
+              context.ui('Captured'),
               color: AdinnColors.success,
               icon: Icons.check_circle,
             ),
@@ -158,9 +159,11 @@ class ShopLocationCard extends StatelessWidget {
           if (g == null)
             Text(
               editable
-                  ? 'Stand at the shop front and capture the GPS location. '
-                        'It is required before submission.'
-                  : 'GPS location not captured.',
+                  ? context.ui(
+                      'Stand at the shop front and capture the GPS location. '
+                      'It is required before submission.',
+                    )
+                  : context.ui('GPS location not captured.'),
               style: const TextStyle(color: AdinnColors.muted, fontSize: 13),
             )
           else
@@ -178,7 +181,7 @@ class ShopLocationCard extends StatelessWidget {
                     key: const Key('capture_gps'),
                     onPressed: () => _capture(context),
                     icon: const Icon(Icons.gps_fixed),
-                    label: Text(g == null ? 'Capture GPS' : 'Recapture'),
+                    label: Text(context.ui(g == null ? 'Capture GPS' : 'Recapture')),
                   ),
                 ),
               if (editable && g != null) const SizedBox(width: 8),
@@ -187,7 +190,7 @@ class ShopLocationCard extends StatelessWidget {
                   child: OutlinedButton.icon(
                     onPressed: () => openInMaps(context, g, shop.name),
                     icon: const Icon(Icons.map_outlined),
-                    label: const Text('Open in Maps'),
+                    label: Text(context.ui('Open in Maps')),
                   ),
                 ),
             ],

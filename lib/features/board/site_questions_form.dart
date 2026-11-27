@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
+import '../../l10n/l10n.dart';
 
 /// Renders the dynamic site questions for the selected media + installation.
 /// Questions with `showIf` rules appear/disappear as answers change.
@@ -65,7 +66,7 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
         Expanded(
           child: Text.rich(
             TextSpan(
-              text: q.label,
+              text: context.tq(q.label),
               children: [
                 if (q.required)
                   const TextSpan(
@@ -86,8 +87,7 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
               color: AdinnColors.success.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: const Text(
-              'Auto-filled',
+            child: Text(context.ui('Auto-filled'),
               style: TextStyle(fontSize: 10.5, color: AdinnColors.success),
             ),
           ),
@@ -114,7 +114,7 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
             for (final opt in const [true, false])
               ChoiceChip(
                 key: Key('q_${q.id}_$opt'),
-                label: Text(opt ? 'Yes' : 'No'),
+                label: Text(opt ? context.t.yes : context.t.no),
                 selected: value == opt,
                 onSelected: widget.enabled
                     ? (_) => widget.onChanged(q.id, opt)
@@ -130,7 +130,7 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
             for (final opt in q.options)
               ChoiceChip(
                 key: Key('q_${q.id}_$opt'),
-                label: Text(opt),
+                label: Text(context.tq(opt)),
                 selected: value == opt,
                 onSelected: widget.enabled
                     ? (_) => widget.onChanged(q.id, opt)
@@ -149,7 +149,7 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
           ],
           decoration: InputDecoration(
             isDense: true,
-            hintText: q.hint ?? 'Enter value',
+            hintText: q.hint ?? (context.isTamil ? 'மதிப்பை உள்ளிடவும்' : 'Enter value'),
             suffixText: q.unit,
           ),
           onChanged: (t) => widget.onChanged(q.id, double.tryParse(t)),
@@ -171,8 +171,7 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
         .where((q) => q.isVisible(widget.answers))
         .toList();
     if (visible.isEmpty) {
-      return const Text(
-        'Select media and installation type to load site questions.',
+      return Text(context.ui('Select media and installation type to load site questions.'),
         style: TextStyle(color: AdinnColors.muted),
       );
     }
@@ -187,7 +186,7 @@ class _SiteQuestionsFormState extends State<SiteQuestionsForm> {
             Padding(
               padding: EdgeInsets.only(top: i == 0 ? 0 : 6, bottom: 10),
               child: Text(
-                widget.sectionOf!(visible[i]),
+                context.tSection(widget.sectionOf!(visible[i])),
                 style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 13,

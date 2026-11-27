@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../../core/widgets/language_switcher.dart';
+import '../../l10n/l10n.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import 'project_detail_screen.dart';
@@ -22,26 +23,31 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   Widget build(BuildContext context) {
     final c = context.watch<AppController>();
     final q = _query.toLowerCase();
-    final projects = c.projects
-        .where(
-          (p) =>
-              q.isEmpty ||
-              p.name.toLowerCase().contains(q) ||
-              p.code.toLowerCase().contains(q) ||
-              p.region.toLowerCase().contains(q),
-        )
-        .toList();
+    final projects = c.projects.where((p) {
+      if (q.isEmpty) return true;
+      // Search keeps matching the original stored name/code/region and also
+      // accepts an approved Tamil display name/region. Record identity does
+      // not change.
+      return p.name.toLowerCase().contains(q) ||
+          context.projectName(p.id, p.name).toLowerCase().contains(q) ||
+          p.code.toLowerCase().contains(q) ||
+          p.region.toLowerCase().contains(q) ||
+          context.regionLabel(p.region).toLowerCase().contains(q);
+    }).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Projects')),
+      appBar: AppBar(
+        title: Text(context.t.projectsTitle),
+        actions: const [LanguageSwitcher(), SizedBox(width: 8)],
+      ),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: TextField(
-              decoration: const InputDecoration(
-                hintText: 'Search project, code or region',
-                prefixIcon: Icon(Icons.search),
+              decoration: InputDecoration(
+                hintText: context.t.searchProjects,
+                prefixIcon: const Icon(Icons.search),
                 isDense: true,
               ),
               onChanged: (v) => setState(() => _query = v),
@@ -49,10 +55,10 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           ),
           Expanded(
             child: projects.isEmpty
-                ? const EmptyState(
+                ? EmptyState(
                     icon: Icons.folder_off_outlined,
-                    title: 'No projects found',
-                    message: 'Projects assigned to you will appear here.',
+                    title: context.ui('No projects found'),
+                    message: context.ui('Projects assigned to you will appear here.'),
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -102,7 +108,7 @@ class ProjectCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      project.name.substring(0, 1),
+                      context.projectName(project.id, project.name).substring(0, 1),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 22,
@@ -116,14 +122,14 @@ class ProjectCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          project.name,
+                          context.projectName(project.id, project.name),
                           style: const TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                         Text(
-                          '${project.code} • ${project.region}',
+                          '${project.code} • ${context.regionLabel(project.region)}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AdinnColors.muted,
@@ -133,7 +139,7 @@ class ProjectCard extends StatelessWidget {
                     ),
                   ),
                   TagChip(
-                    sum.label,
+                    context.statusSingular(sum.label),
                     color: sum.rejected > 0
                         ? AdinnColors.red
                         : sum.approved == sum.total && sum.total > 0
@@ -144,7 +150,7 @@ class ProjectCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                project.description,
+                context.projectDescription(project.id, project.description),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 13),
@@ -152,7 +158,7 @@ class ProjectCard extends StatelessWidget {
               const SizedBox(height: 12),
               ProgressBarLabel(
                 value: sum.approvedRatio,
-                label: '${sum.approved}/${sum.total} shops approved',
+                label: context.shopsApproved(sum.approved, sum.total),
                 color: AdinnColors.success,
               ),
               const SizedBox(height: 10),
@@ -161,15 +167,15 @@ class ProjectCard extends StatelessWidget {
                 runSpacing: 6,
                 children: [
                   TagChip(
-                    '${tasks.length} task${tasks.length == 1 ? '' : 's'}',
+                    context.taskCount(tasks.length),
                     icon: Icons.assignment_outlined,
                   ),
                   TagChip(
-                    '${sum.total} shop${sum.total == 1 ? '' : 's'}',
+                    context.shopCount(sum.total),
                     icon: Icons.storefront,
                   ),
                   TagChip(
-                    'Ends ${fmtDate(project.endDate)}',
+                    context.endsOn(project.endDate),
                     icon: Icons.event,
                   ),
                 ],

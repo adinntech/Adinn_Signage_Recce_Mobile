@@ -23,9 +23,11 @@ List<List<String>> _rows(Object? v) => v is List
 
 pw.Widget _td(String text, {bool bold = false}) => pw.Padding(
   padding: const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-  child: pw.Text(
-    pdfSafe(text),
-    style: pw.TextStyle(
+  child: reportTxt(
+    text,
+    maxW: 160,
+    translate: bold,
+    pw.TextStyle(
       fontSize: 7,
       fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
       color: _ink,
@@ -67,9 +69,11 @@ pw.Page reportSheetPage({
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text(
-                    pdfSafe('MEASUREMENT SHEET - ${item['label']}'),
-                    style: pw.TextStyle(
+                  reportTxt(
+                    'MEASUREMENT SHEET - ${item['label']}',
+                    maxW: 600,
+                    translate: true,
+                    pw.TextStyle(
                       fontSize: 12,
                       fontWeight: pw.FontWeight.bold,
                       color: _red,
@@ -169,8 +173,7 @@ pw.Page reportSheetPage({
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text(
-                  'ADINN SIGNAGE',
+                pw.Text('ADINN SIGNAGE',
                   style: pw.TextStyle(
                     fontSize: 13,
                     fontWeight: pw.FontWeight.bold,
@@ -195,17 +198,17 @@ pw.Page reportSheetPage({
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Text(
-                          pdfSafe(k),
-                          style: const pw.TextStyle(
-                            fontSize: 6.5,
-                            color: _muted,
-                          ),
+                        reportTxt(
+                          k,
+                          const pw.TextStyle(fontSize: 6.5, color: _muted),
+                          maxW: 150,
+                          translate: true,
                         ),
-                        pw.Text(
-                          pdfSafe(v ?? '-'),
+                        reportTxt(
+                          v ?? '-',
+                          const pw.TextStyle(fontSize: 8, color: _ink),
+                          maxW: 150,
                           maxLines: 3,
-                          style: const pw.TextStyle(fontSize: 8, color: _ink),
                         ),
                       ],
                     ),
@@ -214,9 +217,11 @@ pw.Page reportSheetPage({
                 pw.Container(
                   padding: const pw.EdgeInsets.all(4),
                   color: draft ? _redLight : _greenLight,
-                  child: pw.Text(
-                    pdfSafe(bannerText),
-                    style: pw.TextStyle(
+                  child: reportTxt(
+                    bannerText,
+                    maxW: 140,
+                    translate: true,
+                    pw.TextStyle(
                       fontSize: 7.5,
                       fontWeight: pw.FontWeight.bold,
                       color: draft ? _red : _green,
@@ -224,10 +229,12 @@ pw.Page reportSheetPage({
                   ),
                 ),
                 pw.SizedBox(height: 4),
-                pw.Text(
+                reportTxt(
                   'Illustrative parametric model and schematic drawings from '
                   'recorded measurements - not fabrication-certified.',
-                  style: const pw.TextStyle(fontSize: 6, color: _muted),
+                  const pw.TextStyle(fontSize: 6, color: _muted),
+                  maxW: 150,
+                  translate: true,
                 ),
                 pw.SizedBox(height: 4),
                 pw.Text(
@@ -268,17 +275,20 @@ pw.Widget _sheetImage(
         child: img == null
             ? pw.Padding(
                 padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(
-                  pdfSafe(missing),
-                  textAlign: pw.TextAlign.center,
-                  style: const pw.TextStyle(fontSize: 8, color: _muted),
+                child: reportTxt(
+                  missing,
+                  const pw.TextStyle(fontSize: 8, color: _muted),
+                  maxW: 300,
+                  translate: true,
                 ),
               )
             : pw.Image(pw.MemoryImage(img.bytes), fit: pw.BoxFit.contain),
       ),
-      pw.Text(
-        pdfSafe(caption),
-        style: pw.TextStyle(
+      reportTxt(
+        caption,
+        maxW: 300,
+        translate: true,
+        pw.TextStyle(
           fontSize: 7,
           color: _muted,
           fontStyle: pw.FontStyle.italic,

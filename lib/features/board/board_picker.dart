@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -121,7 +122,7 @@ Future<List<String>?> showBoardPicker(
                     TextButton(
                       key: const Key('pick_cancel'),
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel'),
+                      child: Text(context.ui('Cancel')),
                     ),
                     const SizedBox(width: 8),
                     Expanded(

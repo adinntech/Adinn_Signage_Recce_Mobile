@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -137,7 +138,7 @@ class _ElectricalFormState extends State<ElectricalForm>
     _dirty = false;
     widget.onDirtyChanged?.call(false);
     setState(() {});
-    showSnack(context, 'Electrical survey saved');
+    showSnack(context, context.ui('Electrical survey saved'));
   }
 
   Widget _tri(String prefix, TriState? value, ValueChanged<TriState?> set) =>
@@ -147,7 +148,7 @@ class _ElectricalFormState extends State<ElectricalForm>
           for (final t in TriState.values)
             ChoiceChip(
               key: Key('${prefix}_${t.name}'),
-              label: Text(t.label),
+              label: Text(context.ui(t.label)),
               selected: value == t,
               onSelected: widget.editable
                   ? (sel) {
@@ -205,14 +206,12 @@ class _ElectricalFormState extends State<ElectricalForm>
           ),
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Electricity available',
+        Text(context.ui('Electricity available'),
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
         _tri('el_available', _available, (v) => _available = v),
         const SizedBox(height: 10),
-        const Text(
-          'Electrical point available',
+        Text(context.ui('Electrical point available'),
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
         _tri('el_point', _point, (v) => _point = v),
@@ -230,9 +229,9 @@ class _ElectricalFormState extends State<ElectricalForm>
                   decimal: true,
                 ),
                 decoration: InputDecoration(
-                  labelText: 'Approx. distance from board',
+                  labelText: context.ui('Approx. distance from board'),
                   isDense: true,
-                  suffixText: _distUnit.label,
+                  suffixText: context.ui(_distUnit.label),
                   errorText: _badDistance ? 'Enter a distance ≥ 0' : null,
                 ),
                 onChanged: (t) {
@@ -260,7 +259,7 @@ class _ElectricalFormState extends State<ElectricalForm>
                   : null,
               items: [
                 for (final m in MeasureUnit.values)
-                  DropdownMenuItem(value: m, child: Text(m.label)),
+                  DropdownMenuItem(value: m, child: Text(context.ui(m.label))),
               ],
             ),
           ],
@@ -294,7 +293,7 @@ class _ElectricalFormState extends State<ElectricalForm>
                     }
                   : null,
               icon: const Icon(Icons.photo_library_outlined, size: 18),
-              label: const Text('Evidence'),
+              label: Text(context.ui('Evidence')),
             ),
           ],
         ),
@@ -306,9 +305,8 @@ class _ElectricalFormState extends State<ElectricalForm>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (marks.isEmpty)
-                const Text(
-                  'No electrical point, switch or cable route marked for this '
-                  'item yet.',
+                Text(context.ui('No electrical point, switch or cable route marked for this '
+                  'item yet.'),
                   style: TextStyle(fontSize: 12.5, color: AdinnColors.muted),
                 ),
               for (final (p, code, text) in marks)
@@ -345,7 +343,7 @@ class _ElectricalFormState extends State<ElectricalForm>
             key: const Key('el_save'),
             onPressed: _dirty && !_badDistance ? _save : null,
             icon: const Icon(Icons.save_outlined),
-            label: const Text('Save electrical survey'),
+            label: Text(context.ui('Save electrical survey')),
           ),
         ],
       ],
@@ -369,10 +367,9 @@ class MarkOnPhotoButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (photos.isEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.only(top: 6),
-        child: Text(
-          'Capture a site photo to mark it.',
+        child: Text(context.ui('Capture a site photo to mark it.'),
           style: TextStyle(fontSize: 12, color: AdinnColors.muted),
         ),
       );
@@ -385,7 +382,7 @@ class MarkOnPhotoButtons extends StatelessWidget {
           ActionChip(
             key: Key('${prefix}_${p.id}'),
             avatar: const Icon(Icons.edit_location_alt_outlined, size: 16),
-            label: Text('Mark on ${p.label}'),
+            label: Text(context.uf('Mark on {0}', [p.label])),
             onPressed: () => onOpen(context, p),
           ),
       ],

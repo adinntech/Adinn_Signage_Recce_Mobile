@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -277,17 +278,16 @@ class _MeasurementFormState extends State<MeasurementForm>
               children: [
                 const Icon(Icons.restore, size: 18, color: AdinnColors.info),
                 const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Unsaved measurements from your last session were '
-                    'restored. Review and save.',
+                Expanded(
+                  child: Text(context.ui('Unsaved measurements from your last session were '
+                    'restored. Review and save.'),
                     style: TextStyle(fontSize: 12.5),
                   ),
                 ),
                 TextButton(
                   key: const Key('m_draft_discard'),
                   onPressed: _discardDraft,
-                  child: const Text('Discard'),
+                  child: Text(context.ui('Discard')),
                 ),
               ],
             ),
@@ -306,9 +306,8 @@ class _MeasurementFormState extends State<MeasurementForm>
                 'Height',
                 (h ?? 0) > 0 ? '${fmtNum(h!)} ${_b.unit.label}' : 'Not set',
               ),
-              const Text(
-                'Board width / height are edited in the media group\'s '
-                'Measurements step and are never changed here.',
+              Text(context.ui('Board width / height are edited in the media group\'s '
+                'Measurements step and are never changed here.'),
                 style: TextStyle(fontSize: 12, color: AdinnColors.muted),
               ),
             ],
@@ -317,9 +316,8 @@ class _MeasurementFormState extends State<MeasurementForm>
         const SizedBox(height: 12),
         Row(
           children: [
-            const Expanded(
-              child: Text(
-                'Enter values in',
+            Expanded(
+              child: Text(context.ui('Enter values in'),
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
@@ -333,17 +331,16 @@ class _MeasurementFormState extends State<MeasurementForm>
                   : null,
               items: [
                 for (final unit in MeasureUnit.values)
-                  DropdownMenuItem(value: unit, child: Text(unit.label)),
+                  DropdownMenuItem(value: unit, child: Text(context.ui(unit.label))),
               ],
             ),
           ],
         ),
         if (ctx.installationCode == null)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Select the installation type of this unit first – the '
-              'relevant measurement fields depend on it.',
+            child: Text(context.ui('Select the installation type of this unit first – the '
+              'relevant measurement fields depend on it.'),
               style: TextStyle(color: AdinnColors.warning),
             ),
           ),
@@ -355,7 +352,7 @@ class _MeasurementFormState extends State<MeasurementForm>
               key: const Key('m_use_answers'),
               onPressed: _useAnswers,
               icon: const Icon(Icons.input, size: 18),
-              label: const Text('Use site question values'),
+              label: Text(context.ui('Use site question values')),
             ),
           ),
         for (final g in groups.entries)
@@ -384,9 +381,8 @@ class _MeasurementFormState extends State<MeasurementForm>
                     color: AdinnColors.red,
                   ),
                 ),
-                subtitle: const Text(
-                  'Depth, thickness, letters, GSB panel… used by the 3D '
-                  'model and drawings',
+                subtitle: Text(context.ui('Depth, thickness, letters, GSB panel… used by the 3D '
+                  'model and drawings'),
                   style: TextStyle(fontSize: 11.5),
                 ),
                 children: [for (final f in g.value) _field(f)],
@@ -394,8 +390,7 @@ class _MeasurementFormState extends State<MeasurementForm>
             )
           else ...[
             const SizedBox(height: 8),
-            Text(
-              g.key.label,
+            Text(context.ui(g.key.label),
               style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: AdinnColors.red,
@@ -430,10 +425,9 @@ class _MeasurementFormState extends State<MeasurementForm>
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'Schematic, not to scale where values are missing. All values '
+              Text(context.ui('Schematic, not to scale where values are missing. All values '
                 'are user-entered; site photos are never used to estimate '
-                'real-world size.',
+                'real-world size.'),
                 style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
               ),
             ],
@@ -459,9 +453,8 @@ class _MeasurementFormState extends State<MeasurementForm>
                   ),
                 for (final i in issues) _issueRow(i),
                 const SizedBox(height: 4),
-                const Text(
-                  'Warnings flag values for review only; they are not '
-                  'structural approvals or construction limits.',
+                Text(context.ui('Warnings flag values for review only; they are not '
+                  'structural approvals or construction limits.'),
                   style: TextStyle(fontSize: 11, color: AdinnColors.muted),
                 ),
               ],
@@ -477,12 +470,11 @@ class _MeasurementFormState extends State<MeasurementForm>
             label: Text(hasErrors ? 'Fix errors to save' : 'Save measurements'),
           ),
           if (_dirty)
-            const Padding(
+            Padding(
               key: Key('m_draft_indicator'),
               padding: EdgeInsets.only(top: 6),
-              child: Text(
-                'Draft auto-saved on this device – tap Save to update the '
-                'recce.',
+              child: Text(context.ui('Draft auto-saved on this device – tap Save to update the '
+                'recce.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
               ),
@@ -514,7 +506,7 @@ class _MeasurementFormState extends State<MeasurementForm>
       return SwitchListTile(
         key: Key('m_${f.id}'),
         contentPadding: EdgeInsets.zero,
-        title: Text(f.label),
+        title: Text(context.ui(f.label)),
         value: _draft.flags[f.id] == true,
         onChanged: widget.editable
             ? (v) {
@@ -548,7 +540,7 @@ class _MeasurementFormState extends State<MeasurementForm>
             ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9.\-]'))]
             : null,
         decoration: InputDecoration(
-          labelText: f.label,
+          labelText: context.ui(f.label),
           hintText: f.hint,
           suffixText: f.kind == MeasureFieldKind.length
               ? _draft.unit.label

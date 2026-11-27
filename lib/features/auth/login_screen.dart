@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -143,8 +144,7 @@ class _LoginScreenState extends State<LoginScreen>
                         children: [
                           const AdinnLogo(size: 40),
                           const SizedBox(height: 8),
-                          const Text(
-                            'Signage Board Recce',
+                          Text(context.ui('Signage Board Recce'),
                             style: TextStyle(
                               fontSize: 15,
                               color: AdinnColors.muted,
@@ -152,8 +152,7 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                           ),
                           const SizedBox(height: 32),
-                          const Text(
-                            'Enter your 4-digit PIN',
+                          Text(context.ui('Enter your 4-digit PIN'),
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
@@ -213,7 +212,7 @@ class _LoginScreenState extends State<LoginScreen>
                                 builder: (_) => const ForgotPinScreen(),
                               ),
                             ),
-                            child: const Text('Forgot PIN?'),
+                            child: Text(context.ui('Forgot PIN?')),
                           ),
                           const SizedBox(height: 12),
                           _DemoPins(
@@ -317,9 +316,9 @@ class _Keypad extends StatelessWidget {
             key: const Key('pin_backspace'),
             onTap: enabled ? onBackspace : null,
             filled: false,
-            child: const Icon(
+            child: Icon(
               Icons.backspace_outlined,
-              semanticLabel: 'Delete',
+              semanticLabel: context.ui('Delete'),
             ),
           ),
         ]),
@@ -385,8 +384,7 @@ class _DemoPins extends StatelessWidget {
 
     return Column(
       children: [
-        const Text(
-          'DEMO PINS (tap to log in)',
+        Text(context.ui('DEMO PINS (tap to log in)'),
           style: TextStyle(
             fontSize: 11,
             letterSpacing: 0.8,

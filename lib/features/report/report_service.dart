@@ -15,6 +15,7 @@ import '../model3d/technical_drawing.dart';
 import 'model_image_renderer.dart';
 import 'report_data.dart';
 import 'report_pdf.dart';
+import 'tamil_summary.dart';
 
 /// Long side of pictures placed in the PDF (pixels).
 const kReportImageMaxSide = 1400;
@@ -280,6 +281,32 @@ class ReportService {
     return out;
   }
 
+  /// Tamil mode: the Site Details Summary of every group is shaped by
+  /// Flutter's text engine and embedded as an image (see [TamilSummary]).
+  /// A failure keeps the English summary (the report is never blocked).
+  Future<void> _tamilSummaries(
+    Map<String, dynamic> data,
+    Map<String, ReportImage> pictures,
+  ) async {
+    for (final g in (data['groups'] as List? ?? const [])) {
+      if (g is! Map<String, dynamic>) continue;
+      final rows = <List<String>>[
+        if ('${g['gst'] ?? ''}'.isNotEmpty) ['GST எண்', '${g['gst']}'],
+        for (final r in (g['siteAnswers'] as List? ?? const []))
+          if (r is List && r.length >= 2)
+            ['${r[0]}', '${r[1]}', if (r.length > 2) '${r[2]}'],
+      ];
+      if (rows.isEmpty) continue;
+      // No silent English fallback: a render failure fails the report.
+      final key = 'sum_${g['groupId']}';
+      pictures[key] = await TamilSummary.render(
+        title: 'தள விவரச் சுருக்கம்',
+        rows: rows,
+      );
+      g['summaryKey'] = key;
+    }
+  }
+
   /// Builds the PDF for [shopId], saves it locally and records it with
   /// [AppController.addReport]. The stored snapshot never changes later.
   Future<RecceReport> generate(
@@ -288,6 +315,7 @@ class ReportService {
     void Function(String message)? onProgress,
     Set<String>? groupIds,
     bool requireComplete = false,
+    bool tamil = false,
   }) async {
     final shop = c.shop(shopId);
     if (shop == null) throw StateError('Shop not found');
@@ -321,12 +349,33 @@ class ReportService {
       brand: project?.client ?? '',
     );
     final pictures = await _loadImages(build, labels, onProgress);
+    if (tamil) await _tamilSummaries(build.data, pictures);
     onProgress?.call('Building PDF…');
-    final input = ReportInput(
+    var input = ReportInput(
       data: build.data,
       images: pictures,
       compress: compress,
+      tamil: tamil,
     );
+    // Tamil report, OR user-entered Tamil / non-Latin text in an English
+    // report: both need the shaping pass (the built-in PDF fonts would drop
+    // those characters).
+    if (tamil || reportNeedsShaping(build.data)) {
+      // Pass 1 lists every Tamil text block; the main isolate shapes them
+      // (Flutter's text engine); pass 2 embeds them. Only these blocks are
+      // images - the page text itself stays real PDF text.
+      final ta = <String, ReportImage>{};
+      for (final r in await collectTamilRequests(input)) {
+        ta[r.key] = await TamilSummary.renderText(r);
+      }
+      input = ReportInput(
+        data: build.data,
+        images: pictures,
+        compress: compress,
+        tamil: tamil,
+        taImages: ta,
+      );
+    }
     final output = useIsolate
         ? await compute(buildReportPdf, input)
         : await buildReportPdf(input);

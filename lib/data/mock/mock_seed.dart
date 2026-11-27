@@ -177,9 +177,16 @@ AppData buildSeedData([DateTime? clock]) {
     geo: geo,
   );
 
-  Annotation mark(String id, double w, double h, {String label = 'Board 1'}) =>
-      Annotation(
+  Annotation mark(
+    String id,
+    double w,
+    double h, {
+    String label = 'Board 1',
+    required String board,
+  }) => Annotation(
         id: id,
+        // Signage marking of the board's first physical unit.
+        itemId: '${board}_u1',
         type: AnnotationType.rectangle,
         x: 600,
         y: 300,
@@ -224,7 +231,13 @@ AppData buildSeedData([DateTime? clock]) {
           'light_type': 'LED modules',
         },
         photos: [
-          demoPhoto('ph_s1_1', 1, 'Front view', mark: mark('a_s1_1', 10, 4)),
+          demoPhoto(
+            'ph_s1_1',
+            1,
+            'Front view',
+            mark: mark('a_s1_1', 10, 4, board: 'b_sriranga_1'),
+          ),
+          demoPhoto('ph_s1_2', 0, 'Left angle'),
         ],
         textNote: 'Shop owner prefers the board facing the main road.',
         updatedAt: ago(hours: 5),
@@ -287,9 +300,10 @@ AppData buildSeedData([DateTime? clock]) {
             'ph_s3_1',
             2,
             'Front view',
-            mark: mark('a_s3_1', 12, 3),
+            mark: mark('a_s3_1', 12, 3, board: 'b_amma_1'),
             geo: fix(10.86409, 78.69347),
           ),
+          demoPhoto('ph_s3_2', 0, 'Right angle'),
         ],
         updatedAt: ago(hours: 20),
       ),
@@ -345,8 +359,10 @@ AppData buildSeedData([DateTime? clock]) {
             'ph_s4_1',
             3,
             'Front view',
+            mark: mark('a_s4_1', 12, 4, board: 'b_royal_1'),
             geo: fix(10.82688, 78.68131, accuracy: 14),
           ),
+          demoPhoto('ph_s4_2', 0, 'Left angle'),
         ],
         updatedAt: ago(days: 2),
       ),
@@ -412,9 +428,16 @@ AppData buildSeedData([DateTime? clock]) {
             'ph_s5_1',
             4,
             'Long shot',
-            mark: mark('a_s5_1', 20, 8, label: 'Wall area'),
+            mark: mark(
+              'a_s5_1',
+              20,
+              8,
+              label: 'Wall area',
+              board: 'b_tc_1',
+            ),
             geo: fix(10.82547, 78.68590),
           ),
+          demoPhoto('ph_s5_2', 0, 'Front view'),
         ],
         updatedAt: ago(days: 2),
       ),
@@ -482,9 +505,10 @@ AppData buildSeedData([DateTime? clock]) {
             'ph_s6_1',
             5,
             'Long shot',
-            mark: mark('a_s6_1', 16, 6),
+            mark: mark('a_s6_1', 16, 6, board: 'b_mn_1'),
             geo: fix(9.93040, 78.14160, accuracy: 9),
           ),
+          demoPhoto('ph_s6_2', 0, 'Front view'),
         ],
         updatedAt: ago(days: 6),
       ),

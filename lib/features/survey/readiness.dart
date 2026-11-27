@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -5,6 +6,7 @@ import '../../data/catalog/measurement_fields.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/catalog/site_checklists.dart';
 import '../../data/models/models.dart';
+import '../../data/models/photo_requirement.dart';
 import 'feasibility.dart';
 
 /// Operational readiness of a signage item for review. Built only from
@@ -68,14 +70,20 @@ ReadinessResult unitReadiness(Shop shop, Board b, SignageUnit u) {
     missing.add('Installation not valid for ${media.shortName}');
   }
   if (!b.unitHasSize(u)) missing.add('Width / height not entered');
-  if (b.photosOf(u).isEmpty && b.photos.isEmpty) {
-    missing.add('No site photo');
+  final evidence = b.photoRequirement;
+  if (evidence.needsPhotos) missing.add(evidence.photoMessage);
+  if (evidence.missingUnitIds.contains(u.id)) {
+    missing.add('${b.unitLabel(u)} signage marking is missing');
   }
   // This physical board's own Site Questions (own installation + answers).
   final q = media == null || b.installationOf(u) == null
       ? 0
       : SignageCatalog.missingAnswersFor(b, u).length;
   if (q > 0) missing.add('$q site question(s) unanswered');
+  final mm = media == null || b.installationOf(u) == null
+      ? 0
+      : SignageCatalog.missingMeasurementsFor(b, u).length;
+  if (mm > 0) missing.add('$mm installation detail(s) missing');
   // Checklist-only questions (equivalents are counted as site questions).
   final cl = SiteChecklists.uniqueMissing(b, u);
   if (cl.isNotEmpty) {
@@ -151,7 +159,7 @@ class ReadinessChip extends StatelessWidget {
         const SizedBox(width: 4),
         Flexible(
           child: Text(
-            short ? level.shortLabel : level.label,
+            context.ui(short ? level.shortLabel : level.label),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

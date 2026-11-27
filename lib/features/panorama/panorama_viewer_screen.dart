@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -13,6 +14,7 @@ import '../../state/app_controller.dart';
 import 'panorama_io.dart';
 import 'panorama_painter.dart';
 import 'panorama_view_state.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// A signage item of the shop that can be placed in the panorama.
 class _UnitOption {
@@ -146,9 +148,9 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
     try {
       c.savePanoramaPlacements(widget.panoramaId, _placements);
       setState(() => _dirty = false);
-      showSnack(context, 'Placements saved');
+      showSnack(context, context.ui('Placements saved'));
     } on Object catch (e) {
-      showSnack(context, 'Could not save: $e', error: true);
+      showSnack(context, context.uf('Could not save: {0}', [e]), error: true);
     }
   }
 
@@ -183,10 +185,10 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
       final writer = widget.previewWriter ?? mediaPreviewWriter(c.media);
       final path = await writer(data.buffer.asUint8List());
       c.addPanoramaPreview(widget.panoramaId, path);
-      if (mounted) showSnack(context, 'Preview saved');
+      if (mounted) showSnack(context, context.ui('Preview saved'));
     } on Object catch (e) {
       if (mounted) {
-        showSnack(context, 'Could not save preview: $e', error: true);
+        showSnack(context, context.uf('Could not save preview: {0}', [e]), error: true);
       }
     } finally {
       if (mounted) setState(() => _savingPreview = false);
@@ -215,7 +217,7 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
     final view = _view;
     if (pano == null || shop == null || view == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('360° panorama')),
+        appBar: AdinnAppBar(title: Text(context.ui('360° panorama'))),
         body: const EmptyState(
           key: Key('pano_missing'),
           icon: Icons.panorama_photosphere_outlined,
@@ -236,13 +238,13 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
         if (!didPop) _confirmLeave();
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: AdinnAppBar(
           title: Text(pano.label),
           actions: [
             if (editable)
               IconButton(
                 key: const Key('pano_save_preview'),
-                tooltip: 'Save preview image',
+                tooltip: context.ui('Save preview image'),
                 onPressed: _savingPreview
                     ? null
                     : () => _savePreview(view, styles),
@@ -251,7 +253,7 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
             if (editable)
               IconButton(
                 key: const Key('pano_save'),
-                tooltip: 'Save placements',
+                tooltip: context.ui('Save placements'),
                 onPressed: _dirty ? _save : null,
                 icon: const Icon(Icons.save_outlined),
               ),
@@ -510,10 +512,9 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
                     ),
                     onPressed: () {
                       c.setPanoramaNorth(pano.id, view.yawDeg);
-                      showSnack(context, 'Current view set as North');
+                      showSnack(context, context.ui('Current view set as North'));
                     },
-                    child: const Text(
-                      'Set view as N',
+                    child: Text(context.ui('Set view as N'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -543,9 +544,8 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
             ],
           ),
           if (pano.northYawDeg == 0)
-            const Text(
-              'North not set: N/E/S/W are relative to the image centre until '
-              '"Set view as N" is used.',
+            Text(context.ui('North not set: N/E/S/W are relative to the image centre until '
+              '"Set view as N" is used.'),
               style: TextStyle(fontSize: 10, color: AdinnColors.muted),
             ),
         ],
@@ -564,8 +564,7 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (options.isEmpty)
-              const Text(
-                'Add a media group to this shop to place signage.',
+              Text(context.ui('Add a media group to this shop to place signage.'),
                 style: TextStyle(fontSize: 12, color: AdinnColors.muted),
               )
             else
@@ -594,14 +593,14 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
                     key: const Key('pano_place'),
                     onPressed: _unitId == null ? null : () => _place(view),
                     icon: const Icon(Icons.add_box_outlined, size: 18),
-                    label: const Text('Place'),
+                    label: Text(context.ui('Place')),
                   ),
                 ],
               ),
             if (sel != null) ...[
               Row(
                 children: [
-                  const SizedBox(width: 56, child: Text('Size')),
+                  SizedBox(width: 56, child: Text(context.ui('Size'))),
                   Expanded(
                     child: Slider(
                       key: const Key('pano_scale'),
@@ -618,7 +617,7 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
               ),
               Row(
                 children: [
-                  const SizedBox(width: 56, child: Text('Rotate')),
+                  SizedBox(width: 56, child: Text(context.ui('Rotate'))),
                   Expanded(
                     child: Slider(
                       key: const Key('pano_rotate'),
@@ -633,7 +632,7 @@ class _PanoramaViewerScreenState extends State<PanoramaViewerScreen> {
                   ),
                   IconButton(
                     key: const Key('pano_delete'),
-                    tooltip: 'Remove placement',
+                    tooltip: context.ui('Remove placement'),
                     onPressed: () => _changed(() {
                       _placements.removeWhere((p) => p.id == sel.id);
                       _selectedId = null;

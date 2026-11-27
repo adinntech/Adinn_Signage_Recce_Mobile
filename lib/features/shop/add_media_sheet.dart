@@ -4,11 +4,21 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
+import '../../l10n/l10n.dart';
+import '../notes/other_spec_dialog.dart';
 import '../../state/app_controller.dart';
 
 /// Confirmed result of the Add Media Type sheet.
 class AddMediaResult {
-  const AddMediaResult(this.plans, {this.selectInEditor = false});
+  const AddMediaResult(
+    this.plans, {
+    this.selectInEditor = false,
+    this.other,
+  });
+
+  /// A confirmed custom ("+ Other") media description: creates ONE custom
+  /// media group.
+  final CustomSpec? other;
 
   /// One group (one physical board) per selected media subtype.
   final List<MediaGroupPlan> plans;
@@ -70,6 +80,7 @@ Future<List<Board>> runAddMedia(
   );
   if (result == null) return const [];
   try {
+    if (result.other != null) return [c.addOtherMedia(shopId, result.other!)];
     if (result.selectInEditor) return [c.addBoard(shopId)];
     return c.addMediaGroups(shopId, result.plans);
   } on Object catch (e) {
@@ -119,15 +130,13 @@ class _AddMediaSheetState extends State<AddMediaSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Select the media type',
+                  Text(context.ui('Select the media type'),
                     key: Key('sheet_title'),
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Choose one or more. Each becomes a board; add more '
-                    'boards of the same type later with Number of Boards.',
+                  Text(context.ui('Choose one or more. Each becomes a board; add more '
+                    'boards of the same type later with Number of Boards.'),
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.35,
@@ -148,6 +157,50 @@ class _AddMediaSheetState extends State<AddMediaSheet> {
                         }),
                       ),
                     ),
+                  // "+ Other": a custom media described by text or voice.
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        key: const Key('opt_OTHER'),
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () async {
+                          final spec = await showOtherSpecDialog(
+                            context,
+                            title: context.t.otherMediaTitle,
+                            hint: context.t.otherMediaHint,
+                          );
+                          if (spec != null && mounted) {
+                            _finish(AddMediaResult(const [], other: spec));
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AdinnColors.line),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.add_circle_outline),
+                              const SizedBox(width: 12),
+                              Text(
+                                context.t.otherMedia,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -163,7 +216,7 @@ class _AddMediaSheetState extends State<AddMediaSheet> {
                         const AddMediaResult([], selectInEditor: true),
                       )
                     : null,
-                child: const Text('Select in editor'),
+                child: Text(context.ui('Select in editor')),
               ),
             ),
           Row(
@@ -171,7 +224,7 @@ class _AddMediaSheetState extends State<AddMediaSheet> {
               TextButton(
                 key: const Key('sheet_cancel'),
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
+                child: Text(context.ui('Cancel')),
               ),
               const Spacer(),
               FilledButton(
@@ -189,7 +242,7 @@ class _AddMediaSheetState extends State<AddMediaSheet> {
                             ),
                         ]),
                       ),
-                child: const Text('Continue'),
+                child: Text(context.ui('Continue')),
               ),
             ],
           ),
@@ -240,7 +293,9 @@ class _OptionRow extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    added ? '${option.label} · already added' : option.label,
+                    added
+                        ? '${context.mediaLabel(option.label)} · ${context.ui('already added')}'
+                        : context.mediaLabel(option.label),
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),

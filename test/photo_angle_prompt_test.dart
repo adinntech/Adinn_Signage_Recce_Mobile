@@ -19,7 +19,22 @@ void main() {
     final c = AppController(store: MemoryLocalStore());
     await c.init();
     c.loginWithPin('5678');
-    final b = c.addBoard('s_lakshmi')..mediaCode = media;
+    final created = c.addBoard('s_lakshmi')..mediaCode = media;
+    c.touchBoard('s_lakshmi', created);
+    c.addPhoto(
+      's_lakshmi',
+      created.id,
+      SitePhoto(
+        id: 'angle_$media',
+        path: 'demo://angle_test',
+        label: 'Front view',
+        capturedAt: DateTime(2026, 11, 24),
+        width: 100,
+        height: 80,
+        unitIds: [for (final u in created.activeUnits) u.id],
+      ),
+    );
+    final b = c.shop('s_lakshmi')!.boards.firstWhere((x) => x.id == created.id);
     await tester.pumpWidget(
       ChangeNotifierProvider<AppController>.value(
         value: c,
@@ -55,8 +70,13 @@ void main() {
       tester,
     ) async {
       final (_, b) = await boot(tester, media);
-      final before = b.photos.length;
-      await tester.tap(find.text('Add sample photo (demo / no camera)'));
+      // The vendor-facing demo button is gone. Tests inject a controlled
+      // fixture photo and open the existing angle-picker through its menu.
+      await tester.longPress(find.byKey(Key('photo_tile_angle_$media')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Change angle label'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change angle label'));
       await tester.pumpAndSettle();
       expect(find.text('Which angle is this photo?'), findsOneWidget);
       for (final l in [
@@ -68,19 +88,25 @@ void main() {
         'Long shot',
         'Surroundings',
       ]) {
-        expect(find.text(l), findsOneWidget, reason: l);
+        expect(find.text(l), findsWidgets, reason: l);
       }
       await tester.tap(find.text('Back view'));
       await tester.pumpAndSettle();
-      expect(b.photos.length, before + 1);
-      expect(b.photos.last.label, 'Back view');
+      expect(b.photos.length, 1);
+      expect(b.photos.first.label, 'Back view');
     });
   }
 
   test('initial orientation follows the photo angle', () {
     expect(viewForAngleLabel('Front view')!.baseYaw, 0);
-    expect(viewForAngleLabel('Left angle')!.baseYaw, closeTo(-math.pi / 2, 1e-9));
-    expect(viewForAngleLabel('Right angle')!.baseYaw, closeTo(math.pi / 2, 1e-9));
+    expect(
+      viewForAngleLabel('Left angle')!.baseYaw,
+      closeTo(-math.pi / 2, 1e-9),
+    );
+    expect(
+      viewForAngleLabel('Right angle')!.baseYaw,
+      closeTo(math.pi / 2, 1e-9),
+    );
     expect(viewForAngleLabel('Back view')!.baseYaw, closeTo(math.pi, 1e-9));
     // Other categories / historical labels stay neutral.
     for (final l in ['Close-up', 'Long shot', 'Surroundings', 'Site photo 1']) {

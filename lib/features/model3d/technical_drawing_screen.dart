@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +8,7 @@ import '../../data/catalog/measurement_fields.dart';
 import '../../state/app_controller.dart';
 import 'signage_spec.dart';
 import 'technical_drawing.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// 2D technical views (front, side, top, installation schematic) of one
 /// signage item, generated from the same canonical spec as the 3D model,
@@ -38,18 +40,18 @@ class _TechnicalDrawingScreenState extends State<TechnicalDrawingScreen> {
     final u = b?.unitById(widget.unitId);
     if (b == null || u == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: AdinnAppBar(),
         body: const EmptyState(icon: Icons.search_off, title: 'Item not found'),
       );
     }
     final spec = SignageModelSpec.of(b, u);
     final dims = drawingDimensions(spec, _view);
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('2D Technical Drawing'),
+            Text(context.ui('2D Technical Drawing')),
             Text(
               '${b.name} · ${b.unitLabel(u)} · ${spec.media?.shortName ?? ''}',
               maxLines: 1,
@@ -136,10 +138,9 @@ class _TechnicalDrawingScreenState extends State<TechnicalDrawingScreen> {
                     ],
                   ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Illustrative schematic generated from the recce '
+                Text(context.ui('Illustrative schematic generated from the recce '
                   'measurements – not a fabrication-certified structural '
-                  'drawing.',
+                  'drawing.'),
                   style: TextStyle(fontSize: 11, color: AdinnColors.muted),
                 ),
               ],

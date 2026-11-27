@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -45,15 +46,13 @@ class _GsbTypeSheetState extends State<GsbTypeSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Select GSB Board Type',
+            Text(context.ui('Select GSB Board Type'),
               key: Key('gsb_type_title'),
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Choose how many advertising faces this glow sign board has. '
-              'Quantity still counts physical boards.',
+            Text(context.ui('Choose how many advertising faces this glow sign board has. '
+              'Quantity still counts physical boards.'),
               style: TextStyle(fontSize: 12.5, color: AdinnColors.muted),
             ),
             const SizedBox(height: 14),
@@ -79,7 +78,7 @@ class _GsbTypeSheetState extends State<GsbTypeSheet> {
                   child: OutlinedButton(
                     key: const Key('gsb_type_cancel'),
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(context.ui('Cancel')),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -89,7 +88,7 @@ class _GsbTypeSheetState extends State<GsbTypeSheet> {
                     onPressed: _selected == null
                         ? null
                         : () => Navigator.of(context).pop(_selected),
-                    child: const Text('Continue'),
+                    child: Text(context.ui('Continue')),
                   ),
                 ),
               ],

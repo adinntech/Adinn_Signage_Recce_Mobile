@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -16,6 +17,7 @@ import '../preview_live/preview_gallery.dart';
 import '../survey/feasibility.dart';
 import '../survey/readiness.dart';
 import '../survey/unit_survey_screen.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Individual signage units of a media group: placement, installation
 /// (override + measurements), notes, linked photos and previews per unit.
@@ -96,7 +98,7 @@ class _UnitsScreenState extends State<UnitsScreen> {
     final b = c.board(widget.shopId, widget.boardId);
     if (shop == null || b == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: AdinnAppBar(),
         body: const EmptyState(icon: Icons.search_off, title: 'Not found'),
       );
     }
@@ -104,7 +106,7 @@ class _UnitsScreenState extends State<UnitsScreen> {
     final media = SignageCatalog.media(b.mediaCode);
     final issues = c.openIssues(shop).where((i) => i.groupId == b.id).toList();
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         title: Text(
           '${media?.shortName ?? b.name} – ${b.quantity} unit${b.quantity == 1 ? '' : 's'}',
         ),
@@ -163,9 +165,8 @@ class _UnitsScreenState extends State<UnitsScreen> {
         children: [
           Row(
             children: [
-              const Expanded(
-                child: Text(
-                  'Site survey',
+              Expanded(
+                child: Text(context.ui('Site survey'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
@@ -173,7 +174,7 @@ class _UnitsScreenState extends State<UnitsScreen> {
                 key: Key('unit_survey_$i'),
                 onPressed: () => _openSurvey(b, u),
                 icon: const Icon(Icons.fact_check_outlined, size: 18),
-                label: const Text('Open'),
+                label: Text(context.ui('Open')),
               ),
             ],
           ),
@@ -282,9 +283,9 @@ class _UnitsScreenState extends State<UnitsScreen> {
             key: Key('unit_place_$i'),
             controller: ctl[0],
             enabled: editable,
-            decoration: const InputDecoration(
-              labelText: 'Placement location',
-              hintText: 'e.g. Above entrance / footpath left of gate',
+            decoration: InputDecoration(
+              labelText: context.ui('Placement location'),
+              hintText: context.ui('e.g. Above entrance / footpath left of gate'),
               prefixIcon: Icon(Icons.place_outlined),
             ),
             onChanged: (t) {
@@ -297,8 +298,8 @@ class _UnitsScreenState extends State<UnitsScreen> {
             key: Key('unit_inst_$i'),
             initialValue: u.installationCode,
             isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Installation type',
+            decoration: InputDecoration(
+              labelText: context.ui('Installation type'),
               prefixIcon: Icon(Icons.construction_outlined),
             ),
             items: [
@@ -335,9 +336,9 @@ class _UnitsScreenState extends State<UnitsScreen> {
             enabled: editable,
             maxLines: 2,
             minLines: 1,
-            decoration: const InputDecoration(
-              labelText: 'Installation measurements / details',
-              hintText: 'Mount height, pole gap, fixing method…',
+            decoration: InputDecoration(
+              labelText: context.ui('Installation measurements / details'),
+              hintText: context.ui('Mount height, pole gap, fixing method…'),
               prefixIcon: Icon(Icons.square_foot),
             ),
             onChanged: (t) {
@@ -352,8 +353,8 @@ class _UnitsScreenState extends State<UnitsScreen> {
             enabled: editable,
             maxLines: 3,
             minLines: 1,
-            decoration: const InputDecoration(
-              labelText: 'Notes',
+            decoration: InputDecoration(
+              labelText: context.ui('Notes'),
               prefixIcon: Icon(Icons.notes),
             ),
             onChanged: (t) {
@@ -397,8 +398,7 @@ class _UnitsScreenState extends State<UnitsScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          const Text(
-            'Live previews & annotated exports',
+          Text(context.ui('Live previews & annotated exports'),
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
@@ -413,9 +413,8 @@ class _UnitsScreenState extends State<UnitsScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              const Expanded(
-                child: Text(
-                  'AR Previews',
+              Expanded(
+                child: Text(context.ui('AR Previews'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
@@ -457,8 +456,7 @@ class _UnitsScreenState extends State<UnitsScreen> {
                 key: Key('unit_remove_$i'),
                 onPressed: () => _remove(b, u),
                 icon: const Icon(Icons.delete_outline, color: AdinnColors.red),
-                label: const Text(
-                  'Remove unit',
+                label: Text(context.ui('Remove unit'),
                   style: TextStyle(color: AdinnColors.red),
                 ),
               ),

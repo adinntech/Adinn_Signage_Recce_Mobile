@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,8 +9,6 @@ import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
-import '../survey/markup_entry.dart';
-import 'units_screen.dart';
 
 // Anchored so a second decimal point cannot slip through the formatter.
 final _numFmt = [
@@ -141,31 +140,31 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
     final v = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Number of Boards'),
+        title: Text(context.ui('Number of Boards')),
         content: TextField(
           key: const Key('qty_input'),
           controller: ctl,
           autofocus: true,
           keyboardType: TextInputType.number,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          decoration: const InputDecoration(labelText: 'Quantity'),
+          decoration: InputDecoration(labelText: context.ui('Quantity')),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(context.ui('Cancel')),
           ),
           FilledButton(
             key: const Key('qty_ok'),
             onPressed: () => Navigator.pop(ctx, int.tryParse(ctl.text)),
-            child: const Text('OK'),
+            child: Text(context.ui('OK')),
           ),
         ],
       ),
     ).whenComplete(ctl.dispose);
     if (v == null || !mounted) return;
     if (v < 1) {
-      showSnack(context, 'Quantity must be at least 1', error: true);
+      showSnack(context, context.ui('Quantity must be at least 1'), error: true);
       return;
     }
     await _setQuantity(v);
@@ -192,7 +191,7 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
           var pick = units.first.id;
           return StatefulBuilder(
             builder: (ctx, setDlg) => AlertDialog(
-              title: const Text('Apply which size to all units?'),
+              title: Text(context.ui('Apply which size to all units?')),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -216,12 +215,12 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
+                  child: Text(context.ui('Cancel')),
                 ),
                 FilledButton(
                   key: const Key('size_from_ok'),
                   onPressed: () => Navigator.pop(ctx, pick),
-                  child: const Text('Apply to all'),
+                  child: Text(context.ui('Apply to all')),
                 ),
               ],
             ),
@@ -252,7 +251,7 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
       inputFormatters: _numFmt,
       decoration: InputDecoration(
         labelText: label,
-        suffixText: b.unit.label,
+        suffixText: context.ui(b.unit.label),
         errorText: _sizeError(controller.text),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
@@ -321,16 +320,15 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Expanded(
-              child: Text(
-                'Number of Boards',
+            Expanded(
+              child: Text(context.ui('Number of Boards'),
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               ),
             ),
             const SizedBox(width: 8),
             IconButton(
               key: const Key('qty_minus'),
-              tooltip: 'Decrease',
+              tooltip: context.ui('Decrease'),
               style: IconButton.styleFrom(
                 shape: circle,
                 side: circle.side,
@@ -363,7 +361,7 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
             const SizedBox(width: 4),
             IconButton(
               key: const Key('qty_plus'),
-              tooltip: 'Increase',
+              tooltip: context.ui('Increase'),
               style: IconButton.styleFrom(
                 shape: circle,
                 side: circle.side,
@@ -379,30 +377,28 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
           ],
         ),
         if (b.mediaCode == SignageCatalog.doubleStandee)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 6),
-            child: Text(
-              'Quantity = physical double-sided standees (each has 2 faces).',
+            child: Text(context.ui('Quantity = physical double-sided standees (each has 2 faces).'),
               style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
             ),
           ),
         const SizedBox(height: 16),
-        const Text(
-          'Board Size',
+        Text(context.ui('Board Size'),
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         ),
         if (multi) ...[
           const SizedBox(height: 10),
           SegmentedButton<SizeMode>(
             key: const Key('size_mode_selector'),
-            segments: const [
+            segments: [
               ButtonSegment<SizeMode>(
                 value: SizeMode.same,
-                label: Text('Same Size', key: Key('size_same')),
+                label: Text(context.ui('Same Size'), key: Key('size_same')),
               ),
               ButtonSegment<SizeMode>(
                 value: SizeMode.different,
-                label: Text('Different Sizes', key: Key('size_diff')),
+                label: Text(context.ui('Different Sizes'), key: Key('size_diff')),
               ),
             ],
             selected: {b.sizeMode},
@@ -540,9 +536,8 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    const Expanded(
-                      child: Text(
-                        'Total Area',
+                    Expanded(
+                      child: Text(context.ui('Total Area'),
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
@@ -563,41 +558,6 @@ class _QuantitySizeSectionState extends State<QuantitySizeSection> {
             ),
           ),
         ],
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          key: const Key('open_units'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AdinnColors.red,
-            side: const BorderSide(color: AdinnColors.red),
-            minimumSize: const Size(0, 48),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            textStyle: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 13.5,
-            ),
-          ),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => UnitsScreen(
-                shopId: widget.shopId,
-                boardId: b.id,
-                onOpenPhotoMarkup: (ctx, p) =>
-                    openPhotoMarkup(ctx, widget.shopId, p),
-              ),
-            ),
-          ),
-          icon: const Icon(Icons.view_list_outlined, size: 18),
-          label: Text(
-            multi
-                ? 'Unit details (${b.quantity}) — placement, installation, notes'
-                : 'Unit details — placement, installation, notes',
-            maxLines: 2,
-          ),
-        ),
       ],
     );
   }

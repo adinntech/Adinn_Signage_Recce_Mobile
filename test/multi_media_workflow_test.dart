@@ -173,7 +173,9 @@ void main() {
       ]).single;
       expect(b.isNlbBoxFrame, isTrue);
       expect(b.doubleSided, isTrue);
-      expect(b.name, 'NLB Box 01');
+      // Visible name is now NLB Double Side; the stored subtype is unchanged.
+      expect(b.name, 'NLB Double 01');
+      expect(b.nlbSubtype, 'NLB_BOX_FRAME');
     });
 
     test('invalid plan creates nothing', () async {
@@ -472,7 +474,7 @@ void main() {
       ]);
       g[0]
         ..installationCode = 'double_pole'
-        ..answers['owner_permission'] = true;
+        ..answers['existing_board'] = true;
       g[1].installationCode = 'wall_mount';
       final r = SignageCatalog.autoFillSource(g[1], c.shop(_shop)!.boards);
       expect(r.source?.id, g[0].id);
@@ -488,10 +490,10 @@ void main() {
       ]);
       g[0]
         ..installationCode = 'double_pole'
-        ..answers['owner_permission'] = true;
+        ..answers['existing_board'] = true;
       g[1]
         ..installationCode = 'glass_pasting'
-        ..answers['owner_permission'] = false;
+        ..answers['existing_board'] = false;
       g[2].installationCode = 'wall_mount';
       final r = SignageCatalog.autoFillSource(g[2], c.shop(_shop)!.boards);
       expect(r.source, isNull);
@@ -506,10 +508,10 @@ void main() {
       ]);
       g[0]
         ..installationCode = 'double_pole'
-        ..answers['owner_permission'] = true;
+        ..answers['existing_board'] = true;
       g[1]
         ..installationCode = 'wall_mount'
-        ..answers['owner_permission'] = false;
+        ..answers['existing_board'] = false;
       final r = SignageCatalog.autoFillSource(g[1], c.shop(_shop)!.boards);
       expect(r.source, isNull);
     });

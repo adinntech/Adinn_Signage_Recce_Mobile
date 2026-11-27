@@ -1,9 +1,10 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../../core/widgets/language_switcher.dart';
 import '../../state/app_controller.dart';
 import 'task_detail_screen.dart';
 
@@ -19,9 +20,9 @@ class ProjectDetailScreen extends StatelessWidget {
     if (project == null) {
       return Scaffold(
         appBar: AppBar(),
-        body: const EmptyState(
+        body: EmptyState(
           icon: Icons.folder_off_outlined,
-          title: 'Project not found',
+          title: context.ui('Project not found'),
         ),
       );
     }
@@ -29,63 +30,87 @@ class ProjectDetailScreen extends StatelessWidget {
     final sum = c.projectSummary(projectId);
 
     return Scaffold(
-      appBar: AppBar(title: Text(project.name)),
+      appBar: AppBar(
+        title: Text(context.projectName(project.id, project.name)),
+        actions: const [LanguageSwitcher(), SizedBox(width: 8)],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           SectionCard(
-            title: 'Project details',
+            title: context.ui('Project details'),
             icon: Icons.info_outline,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(project.description),
-                const SizedBox(height: 10),
-                InfoRow('Client', project.client),
-                InfoRow('Project code', project.code),
-                InfoRow('Region', project.region),
-                InfoRow(
-                  'Duration',
-                  '${fmtDate(project.startDate)} – ${fmtDate(project.endDate)}',
+                Text(
+                  context.projectDescription(project.id, project.description),
                 ),
-                InfoRow('Coordinator', project.coordinatorName),
+                const SizedBox(height: 10),
+                InfoRow(context.ui('Client'), project.client),
+                InfoRow(context.ui('Project code'), project.code),
+                InfoRow(
+                  context.ui('Region'),
+                  context.regionLabel(project.region),
+                ),
+                InfoRow(
+                  context.ui('Duration'),
+                  context.dateRange(project.startDate, project.endDate),
+                ),
+                InfoRow(context.ui('Coordinator'), project.coordinatorName),
                 const SizedBox(height: 6),
                 OutlinedButton.icon(
                   onPressed: () =>
                       dialNumber(context, project.coordinatorPhone),
                   icon: const Icon(Icons.call_outlined),
-                  label: Text('Call coordinator (${project.coordinatorPhone})'),
+                  label: Text(
+                    context.uf('Call coordinator ({0})', [
+                      project.coordinatorPhone,
+                    ]),
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
           SectionCard(
-            title: 'Shop status',
+            title: context.ui('Shop status'),
             icon: Icons.pie_chart_outline,
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                _Count('Total', sum.total, AdinnColors.ink),
-                _Count('Not started', sum.notStarted, AdinnColors.muted),
-                _Count('In progress', sum.inProgress, AdinnColors.info),
-                _Count('Pending', sum.pending, AdinnColors.warning),
-                _Count('Approved', sum.approved, AdinnColors.success),
-                _Count('Rejected', sum.rejected, AdinnColors.red),
+                _Count(context.ui('Total'), sum.total, AdinnColors.ink),
+                _Count(
+                  context.ui('Not started'),
+                  sum.notStarted,
+                  AdinnColors.muted,
+                ),
+                _Count(
+                  context.ui('In progress'),
+                  sum.inProgress,
+                  AdinnColors.info,
+                ),
+                _Count(context.ui('Pending'), sum.pending, AdinnColors.warning),
+                _Count(
+                  context.ui('Approved'),
+                  sum.approved,
+                  AdinnColors.success,
+                ),
+                _Count(context.ui('Rejected'), sum.rejected, AdinnColors.red),
               ],
             ),
           ),
           const SizedBox(height: 18),
-          const Text(
-            'Recce tasks',
+          Text(
+            context.ui('Recce tasks'),
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           if (tasks.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.assignment_outlined,
-              title: 'No tasks assigned',
+              title: context.ui('No tasks assigned'),
             ),
           for (final t in tasks) ...[
             Builder(
@@ -113,7 +138,7 @@ class ProjectDetailScreen extends StatelessWidget {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  t.title,
+                                  context.taskTitle(t),
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w700,
                                     fontSize: 15,
@@ -125,7 +150,7 @@ class ProjectDetailScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            '${t.location}, ${t.city} • Due ${fmtDate(t.dueDate)}',
+                            '${t.location}, ${t.city} • ${context.dueOn(t.dueDate)}',
                             style: const TextStyle(
                               color: AdinnColors.muted,
                               fontSize: 12,
@@ -134,7 +159,7 @@ class ProjectDetailScreen extends StatelessWidget {
                           const SizedBox(height: 10),
                           ProgressBarLabel(
                             value: ts.submittedRatio,
-                            label: '${ts.total} shops • ${ts.label}',
+                            label: context.shopsWithStatus(ts.total, ts.label),
                           ),
                         ],
                       ),
@@ -161,7 +186,7 @@ class _Count extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 96,
+      width: context.isTamil ? 108 : 96,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.07),
@@ -179,6 +204,8 @@ class _Count extends StatelessWidget {
           ),
           Text(
             label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
             style: const TextStyle(fontSize: 11, color: AdinnColors.muted),
           ),
         ],

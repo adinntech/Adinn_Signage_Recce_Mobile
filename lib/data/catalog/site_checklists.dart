@@ -1,6 +1,7 @@
 import '../models/models.dart';
 import 'question_equivalence.dart';
 import 'signage_catalog.dart';
+import 'vendor_question_policy.dart';
 
 /// How a checklist question is answered.
 enum ChecklistResponseType {
@@ -557,6 +558,13 @@ class SiteChecklists {
         _remarks,
       ],
     ),
+    // Custom ("+ Other") media: only the optional remarks (and evidence).
+    ChecklistDefinition(
+      id: 'custom_media',
+      title: 'Custom media checklist',
+      mediaCodes: {SignageCatalog.otherMedia},
+      questions: [_evidence, _remarks],
+    ),
   ];
 
   /// Definition for [mediaCode] (null when the media type has none).
@@ -572,9 +580,13 @@ class SiteChecklists {
     String? mediaCode,
     String? installationCode,
   ) =>
-      definitionFor(
-        mediaCode,
-      )?.questions.where((q) => q.appliesTo(installationCode)).toList() ??
+      definitionFor(mediaCode)?.questions
+          .where(
+            (q) =>
+                q.appliesTo(installationCode) &&
+                VendorQuestionPolicy.checklistActive(mediaCode, q.id),
+          )
+          .toList() ??
       const [];
 
   static ChecklistQuestion? question(String? mediaCode, String id) {

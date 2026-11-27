@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/common_widgets.dart';
@@ -7,7 +8,14 @@ import '../shop/shop_tile.dart';
 
 /// Shops visible to the user matching [query] (name, owner, area, city,
 /// pincode, project or task).
-List<Shop> searchShops(AppController c, String query) {
+List<Shop> searchShops(
+  AppController c,
+  String query, {
+  String Function(String id, String name)? projectDisplayName,
+  String Function(Shop shop)? shopDisplayName,
+  String Function(RecceTask task)? taskDisplayName,
+  String Function(Shop shop)? shopAddressDisplay,
+}) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return const [];
   return c.visibleShops.where((s) {
@@ -15,14 +23,21 @@ List<Shop> searchShops(AppController c, String query) {
     final task = c.task(s.taskId);
     return [
       s.name,
+      shopDisplayName?.call(s) ?? s.name,
       s.ownerName,
       s.area,
       s.city,
+      s.fullAddress,
+      shopAddressDisplay?.call(s) ?? '',
       s.pincode,
       s.landmark,
-      project?.name ?? '',
+      project == null
+          ? ''
+          : (projectDisplayName?.call(project.id, project.name) ??
+                project.name),
       project?.code ?? '',
       task?.title ?? '',
+      task == null ? '' : (taskDisplayName?.call(task) ?? task.title),
     ].any((f) => f.toLowerCase().contains(q));
   }).toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 }
@@ -38,7 +53,7 @@ class ShopSearchDelegate extends SearchDelegate<void> {
   List<Widget> buildActions(BuildContext context) => [
     if (query.isNotEmpty)
       IconButton(
-        tooltip: 'Clear',
+        tooltip: context.ui('Clear'),
         icon: const Icon(Icons.clear),
         onPressed: () => query = '',
       ),
@@ -46,24 +61,31 @@ class ShopSearchDelegate extends SearchDelegate<void> {
 
   @override
   Widget buildLeading(BuildContext context) => IconButton(
-    tooltip: 'Back',
+    tooltip: context.ui('Back'),
     icon: const Icon(Icons.arrow_back),
     onPressed: () => close(context, null),
   );
 
   Widget _list(BuildContext context) {
     if (query.trim().isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.search,
-        title: 'Search shops',
-        message: 'Type a shop name, owner, area, city or project.',
+        title: context.ui('Search shops'),
+        message: context.ui('Type a shop name, owner, area, city or project.'),
       );
     }
-    final shops = searchShops(controller, query);
+    final shops = searchShops(
+      controller,
+      query,
+      projectDisplayName: context.projectName,
+      shopDisplayName: context.shopName,
+      taskDisplayName: context.taskTitle,
+      shopAddressDisplay: context.shopFullAddress,
+    );
     if (shops.isEmpty) {
       return EmptyState(
         icon: Icons.search_off,
-        title: 'No shops match "$query"',
+        title: context.uf('No shops match "{0}"', [query]),
       );
     }
     return ListView.separated(

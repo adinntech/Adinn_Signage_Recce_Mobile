@@ -72,7 +72,10 @@ void main() {
     final b = Board(id: 'b', name: 'Board 1')
       ..mediaCode = SignageCatalog.gsb
       ..doubleSided = true;
-    final choices = SignageCatalog.choicesForBoard(b);
+    final all = SignageCatalog.choicesForBoard(b);
+    // "+ Other" is the approved extra final option after the five cards.
+    expect(all.last.code, SignageCatalog.otherInstallation);
+    final choices = all.sublist(0, all.length - 1);
     expect(
       choices.map((c) => c.name).toList(),
       const [
@@ -117,7 +120,10 @@ void main() {
     // GSB Double Side selections, but other media keep their own options.
     final nlb = Board(id: 'n', name: 'Board 2')..mediaCode = SignageCatalog.nlb;
     expect(
-      SignageCatalog.choicesForBoard(nlb).map((c) => c.code).toList(),
+      SignageCatalog.choicesForBoard(nlb)
+          .map((c) => c.code)
+          .where((c) => c != SignageCatalog.otherInstallation)
+          .toList(),
       SignageCatalog.media(SignageCatalog.nlb)!.installations,
     );
   });

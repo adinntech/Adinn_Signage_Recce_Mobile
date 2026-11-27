@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,6 +15,7 @@ import '../photos/site_photo_view.dart';
 import '../review_comments/photo_comments_screen.dart';
 import '../review_comments/shop_comments_screen.dart';
 import '../survey/readiness.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Business Team / Recce Ops review of the latest submitted version.
 class ReviewScreen extends StatelessWidget {
@@ -28,7 +30,7 @@ class ReviewScreen extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Approve v${sub.version}?'),
+        title: Text(context.uf('Approve v{0}?', [sub.version])),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -43,8 +45,8 @@ class ReviewScreen extends StatelessWidget {
               key: const Key('approve_remarks'),
               controller: remarks,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Remarks (optional)',
+              decoration: InputDecoration(
+                labelText: context.ui('Remarks (optional)'),
                 alignLabelWithHint: true,
               ),
             ),
@@ -53,13 +55,13 @@ class ReviewScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(context.ui('Cancel')),
           ),
           FilledButton(
             key: const Key('approve_confirm'),
             style: FilledButton.styleFrom(backgroundColor: AdinnColors.success),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Approve'),
+            child: Text(context.ui('Approve')),
           ),
         ],
       ),
@@ -68,7 +70,7 @@ class ReviewScreen extends StatelessWidget {
     remarks.dispose();
     if (ok != true || !context.mounted) return;
     c.reviewShop(shopId, decision: ReviewDecision.approved, remarks: text);
-    showSnack(context, 'v${sub.version} approved');
+    showSnack(context, context.uf('v{0} approved', [sub.version]));
     Navigator.of(context).pop();
   }
 
@@ -101,7 +103,7 @@ class ReviewScreen extends StatelessWidget {
       reasons: result.$2,
       issues: issues,
     );
-    showSnack(context, 'v${sub.version} rejected and sent back to vendor');
+    showSnack(context, context.uf('v{0} rejected and sent back to vendor', [sub.version]));
     Navigator.of(context).pop();
   }
 
@@ -112,8 +114,11 @@ class ReviewScreen extends StatelessWidget {
     final sub = shop?.latestSubmission;
     if (shop == null || sub == null) {
       return Scaffold(
-        appBar: AppBar(),
-        body: const EmptyState(icon: Icons.inbox, title: 'Nothing to review'),
+        appBar: AdinnAppBar(),
+        body: EmptyState(
+          icon: Icons.inbox,
+          title: context.ui('Nothing to review'),
+        ),
       );
     }
     final snapshot = sub.shopSnapshot;
@@ -127,11 +132,11 @@ class ReviewScreen extends StatelessWidget {
     final totalArea = snapshot.boards.fold(0.0, (s, b) => s + b.areaSqFt);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Review v${sub.version}'),
+      appBar: AdinnAppBar(
+        title: Text(context.uf('Review v{0}', [sub.version])),
         actions: [
           IconButton(
-            tooltip: 'Version history',
+            tooltip: context.ui('Version history'),
             icon: const Icon(Icons.history),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -156,7 +161,7 @@ class ReviewScreen extends StatelessWidget {
                         key: const Key('reject_button'),
                         onPressed: () => _reject(context, sub),
                         icon: const Icon(Icons.close),
-                        label: const Text('REJECT'),
+                        label: Text(context.ui('REJECT')),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -168,7 +173,7 @@ class ReviewScreen extends StatelessWidget {
                         ),
                         onPressed: () => _approve(context, sub),
                         icon: const Icon(Icons.check),
-                        label: const Text('APPROVE'),
+                        label: Text(context.ui('APPROVE')),
                       ),
                     ),
                   ],
@@ -185,7 +190,12 @@ class ReviewScreen extends StatelessWidget {
             trailing: StatusChip(shop.status, compact: true),
             child: Column(
               children: [
-                InfoRow('Project', project?.name ?? ''),
+                InfoRow(
+                  context.ui('Project'),
+                  project == null
+                      ? ''
+                      : context.projectName(project.id, project.name),
+                ),
                 InfoRow('Task', task?.title ?? ''),
                 InfoRow('Submitted by', sub.submittedByName),
                 InfoRow('Submitted on', fmtDateTime(sub.submittedAt)),
@@ -204,13 +214,13 @@ class ReviewScreen extends StatelessWidget {
                       .join(', '),
                 ),
                 if (sub.vendorRemarks.isNotEmpty)
-                  InfoRow('Vendor remarks', sub.vendorRemarks),
+                  InfoRow(context.ui('Vendor remarks'), sub.vendorRemarks),
               ],
             ),
           ),
           const SizedBox(height: 12),
           SectionCard(
-            title: 'Approval trail',
+            title: context.ui('Approval trail'),
             icon: Icons.route_outlined,
             child: ReviewTrail(submission: sub),
           ),
@@ -225,10 +235,10 @@ class ReviewScreen extends StatelessWidget {
                     '${b.name}: $w',
               ];
               return SectionCard(
-                title: 'Site checks',
+                title: context.ui('Site checks'),
                 icon: Icons.rule,
                 child: checks.isEmpty
-                    ? const Row(
+                    ? Row(
                         children: [
                           Icon(
                             Icons.verified_outlined,
@@ -237,9 +247,8 @@ class ReviewScreen extends StatelessWidget {
                           ),
                           SizedBox(width: 6),
                           Expanded(
-                            child: Text(
-                              'GPS captured, photos geotagged near the shop, '
-                              'board areas marked.',
+                            child: Text(context.ui('GPS captured, photos geotagged near the shop, '
+                              'board areas marked.'),
                               style: TextStyle(fontSize: 13),
                             ),
                           ),
@@ -256,7 +265,7 @@ class ReviewScreen extends StatelessWidget {
           if (previous != null) ...[
             const SizedBox(height: 12),
             SectionCard(
-              title: 'Changes since v${previous.version}',
+              title: context.uf('Changes since v{0}', [previous.version]),
               icon: Icons.compare_arrows,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,13 +364,11 @@ class _RejectSheetState extends State<_RejectSheet> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'The vendor will rework and resubmit as a new version.',
+            Text(context.ui('The vendor will rework and resubmit as a new version.'),
               style: TextStyle(color: AdinnColors.muted),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Reasons',
+            Text(context.ui('Reasons'),
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
@@ -391,9 +398,8 @@ class _RejectSheetState extends State<_RejectSheet> {
                       : 'Specific items ($flagged flagged)',
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                subtitle: const Text(
-                  'Point at the signage item, photo, annotation, dimension '
-                  'or installation detail to correct.',
+                subtitle: Text(context.ui('Point at the signage item, photo, annotation, dimension '
+                  'or installation detail to correct.'),
                   style: TextStyle(fontSize: 12),
                 ),
                 children: [
@@ -450,7 +456,7 @@ class _RejectSheetState extends State<_RejectSheet> {
                 if (_error != null) setState(() => _error = null);
               },
               decoration: InputDecoration(
-                labelText: 'Remarks for vendor *',
+                labelText: context.ui('Remarks for vendor *'),
                 alignLabelWithHint: true,
                 errorText: _error,
               ),
@@ -473,7 +479,7 @@ class _RejectSheetState extends State<_RejectSheet> {
                 ));
               },
               icon: const Icon(Icons.close),
-              label: const Text('REJECT & SEND BACK'),
+              label: Text(context.ui('REJECT & SEND BACK')),
             ),
           ],
         ),
@@ -501,7 +507,7 @@ class _PhotoCommentsCard extends StatelessWidget {
         for (final p in b.photos) (b, p),
     ];
     return SectionCard(
-      title: 'Photo review comments',
+      title: context.ui('Photo review comments'),
       icon: Icons.add_comment_outlined,
       trailing: TextButton(
         key: const Key('review_all_comments'),
@@ -510,7 +516,7 @@ class _PhotoCommentsCard extends StatelessWidget {
             builder: (_) => ShopCommentsScreen(shopId: shop.id),
           ),
         ),
-        child: Text('All (${all.length})'),
+        child: Text(context.uf('All ({0})', [all.length])),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -523,9 +529,9 @@ class _PhotoCommentsCard extends StatelessWidget {
             style: const TextStyle(fontSize: 12.5, color: AdinnColors.muted),
           ),
           if (photos.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 6),
-              child: Text('No photos in this version.'),
+              child: Text(context.ui('No photos in this version.')),
             ),
           for (final (b, p) in photos)
             Padding(
@@ -565,7 +571,7 @@ class _PhotoCommentsCard extends StatelessWidget {
                       canComment ? Icons.add_comment : Icons.mode_comment,
                       size: 18,
                     ),
-                    label: Text(canComment ? 'Comment' : 'View'),
+                    label: Text(context.ui(canComment ? 'Comment' : 'View')),
                   ),
                 ],
               ),
@@ -588,7 +594,7 @@ class _UnitSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SectionCard(
       key: const Key('review_unit_summary'),
-      title: 'Units by media type',
+      title: context.ui('Units by media type'),
       icon: Icons.view_list_outlined,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -641,9 +647,8 @@ class _UnitSummaryCard extends StatelessWidget {
               ),
             const Divider(height: 12),
           ],
-          const Text(
-            'Operational indicators from recorded data only – not a '
-            'structural or electrical certification.',
+          Text(context.ui('Operational indicators from recorded data only – not a '
+            'structural or electrical certification.'),
             style: TextStyle(fontSize: 11, color: AdinnColors.muted),
           ),
         ],

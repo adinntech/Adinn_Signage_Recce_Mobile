@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/widgets/language_switcher.dart';
+import '../../l10n/l10n.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common_widgets.dart';
 import '../../data/models/models.dart';
@@ -16,11 +19,12 @@ class ProfileScreen extends StatelessWidget {
   Future<void> _logout(BuildContext context) async {
     final ok = await confirmDialog(
       context,
-      title: 'Logout?',
-      message:
-          'Your recce data stays saved on this device. You can log in again '
-          'any time.',
-      confirmText: 'Logout',
+      title: context.ui('Logout?'),
+      message: context.ui(
+        'Your recce data stays saved on this device. You can log in again '
+        'any time.',
+      ),
+      confirmText: context.ui('Logout'),
     );
     if (ok && context.mounted) {
       Navigator.of(context).popUntil((r) => r.isFirst);
@@ -31,16 +35,17 @@ class ProfileScreen extends StatelessWidget {
   Future<void> _reset(BuildContext context) async {
     final ok = await confirmDialog(
       context,
-      title: 'Reset demo data?',
-      message:
-          'All local projects, shops, photos, voice notes and history will be '
-          'replaced with the original dummy data.',
-      confirmText: 'Reset',
+      title: context.ui('Reset demo data?'),
+      message: context.ui(
+        'All local projects, shops, photos, voice notes and history will be '
+        'replaced with the original dummy data.',
+      ),
+      confirmText: context.ui('Reset'),
       destructive: true,
     );
     if (ok && context.mounted) {
       await context.read<AppController>().resetDemoData();
-      if (context.mounted) showSnack(context, 'Demo data restored');
+      if (context.mounted) showSnack(context, context.ui('Demo data restored'));
     }
   }
 
@@ -52,7 +57,10 @@ class ProfileScreen extends StatelessWidget {
     final sum = c.overallSummary;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(
+        title: Text(context.t.navProfile),
+        actions: const [LanguageSwitcher(), SizedBox(width: 8)],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -96,15 +104,15 @@ class ProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SectionCard(
-            title: 'Account',
+            title: context.ui('Account'),
             icon: Icons.badge_outlined,
             child: Column(
               children: [
-                InfoRow('Employee / Vendor ID', u.code),
-                InfoRow('Mobile', u.mobile),
+                InfoRow(context.ui('Employee / Vendor ID'), u.code),
+                InfoRow(context.ui('Mobile'), u.mobile),
                 InfoRow('Email', u.email),
                 InfoRow('Company', u.company),
-                InfoRow('Region', u.region),
+                InfoRow(context.ui('Region'), u.region),
               ],
             ),
           ),
@@ -118,7 +126,7 @@ class ProfileScreen extends StatelessWidget {
                     Icons.pin_outlined,
                     color: AdinnColors.red,
                   ),
-                  title: const Text('Change login PIN'),
+                  title: Text(context.ui('Change login PIN')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => showModalBottomSheet<void>(
                     context: context,
@@ -134,9 +142,8 @@ class ProfileScreen extends StatelessWidget {
                     Icons.photo_library_outlined,
                     color: AdinnColors.red,
                   ),
-                  title: const Text('Media reference library'),
-                  subtitle: const Text(
-                    'Reference photos & technical approval per media',
+                  title: Text(context.ui('Media reference library')),
+                  subtitle: Text(context.ui('Reference photos & technical approval per media'),
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
@@ -151,7 +158,7 @@ class ProfileScreen extends StatelessWidget {
                     Icons.support_agent,
                     color: AdinnColors.red,
                   ),
-                  title: const Text('Call Adinn support'),
+                  title: Text(context.ui('Call Adinn support')),
                   subtitle: const Text(supportPhone),
                   trailing: const Icon(Icons.call_outlined),
                   onTap: () => dialNumber(context, supportPhone),
@@ -162,17 +169,16 @@ class ProfileScreen extends StatelessWidget {
                     Icons.restart_alt,
                     color: AdinnColors.warning,
                   ),
-                  title: const Text('Reset demo data'),
-                  subtitle: const Text('Restore the original dummy dataset'),
+                  title: Text(context.ui('Reset demo data')),
+                  subtitle: Text(context.ui('Restore the original dummy dataset')),
                   onTap: () => _reset(context),
                 ),
                 const Divider(height: 1),
-                const ListTile(
+                ListTile(
                   leading: Icon(Icons.info_outline, color: AdinnColors.muted),
-                  title: Text('Adinn Signage Recce'),
-                  subtitle: Text(
-                    'v1.0.0 • Offline prototype – all data stored on this '
-                    'device only',
+                  title: Text(context.ui('Adinn Signage Recce')),
+                  subtitle: Text(context.ui('v1.0.0 • Offline prototype – all data stored on this '
+                    'device only'),
                   ),
                 ),
               ],
@@ -183,7 +189,7 @@ class ProfileScreen extends StatelessWidget {
             key: const Key('logout_button'),
             onPressed: () => _logout(context),
             icon: const Icon(Icons.logout),
-            label: const Text('LOGOUT'),
+            label: Text(context.ui('LOGOUT')),
           ),
         ],
       ),
@@ -249,7 +255,7 @@ class _ChangePinSheetState extends State<_ChangePinSheet> {
       return;
     }
     Navigator.pop(context);
-    showSnack(context, 'Login PIN changed');
+    showSnack(context, context.ui('Login PIN changed'));
   }
 
   Widget _pinField(String label, TextEditingController c, {Key? key}) {
@@ -277,13 +283,11 @@ class _ChangePinSheetState extends State<_ChangePinSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Change login PIN',
+          Text(context.ui('Change login PIN'),
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Your PIN is the only thing needed to log in – keep it private.',
+          Text(context.ui('Your PIN is the only thing needed to log in – keep it private.'),
             style: TextStyle(color: AdinnColors.muted, fontSize: 13),
           ),
           const SizedBox(height: 12),
@@ -300,7 +304,7 @@ class _ChangePinSheetState extends State<_ChangePinSheet> {
           FilledButton(
             key: const Key('pin_update'),
             onPressed: _save,
-            child: const Text('UPDATE PIN'),
+            child: Text(context.ui('UPDATE PIN')),
           ),
         ],
       ),

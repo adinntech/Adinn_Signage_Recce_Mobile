@@ -1,3 +1,4 @@
+import 'l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +8,7 @@ import 'core/widgets/common_widgets.dart';
 import 'data/services/location_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_shell.dart';
+import 'l10n/app_localizations.dart';
 import 'state/app_controller.dart';
 
 class AdinnRecceApp extends StatefulWidget {
@@ -38,11 +40,20 @@ class _AdinnRecceAppState extends State<AdinnRecceApp> {
         ChangeNotifierProvider<AppController>.value(value: widget.controller),
         Provider<LocationService>.value(value: _location),
       ],
-      child: MaterialApp(
-        title: 'Adinn Recce',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        home: const RootGate(),
+      // Rebuild the app shell only when the LANGUAGE changes (never on every
+      // data change).
+      child: Selector<AppController, String>(
+        selector: (_, c) => c.locale.languageCode,
+        builder: (context, lang, _) => MaterialApp(
+          title: 'Adinn Recce',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          // English by default; the saved preference restores on restart.
+          locale: Locale(lang),
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          home: const RootGate(),
+        ),
       ),
     );
   }
@@ -67,7 +78,7 @@ class SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
         child: Column(
@@ -75,8 +86,7 @@ class SplashScreen extends StatelessWidget {
           children: [
             AdinnLogo(size: 44),
             SizedBox(height: 18),
-            Text(
-              'Signage Recce',
+            Text(context.ui('Signage Recce'),
               style: TextStyle(
                 color: AdinnColors.muted,
                 fontWeight: FontWeight.w600,

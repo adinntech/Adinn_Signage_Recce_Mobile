@@ -1,9 +1,11 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../../core/widgets/language_switcher.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
@@ -43,15 +45,14 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
             color: AdinnColors.success,
             size: 48,
           ),
-          title: Text('Submitted v${sub.version}'),
-          content: const Text(
-            'The recce has been sent to the Business Team for approval. '
-            'You will see their decision in the Submitted tab.',
+          title: Text(context.uf('Submitted v{0}', [sub.version])),
+          content: Text(context.ui('The recce has been sent to the Business Team for approval. '
+            'You will see their decision in the Submitted tab.'),
           ),
           actions: [
             FilledButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK'),
+              child: Text(context.ui('OK')),
             ),
           ],
         ),
@@ -68,7 +69,7 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
     final c = context.watch<AppController>();
     final shop = c.shop(widget.shopId);
     if (shop == null) {
-      return const Scaffold(body: Center(child: Text('Shop not found')));
+      return Scaffold(body: Center(child: Text(context.ui('Shop not found'))));
     }
     final issues = c.shopIssues(shop);
     final warnings = [
@@ -86,7 +87,10 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
     final canSubmit = issues.isEmpty && _declared && c.canEdit(shop);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Submit recce v$nextVersion')),
+      appBar: AppBar(
+        title: Text(context.uf('Submit recce v{0}', [nextVersion])),
+        actions: const [LanguageSwitcher(), SizedBox(width: 8)],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -178,10 +182,9 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
                             ),
                           ),
                           if (c.canEdit(shop) && c.boardIssues(b).isNotEmpty)
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.only(left: 4),
-                              child: Text(
-                                'Fix',
+                              child: Text(context.ui('Fix'),
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -209,7 +212,7 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
                 : 'Fix before submitting',
             icon: issues.isEmpty ? Icons.task_alt : Icons.rule,
             child: issues.isEmpty && warnings.isEmpty
-                ? const Text('All mandatory details are captured.')
+                ? Text(context.ui('All mandatory details are captured.'))
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -240,8 +243,8 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
             key: const Key('submit_remarks'),
             controller: _remarks,
             maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Remarks for reviewers (optional)',
+            decoration: InputDecoration(
+              labelText: context.ui('Remarks for reviewers (optional)'),
               alignLabelWithHint: true,
             ),
           ),
@@ -252,8 +255,7 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
             contentPadding: EdgeInsets.zero,
             controlAffinity: ListTileControlAffinity.leading,
             onChanged: (v) => setState(() => _declared = v ?? false),
-            title: const Text(
-              'I confirm the photos and measurements were captured at the site.',
+            title: Text(context.ui('I confirm the photos and measurements were captured at the site.'),
               style: TextStyle(fontSize: 13),
             ),
           ),
@@ -262,13 +264,12 @@ class _SubmissionScreenState extends State<SubmissionScreen> {
             key: const Key('submit_button'),
             onPressed: canSubmit ? _submit : null,
             icon: const Icon(Icons.send),
-            label: Text('SUBMIT v$nextVersion FOR APPROVAL'),
+            label: Text(context.uf('SUBMIT v{0} FOR APPROVAL', [nextVersion])),
           ),
           if (issues.isNotEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Complete the checklist to enable submission.',
+              child: Text(context.ui('Complete the checklist to enable submission.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AdinnColors.muted, fontSize: 12),
               ),

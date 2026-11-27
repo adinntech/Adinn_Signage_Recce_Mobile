@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,6 +13,7 @@ import 'electrical_form.dart';
 import 'feasibility.dart';
 import 'measurement_form.dart';
 import 'site_markup_painter.dart' show severityColor;
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Advanced site survey of one signage item: measurements, media-specific
 /// checklist, electrical availability and obstructions / feasibility.
@@ -81,7 +83,7 @@ class _UnitSurveyScreenState extends State<UnitSurveyScreen>
     final u = b?.unitById(widget.unitId);
     if (shop == null || b == null || u == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: AdinnAppBar(),
         body: const EmptyState(
           icon: Icons.search_off,
           title: 'Signage item not found',
@@ -96,7 +98,7 @@ class _UnitSurveyScreenState extends State<UnitSurveyScreen>
       canPop: _dirty.isEmpty,
       onPopInvokedWithResult: _onPop,
       child: Scaffold(
-        appBar: AppBar(
+        appBar: AdinnAppBar(
           titleSpacing: 0,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,8 +227,7 @@ class ObstructionSummary extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (f.reasons.isEmpty)
-                const Text(
-                  'No obstruction or review flag recorded for this item.',
+                Text(context.ui('No obstruction or review flag recorded for this item.'),
                   style: TextStyle(fontSize: 12.5),
                 ),
               for (final r in f.reasons)
@@ -235,9 +236,8 @@ class ObstructionSummary extends StatelessWidget {
                   child: Text('• $r', style: const TextStyle(fontSize: 12.5)),
                 ),
               const SizedBox(height: 6),
-              const Text(
-                'Operational indicator only – not a structural, electrical or '
-                'municipal certification.',
+              Text(context.ui('Operational indicator only – not a structural, electrical or '
+                'municipal certification.'),
                 style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
               ),
             ],
@@ -251,8 +251,7 @@ class ObstructionSummary extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (list.isEmpty)
-                const Text(
-                  'No obstruction marked on the photos of this item.',
+                Text(context.ui('No obstruction marked on the photos of this item.'),
                   style: TextStyle(fontSize: 12.5, color: AdinnColors.muted),
                 ),
               for (final (p, o) in list)

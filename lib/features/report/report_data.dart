@@ -366,7 +366,7 @@ ReportBuild buildReportData(
     groups.add({
       'groupId': b.id,
       'name': b.name,
-      'media': media?.name ?? 'Media not set',
+      'media': SignageCatalog.mediaDisplayName(b),
       'mediaShort': media?.shortName ?? b.name,
       'installation':
           SignageCatalog.installationSummary(b),
@@ -386,8 +386,15 @@ ReportBuild buildReportData(
                   q,
                   QuestionEquivalence.effectiveSiteAnswers(b, u)[q.id],
                 ),
+                // 'p' = predefined answer (Yes / No / listed option): the only
+                // kind a Tamil report may translate. Text / numbers are data.
+                if (q.type == QuestionType.yesNo ||
+                    q.type == QuestionType.choice)
+                  'p',
               ],
       ],
+      // Optional shop-level GST number (only when entered).
+      if (s.gstNumber.isNotEmpty) 'gst': s.gstNumber,
       'note': b.textNote,
       'items': items,
       'pictures': pictures,
@@ -454,7 +461,6 @@ String _unitLabel(Board b, SignageUnit u) {
 }
 
 Map<String, dynamic> _item(AppController c, Shop s, Board b, SignageUnit u) {
-  final media = SignageCatalog.media(b.mediaCode);
   final w = b.widthOf(u), h = b.heightOf(u);
   final m = u.measurements;
   final index = b.units.indexWhere((e) => e.id == u.id) + 1;
@@ -578,15 +584,20 @@ Map<String, dynamic> _item(AppController c, Shop s, Board b, SignageUnit u) {
     'unitId': u.id,
     'groupId': b.id,
     'label': _unitLabel(b, u),
-    'media': media?.name ?? 'Media not set',
+    'media': SignageCatalog.mediaDisplayName(b),
     'unitNumber': b.unitLabel(u),
     'quantityContext':
         'Unit $index of ${b.quantity} – '
         '${b.isSameSize ? 'same size' : 'individual size'}',
     'width': (w ?? 0) > 0 ? '${fmtNum(w!)} ${b.unit.label}' : 'Not set',
     'height': (h ?? 0) > 0 ? '${fmtNum(h!)} ${b.unit.label}' : 'Not set',
-    'installation':
-        SignageCatalog.installation(inst)?.name ?? 'Installation not set',
+    'installation': inst == null
+        ? 'Installation not set'
+        : SignageCatalog.installationNameOf(b, u),
+    // Custom media / installation have no approved fabrication spec.
+    if (SignageCatalog.isOtherMedia(b.mediaCode) ||
+        SignageCatalog.isOtherInstallation(inst))
+      'specNote': 'Technical Specification Required – no approved geometry.',
     'placement': u.placement,
     'installationDetails': u.installationDetails,
     'notes': u.notes,

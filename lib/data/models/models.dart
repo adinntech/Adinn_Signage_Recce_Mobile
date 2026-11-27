@@ -497,6 +497,43 @@ class VoiceNote {
   );
 }
 
+/// A custom ("Other") media or installation description: typed text, a
+/// recorded voice note, or both. At least one of them is always present
+/// ([isValid]). Never a standard fabrication code.
+class CustomSpec {
+  CustomSpec({this.text = '', this.voice});
+
+  String text;
+  VoiceNote? voice;
+
+  bool get hasVoice => voice != null;
+
+  /// Whitespace-only text with no recording is not a description.
+  bool get isValid => text.trim().isNotEmpty || hasVoice;
+
+  CustomSpec copy() => CustomSpec.fromJson(toJson());
+
+  Map<String, dynamic> toJson() => {
+    if (text.trim().isNotEmpty) 'text': text.trim(),
+    if (voice != null) 'voice': voice!.toJson(),
+  };
+
+  static CustomSpec? fromJsonOrNull(Object? j) {
+    if (j is! Map) return null;
+    final m = Map<String, dynamic>.from(j);
+    final spec = CustomSpec(
+      text: _s(m['text']),
+      voice: m['voice'] is Map
+          ? VoiceNote.fromJson(Map<String, dynamic>.from(m['voice'] as Map))
+          : null,
+    );
+    return spec.isValid ? spec : null;
+  }
+
+  factory CustomSpec.fromJson(Map<String, dynamic> j) =>
+      fromJsonOrNull(j) ?? CustomSpec();
+}
+
 // ---------------------------------------------------------------------------
 // Boards & shops
 // ---------------------------------------------------------------------------
@@ -519,6 +556,7 @@ class SignageUnit {
     Map<String, ChecklistResponse>? checklist,
     ElectricalSurvey? electrical,
     Map<String, dynamic>? siteAnswers,
+    this.customInstallation,
   }) : measurements = measurements ?? MeasurementDetails(),
        siteAnswers = siteAnswers ?? {},
        checklist = checklist ?? {},
@@ -553,6 +591,10 @@ class SignageUnit {
   /// single-board groups). See `SignageCatalog.answersOf`. Additive field.
   Map<String, dynamic> siteAnswers;
 
+  /// Description of this board's own "Other" installation (text and / or
+  /// voice). Only used while [installationCode] is the custom code.
+  CustomSpec? customInstallation;
+
   bool get hasOwnSize => (width ?? 0) > 0 && (height ?? 0) > 0;
 
   SignageUnit copyWith({required String id}) =>
@@ -571,9 +613,12 @@ class SignageUnit {
       'checklist': ChecklistResponse.mapToJson(checklist),
     if (!electrical.isEmpty) 'electrical': electrical.toJson(),
     if (siteAnswers.isNotEmpty) 'siteAnswers': siteAnswers,
+    if (customInstallation != null)
+      'customInstallation': customInstallation!.toJson(),
   };
 
   factory SignageUnit.fromJson(Map<String, dynamic> j) => SignageUnit(
+    customInstallation: CustomSpec.fromJsonOrNull(j['customInstallation']),
     siteAnswers: j['siteAnswers'] is Map
         ? Map<String, dynamic>.from(j['siteAnswers'] as Map)
         : null,
@@ -813,6 +858,7 @@ class Board {
     List<GsbSpecOverride>? gsbOverrides,
     this.gsbLedSide,
     this.nlbSubtype,
+    this.customMedia,
   }) : answersArchive = answersArchive ?? {},
        gsbOverrides = gsbOverrides ?? [],
        comparisons = comparisons ?? [],
@@ -891,6 +937,10 @@ class Board {
   /// `NLB_BOX_FRAME` (NON_LIT_BOX). Null = never chosen (legacy NLB keeps
   /// its previous behaviour). Additive; the media category stays `NLB`.
   String? nlbSubtype;
+
+  /// Description of an "Other" media type (text and / or voice). Only used
+  /// while [mediaCode] is the custom media code. Additive field.
+  CustomSpec? customMedia;
 
   bool get isNlb => mediaCode == 'NLB';
   bool get isNlbBoxFrame => isNlb && nlbSubtype == 'NLB_BOX_FRAME';
@@ -1014,6 +1064,7 @@ class Board {
       'gsbOverrides': gsbOverrides.map((o) => o.toJson()).toList(),
     if (gsbLedSide != null) 'gsbLedSide': gsbLedSide,
     if (nlbSubtype != null) 'nlbSubtype': nlbSubtype,
+  if (customMedia != null) 'customMedia': customMedia!.toJson(),
   };
 
   factory Board.fromJson(Map<String, dynamic> j) {
@@ -1049,6 +1100,7 @@ class Board {
           : null,
       gsbOverrides: _list(j['gsbOverrides'], GsbSpecOverride.fromJson),
       gsbLedSide: j['gsbLedSide'] is String ? j['gsbLedSide'] as String : null,
+      customMedia: CustomSpec.fromJsonOrNull(j['customMedia']),
       nlbSubtype:
           j['nlbSubtype'] == 'NLB_SINGLE_FRAME' ||
               j['nlbSubtype'] == 'NLB_BOX_FRAME'
@@ -1241,6 +1293,7 @@ class Shop {
     this.pincode = '',
     this.landmark = '',
     this.remarks = '',
+    this.gstNumber = '',
     this.geo,
     this.status = RecceStatus.notStarted,
     List<Board>? boards,
@@ -1266,6 +1319,10 @@ class Shop {
   String pincode;
   String landmark;
   String remarks;
+
+  /// Optional shop-level GST identification number (normalized upper case).
+  /// Format-checked only; never claimed to prove registration.
+  String gstNumber;
 
   /// GPS location of the shop, captured on site by the vendor.
   GeoFix? geo;
@@ -1317,6 +1374,7 @@ class Shop {
     'pincode': pincode,
     'landmark': landmark,
     'remarks': remarks,
+    if (gstNumber.isNotEmpty) 'gstNumber': gstNumber,
     'geo': geo?.toJson(),
     'status': status.name,
     'boards': boards.map((b) => b.toJson()).toList(),
@@ -1340,6 +1398,7 @@ class Shop {
     pincode: _s(j['pincode']),
     landmark: _s(j['landmark']),
     remarks: _s(j['remarks']),
+    gstNumber: _s(j['gstNumber']),
     geo: GeoFix.fromJson(j['geo']),
     status: enumByName(RecceStatus.values, j['status'], RecceStatus.notStarted),
     boards: _list(j['boards'], Board.fromJson),
@@ -1423,6 +1482,7 @@ class AppData {
     required this.shops,
     required this.activities,
     this.sessionUserId,
+    this.languageCode = 'en',
     this.loadedSchemaVersion = schemaVersion,
     List<ArLayout>? arLayouts,
     List<RecceReport>? reports,
@@ -1453,6 +1513,9 @@ class AppData {
   List<ActivityEvent> activities;
   String? sessionUserId;
 
+  /// Display language preference: `en` (default) or `ta`. Display only.
+  String languageCode;
+
   /// Saved Camera AR layouts (preview configuration only, never part of a
   /// submission snapshot). Missing in older data → empty.
   List<ArLayout> arLayouts;
@@ -1478,6 +1541,7 @@ class AppData {
     'shops': shops.map((e) => e.toJson()).toList(),
     'activities': activities.map((e) => e.toJson()).toList(),
     'sessionUserId': sessionUserId,
+    if (languageCode != 'en') 'languageCode': languageCode,
     if (arLayouts.isNotEmpty)
       'arLayouts': arLayouts.map((e) => e.toJson()).toList(),
     if (reports.isNotEmpty) 'reports': reports.map((e) => e.toJson()).toList(),
@@ -1495,6 +1559,7 @@ class AppData {
     shops: _list(j['shops'], Shop.fromJson),
     activities: _list(j['activities'], ActivityEvent.fromJson),
     sessionUserId: j['sessionUserId'] as String?,
+    languageCode: j['languageCode'] == 'ta' ? 'ta' : 'en',
     loadedSchemaVersion: (j['schemaVersion'] as num?)?.toInt() ?? 1,
     arLayouts: _list(j['arLayouts'], ArLayout.fromJson),
     reports: _list(j['reports'], RecceReport.fromJson),

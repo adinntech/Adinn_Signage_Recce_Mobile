@@ -9,7 +9,10 @@ void completeAnswers(Board b) {
   for (final u in b.activeUnits) {
     final a = SignageCatalog.answersOf(b, u);
     for (var guard = 0; guard < 5; guard++) {
-      final missing = SignageCatalog.missingAnswersFor(b, u);
+      final missing = [
+        ...SignageCatalog.missingAnswersFor(b, u),
+        ...SignageCatalog.missingMeasurementsFor(b, u),
+      ];
       if (missing.isEmpty) break;
       for (final q in missing) {
         a[q.id] = switch (q.type) {

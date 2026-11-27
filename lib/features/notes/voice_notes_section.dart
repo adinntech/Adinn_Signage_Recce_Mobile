@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -58,7 +59,7 @@ class _VoiceNotesSectionState extends State<VoiceNotesSection> {
     final controller = context.read<AppController>();
     final media = controller.media;
     if (media == null) {
-      showSnack(context, 'Storage not available', error: true);
+      showSnack(context, context.ui('Storage not available'), error: true);
       return;
     }
     final status = await Permission.microphone.request();
@@ -99,7 +100,7 @@ class _VoiceNotesSectionState extends State<VoiceNotesSection> {
       });
     } catch (e) {
       if (mounted) {
-        showSnack(context, 'Could not start recording: $e', error: true);
+        showSnack(context, context.uf('Could not start recording: {0}', [e]), error: true);
       }
     }
   }
@@ -127,7 +128,7 @@ class _VoiceNotesSectionState extends State<VoiceNotesSection> {
     });
     if (!mounted || !save || path == null) return;
     if (duration.inMilliseconds < 600) {
-      showSnack(context, 'Recording too short – hold on a bit longer');
+      showSnack(context, context.ui('Recording too short – hold on a bit longer'));
       return;
     }
     final c = context.read<AppController>();
@@ -142,7 +143,7 @@ class _VoiceNotesSectionState extends State<VoiceNotesSection> {
         label: 'Voice note ${widget.board.voiceNotes.length + 1}',
       ),
     );
-    showSnack(context, 'Voice note saved (${fmtDuration(duration)})');
+    showSnack(context, context.uf('Voice note saved ({0})', [fmtDuration(duration)]));
   }
 
   @override
@@ -203,7 +204,7 @@ class _VoiceNotesSectionState extends State<VoiceNotesSection> {
                 ),
                 if (_recording)
                   IconButton(
-                    tooltip: 'Discard',
+                    tooltip: context.ui('Discard'),
                     onPressed: () => _stop(save: false),
                     icon: const Icon(Icons.delete_outline),
                   ),
@@ -212,10 +213,9 @@ class _VoiceNotesSectionState extends State<VoiceNotesSection> {
           ),
         const SizedBox(height: 8),
         if (notes.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              'No voice notes yet.',
+            child: Text(context.ui('No voice notes yet.'),
               style: TextStyle(color: AdinnColors.muted),
             ),
           ),
@@ -280,7 +280,7 @@ class _VoiceNoteTileState extends State<VoiceNoteTile> {
 
   Future<void> _toggle() async {
     if (!File(widget.note.path).existsSync()) {
-      showSnack(context, 'Audio file not found on this device', error: true);
+      showSnack(context, context.ui('Audio file not found on this device'), error: true);
       return;
     }
     try {
@@ -318,7 +318,7 @@ class _VoiceNoteTileState extends State<VoiceNoteTile> {
         await _player!.play(DeviceFileSource(widget.note.path));
       }
     } catch (e) {
-      if (mounted) showSnack(context, 'Playback failed: $e', error: true);
+      if (mounted) showSnack(context, context.uf('Playback failed: {0}', [e]), error: true);
     }
   }
 
@@ -370,7 +370,7 @@ class _VoiceNoteTileState extends State<VoiceNoteTile> {
             ),
             if (widget.onDelete != null)
               IconButton(
-                tooltip: 'Delete',
+                tooltip: context.ui('Delete'),
                 onPressed: widget.onDelete,
                 icon: const Icon(Icons.delete_outline),
               ),

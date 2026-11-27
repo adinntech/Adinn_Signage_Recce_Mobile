@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +10,7 @@ import '../../state/app_controller.dart';
 import '../model3d/signage_spec.dart';
 import 'media_reference_detail_screen.dart';
 import 'reference_image_picker.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 Color referenceStatusColor(ReferenceStatus s) => switch (s) {
   ReferenceStatus.pendingReference => AdinnColors.muted,
@@ -48,7 +50,7 @@ class MediaReferenceLibraryScreen extends StatelessWidget {
         )
         .length;
     return Scaffold(
-      appBar: AppBar(title: const Text('Media reference library')),
+      appBar: AdinnAppBar(title: Text(context.ui('Media reference library'))),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [

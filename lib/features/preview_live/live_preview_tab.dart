@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -157,8 +158,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Add signage item to preview',
+            Text(context.ui('Add signage item to preview'),
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
             ),
             for (final u in b.activeUnits)
@@ -183,7 +183,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
     final c = _c!;
     final app = context.read<AppController>();
     if (c.overlays.isEmpty) {
-      showSnack(context, 'Add a signage item first', error: true);
+      showSnack(context, context.ui('Add a signage item first'), error: true);
       return;
     }
     final media = app.media;
@@ -191,7 +191,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
         widget.writer ??
         (media == null ? null : (png, folder) => writePng(media, png, folder));
     if (writer == null) {
-      showSnack(context, 'Storage not available', error: true);
+      showSnack(context, context.ui('Storage not available'), error: true);
       return;
     }
     setState(() {
@@ -228,11 +228,11 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
       if (gsb && storage != null) {
         await _attachComparison(shop, b, capture, storage);
       } else if (mounted) {
-        showSnack(context, 'Live preview saved');
+        showSnack(context, context.ui('Live preview saved'));
       }
     } catch (e) {
       if (mounted) {
-        showSnack(context, 'Could not save preview: $e', error: true);
+        showSnack(context, context.uf('Could not save preview: {0}', [e]), error: true);
       }
     } finally {
       if (mounted) {
@@ -319,7 +319,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: const Text('Live preview + day / night PDF saved'),
+            content: Text(context.ui('Live preview + day / night PDF saved')),
             action: SnackBarAction(
               label: 'OPEN PDF',
               onPressed: () => openComparisonPdf(pdfPath, shop.name),
@@ -334,7 +334,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
           SnackBar(
             backgroundColor: AdinnColors.redDark,
             duration: const Duration(seconds: 8),
-            content: Text('Preview saved, but the comparison PDF failed: $e'),
+            content: Text(context.uf('Preview saved, but the comparison PDF failed: {0}', [e])),
             action: SnackBarAction(
               label: 'RETRY',
               textColor: Colors.white,
@@ -596,7 +596,7 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
                               ActionChip(
                                 key: const ValueKey('live_add_item'),
                                 avatar: const Icon(Icons.add, size: 18),
-                                label: const Text('Add item'),
+                                label: Text(context.ui('Add item')),
                                 onPressed: () => _addItem(b),
                               ),
                             ],
@@ -608,16 +608,14 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
                     ),
                   ),
                   if (sel == null)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Text(
-                        'Add a signage item to place its 3D model on the photo.',
+                      child: Text(context.ui('Add a signage item to place its 3D model on the photo.'),
                         style: TextStyle(color: AdinnColors.muted),
                       ),
                     )
                   else ...[
-                    const Text(
-                      'Drag to move • pinch to resize & rotate',
+                    Text(context.ui('Drag to move • pinch to resize & rotate'),
                       style: TextStyle(
                         fontSize: 11.5,
                         color: AdinnColors.muted,
@@ -680,31 +678,31 @@ class _LivePreviewTabState extends State<LivePreviewTab> {
                         ActionChip(
                           key: const ValueKey('live_fit'),
                           avatar: const Icon(Icons.crop_free, size: 18),
-                          label: const Text('Fit to marking'),
+                          label: Text(context.ui('Fit to marking')),
                           onPressed: c.resetSelected,
                         ),
                       ActionChip(
                         key: const ValueKey('live_reset'),
                         avatar: const Icon(Icons.restart_alt, size: 18),
-                        label: const Text('Reset'),
+                        label: Text(context.ui('Reset')),
                         onPressed: sel == null ? null : c.resetSelected,
                       ),
                       FilterChip(
                         key: const ValueKey('live_measure'),
-                        label: const Text('Measurements'),
+                        label: Text(context.ui('Measurements')),
                         selected: c.showMeasurements,
                         onSelected: (_) => c.toggleMeasurements(),
                       ),
                       FilterChip(
                         key: const ValueKey('live_models'),
-                        label: const Text('Model layer'),
+                        label: Text(context.ui('Model layer')),
                         selected: c.showModels,
                         onSelected: (_) => c.toggleModels(),
                       ),
                       ActionChip(
                         key: const ValueKey('live_remove'),
                         avatar: const Icon(Icons.delete_outline, size: 18),
-                        label: const Text('Remove'),
+                        label: Text(context.ui('Remove')),
                         onPressed: sel == null ? null : c.removeSelected,
                       ),
                     ],
@@ -742,7 +740,7 @@ extension on _LivePreviewTabState {
   Widget _renderViewButton(LivePreviewController c) =>
       PopupMenuButton<RenderView>(
         key: const ValueKey('live_render_view'),
-        tooltip: 'Render View',
+        tooltip: context.ui('Render View'),
         initialValue: c.view,
         onSelected: c.setView,
         itemBuilder: (_) => [

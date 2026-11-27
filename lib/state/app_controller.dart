@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'dart:ui' show Locale;
+
 import 'package:flutter/foundation.dart';
 
 import '../core/utils/formatters.dart';
@@ -11,6 +13,9 @@ import '../data/catalog/signage_catalog.dart';
 import '../data/catalog/site_checklists.dart';
 import '../data/mock/mock_seed.dart';
 import '../data/models/models.dart';
+import '../core/utils/gst.dart';
+import '../data/models/evidence_policy.dart';
+import '../data/models/photo_requirement.dart';
 import '../data/storage/local_store.dart';
 import '../data/storage/media_storage.dart';
 import '../features/model3d/signage_spec.dart';
@@ -94,6 +99,25 @@ class AppController extends ChangeNotifier {
   String? _otpUserId;
 
   bool get isReady => _ready;
+
+  /// Display language (English by default). Changing it never touches stored
+  /// ids, answers or user-entered content.
+  Locale get locale => Locale(_data.languageCode);
+
+  bool get isTamil => _data.languageCode == 'ta';
+
+  void toggleLanguage() => setLanguage(isTamil ? 'en' : 'ta');
+
+  /// Explicit selection used by the ENG / அ toggle. No-op for the active
+  /// language so state and persistence are untouched on a repeated tap.
+  void setLanguage(String code) {
+    if (code != 'en' && code != 'ta') return;
+    if (_data.languageCode == code) return;
+    _data.languageCode = code;
+    _save();
+    notifyListeners();
+  }
+
   AppData get data => _data;
 
   /// Set when stored data could not be read completely. The original JSON
@@ -156,6 +180,16 @@ class AppController extends ChangeNotifier {
     }
     _ready = true;
     notifyListeners();
+    // Original photo files are verified in the background (cached), never
+    // while widgets rebuild.
+    EvidencePolicy.onChanged = notifyListeners;
+    unawaited(
+      EvidencePolicy.verify([
+        for (final s in _data.shops)
+          for (final b in s.boards)
+            for (final p in b.photos) p.path,
+      ]),
+    );
   }
 
   Future<void> _backup(Map<String, dynamic> raw, String reason) async {
@@ -625,6 +659,71 @@ class AppController extends ChangeNotifier {
     return board;
   }
 
+  /// Creates ONE custom ("Other") media group from a confirmed description
+  /// (text and / or voice). Nothing is created for an invalid description.
+  Board addOtherMedia(String shopId, CustomSpec spec) {
+    final s = shop(shopId);
+    if (s == null) throw StateError('Shop not found');
+    if (!canEdit(s)) throw StateError('This recce is read-only now');
+    if (!spec.isValid) {
+      throw ArgumentError('Enter a description or record a voice note.');
+    }
+    final b = Board(
+      id: newId('b'),
+      name: '',
+      mediaCode: SignageCatalog.otherMedia,
+      customMedia: spec,
+      checklistRequired: true,
+    );
+    b.name = SignageCatalog.nextBoardName(b, s.boards);
+    s.boards.add(b);
+    touchShop(
+      s,
+      title: 'Board added',
+      message: '${b.name} added to ${s.name}.',
+    );
+    return b;
+  }
+
+  /// Replaces the description of an "Other" media group (edit).
+  bool setCustomMedia(String shopId, Board b, CustomSpec spec) {
+    final s = shop(shopId);
+    if (s == null || !canEdit(s) || !spec.isValid) return false;
+    b.customMedia = spec;
+    touchBoard(shopId, b);
+    return true;
+  }
+
+  /// "Same installation": every board of the group uses the custom
+  /// installation; each board gets its OWN copy of the description.
+  bool setCustomInstallationForAll(String shopId, Board b, CustomSpec spec) {
+    final s = shop(shopId);
+    if (s == null || !canEdit(s) || !spec.isValid) return false;
+    b.installationCode = SignageCatalog.otherInstallation;
+    for (final u in b.activeUnits) {
+      u.installationCode = null;
+      u.customInstallation = spec.copy();
+    }
+    touchBoard(shopId, b);
+    return true;
+  }
+
+  /// "Different installations": ONE board's own custom installation.
+  bool setCustomInstallationForUnit(
+    String shopId,
+    Board b,
+    SignageUnit u,
+    CustomSpec spec,
+  ) {
+    if (!spec.isValid) return false;
+    if (!setUnitInstallation(shopId, b, u, SignageCatalog.otherInstallation)) {
+      return false;
+    }
+    u.customInstallation = spec;
+    touchBoard(shopId, b);
+    return true;
+  }
+
   /// Creates the media groups confirmed in the Add Media Type popup, in one
   /// operation (nothing is created while the vendor is still choosing).
   /// Existing boards are never modified. Throws on an invalid plan.
@@ -788,6 +887,7 @@ class AppController extends ChangeNotifier {
     final b = board(shopId, boardId);
     if (b == null) return;
     b.photos.add(photo);
+    unawaited(EvidencePolicy.verify([photo.path]));
     touchBoard(
       shopId,
       b,
@@ -2733,7 +2833,9 @@ class AppController extends ChangeNotifier {
       for (final u in b.activeUnits)
         if (b.installationOf(u) == null) u,
     ];
-    if (b.activeUnits.isEmpty ? b.installationCode == null : missingInst.isNotEmpty) {
+    if (b.activeUnits.isEmpty
+        ? b.installationCode == null
+        : missingInst.isNotEmpty) {
       add(
         missingInst.isNotEmpty && missingInst.length < b.activeUnits.length
             ? 'Select an installation type for '
@@ -2748,7 +2850,8 @@ class AppController extends ChangeNotifier {
         IssueSection.installation,
       );
     }
-    if (media != null && b.activeUnits.isEmpty &&
+    if (media != null &&
+        b.activeUnits.isEmpty &&
         SignageCatalog.primaryInstallation(b) != null) {
       final missing = SignageCatalog.missingAnswers(b).length;
       if (missing > 0) {
@@ -2767,6 +2870,14 @@ class AppController extends ChangeNotifier {
           if (missing > 0) {
             add(
               'Answer $missing site question${missing == 1 ? '' : 's'}$unit',
+              IssueSection.questions,
+              u.id,
+            );
+          }
+          final mm = SignageCatalog.missingMeasurementsFor(b, u).length;
+          if (mm > 0) {
+            add(
+              'Complete $mm installation detail${mm == 1 ? '' : 's'}$unit',
               IssueSection.questions,
               u.id,
             );
@@ -2805,8 +2916,26 @@ class AppController extends ChangeNotifier {
         }
       }
     }
-    if (b.photos.isEmpty) {
-      add('Capture at least one site photo', IssueSection.photos);
+    if (b.activeUnits.isEmpty) {
+      if (b.photos.isEmpty) {
+        add('Capture at least two site photos', IssueSection.photos);
+      }
+    } else {
+      final req = b.photoRequirement;
+      // One GROUP-level photo issue (never one duplicate per board).
+      if (req.needsPhotos) add(req.photoMessage, IssueSection.photos);
+      // Missing markings stay attached to the correct physical board.
+      for (final id in req.missingUnitIds) {
+        final unit = b.activeUnits.firstWhere(
+          (u) => u.id == id,
+          orElse: () => b.activeUnits.first,
+        );
+        add(
+          '${b.unitLabel(unit)} signage marking is missing',
+          IssueSection.photos,
+          id,
+        );
+      }
     }
     return issues;
   }
@@ -2819,24 +2948,8 @@ class AppController extends ChangeNotifier {
 
   List<String> boardWarnings(Board b, [GeoFix? shopGeo]) {
     final w = <String>[];
-    final marked = b.photos.any(
-      (p) => p.annotations.any((a) => a.type == AnnotationType.rectangle),
-    );
-    if (b.photos.isNotEmpty && !marked) {
-      w.add('Board area not marked on any photo');
-    }
-    if (b.photos.length == 1) w.add('Only one photo angle captured');
-    if (b.quantity > 1 && b.photos.isNotEmpty) {
-      final unmarked = b.activeUnits
-          .where((u) => b.annotationsOf(u).isEmpty)
-          .length;
-      if (unmarked > 0) {
-        w.add(
-          '$unmarked of ${b.quantity} units have no placement marking on a '
-          'photo',
-        );
-      }
-    }
+    // Photo count / signage marking are blocking issues now (see
+    // boardIssueDetails), so they are no longer repeated as warnings.
     final untagged = b.photos.where((p) => p.geo == null).length;
     if (untagged > 0) {
       w.add(
@@ -2917,6 +3030,17 @@ class AppController extends ChangeNotifier {
       message:
           '${shop.name}: ${fix.coordinates} (±${fix.accuracyM.round()} m).',
     );
+  }
+
+  /// Saves the optional shop-level GST number (normalized). Returns false
+  /// (nothing saved) when a non-empty value has an invalid format.
+  bool setShopGst(Shop shop, String value) {
+    if (!Gst.isAcceptable(value)) return false;
+    final n = Gst.normalize(value);
+    if (n == shop.gstNumber) return true;
+    shop.gstNumber = n;
+    touchShop(shop);
+    return true;
   }
 
   List<String> shopIssues(Shop s) {

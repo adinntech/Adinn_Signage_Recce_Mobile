@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,6 +6,7 @@ import '../../core/widgets/common_widgets.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import '../shop/shop_tile.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Reviewers: pending queue + history. Vendors: their submitted recces.
 class ApprovalsScreen extends StatelessWidget {
@@ -32,12 +34,12 @@ class _ReviewerQueue extends StatelessWidget {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        appBar: AppBar(
-          title: Text('$stage Approvals'),
+        appBar: AdinnAppBar(
+          title: Text(context.uf('{0} Approvals', [context.ui(stage)])),
           bottom: TabBar(
             tabs: [
-              Tab(text: 'Pending (${pending.length})'),
-              Tab(text: 'Reviewed (${reviewed.length})'),
+              Tab(text: context.uf('Pending ({0})', [pending.length])),
+              Tab(text: context.uf('Reviewed ({0})', [reviewed.length])),
             ],
           ),
         ),
@@ -45,17 +47,17 @@ class _ReviewerQueue extends StatelessWidget {
           children: [
             _ShopList(
               shops: pending,
-              empty: const EmptyState(
+              empty: EmptyState(
                 icon: Icons.inbox_outlined,
-                title: 'All caught up',
-                message: 'No recce is waiting for your approval.',
+                title: context.ui('All caught up'),
+                message: context.ui('No recce is waiting for your approval.'),
               ),
             ),
             _ShopList(
               shops: reviewed,
-              empty: const EmptyState(
+              empty: EmptyState(
                 icon: Icons.history,
-                title: 'Nothing reviewed yet',
+                title: context.ui('Nothing reviewed yet'),
               ),
             ),
           ],
@@ -97,7 +99,7 @@ class _VendorSubmissionsState extends State<_VendorSubmissions> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Submissions')),
+      appBar: AdinnAppBar(title: Text(context.ui('My Submissions'))),
       body: Column(
         children: [
           SingleChildScrollView(
@@ -110,12 +112,15 @@ class _VendorSubmissionsState extends State<_VendorSubmissions> {
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
                       label: Text(
-                        '${switch (f) {
-                          _VendorFilter.all => 'All',
-                          _VendorFilter.pending => 'In approval',
-                          _VendorFilter.rejected => 'Rejected',
-                          _VendorFilter.approved => 'Approved',
-                        }} (${count(f)})',
+                        context.uf('{0} ({1})', [
+                          context.ui(switch (f) {
+                            _VendorFilter.all => 'All',
+                            _VendorFilter.pending => 'In approval',
+                            _VendorFilter.rejected => 'Rejected',
+                            _VendorFilter.approved => 'Approved',
+                          }),
+                          count(f),
+                        ]),
                       ),
                       selected: _filter == f,
                       onSelected: (_) => setState(() => _filter = f),
@@ -127,11 +132,11 @@ class _VendorSubmissionsState extends State<_VendorSubmissions> {
           Expanded(
             child: _ShopList(
               shops: shops,
-              empty: const EmptyState(
+              empty: EmptyState(
                 icon: Icons.outbox_outlined,
-                title: 'No submissions here',
+                title: context.ui('No submissions here'),
                 message:
-                    'Submitted recces and their approval status show here.',
+                    context.ui('Submitted recces and their approval status show here.'),
               ),
             ),
           ),

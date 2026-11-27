@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/site_checklists.dart';
+import '../../data/catalog/vendor_question_policy.dart';
+import '../../l10n/l10n.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 
@@ -29,19 +31,17 @@ Future<List<String>?> pickEvidencePhotos(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  'Evidence photos',
+                child: Text(context.ui('Evidence photos'),
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
               ),
               if (b.photos.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text(
-                    'No photos in this media group yet. Capture them in the '
-                    'board editor first.',
+                  child: Text(context.ui('No photos in this media group yet. Capture them in the '
+                    'board editor first.'),
                   ),
                 ),
               Flexible(
@@ -72,7 +72,7 @@ Future<List<String>?> pickEvidencePhotos(
                     for (final p in b.photos)
                       if (chosen.contains(p.id)) p.id,
                   ]),
-                  child: const Text('Done'),
+                  child: Text(context.ui('Done')),
                 ),
               ),
             ],
@@ -257,7 +257,7 @@ class _ChecklistFormState extends State<ChecklistForm>
     final c = context.read<AppController>();
     if (_dirty) _save();
     final n = c.copyChecklistToOtherUnits(widget.shopId, _b, _u.id);
-    if (mounted) showSnack(context, 'Answers copied to $n unit(s)');
+    if (mounted) showSnack(context, context.uf('Answers copied to {0} unit(s)', [n]));
   }
 
   @override
@@ -314,11 +314,10 @@ class _ChecklistFormState extends State<ChecklistForm>
           color: st.isComplete ? AdinnColors.success : AdinnColors.warning,
         ),
         if (!_b.checklistRequired)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 6),
-            child: Text(
-              'Recorded before the checklist was introduced: completing it '
-              'is recommended but does not block submission.',
+            child: Text(context.ui('Recorded before the checklist was introduced: completing it '
+              'is recommended but does not block submission.'),
               style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
             ),
           ),
@@ -329,7 +328,7 @@ class _ChecklistFormState extends State<ChecklistForm>
               key: const Key('cl_copy_all'),
               onPressed: _draft.isEmpty ? null : _copyToAll,
               icon: const Icon(Icons.copy_all, size: 18),
-              label: const Text('Copy answers to all units'),
+              label: Text(context.ui('Copy answers to all units')),
             ),
           ),
         const SizedBox(height: 8),
@@ -341,7 +340,7 @@ class _ChecklistFormState extends State<ChecklistForm>
             key: const Key('cl_save'),
             onPressed: _dirty ? _save : null,
             icon: const Icon(Icons.save_outlined),
-            label: const Text('Save checklist'),
+            label: Text(context.ui('Save checklist')),
           ),
         ],
       ],
@@ -360,6 +359,8 @@ class _ChecklistFormState extends State<ChecklistForm>
     for (final q in qs) {
       final section = q.id == 'checklist_remarks'
           ? 'Additional Site Remarks'
+          : VendorQuestionPolicy.isSafety(_b.mediaCode, q.id)
+          ? 'Installation Safety'
           : q.installations != null
           ? 'Installation-Specific Questions'
           : 'Media-Specific Questions';
@@ -368,7 +369,7 @@ class _ChecklistFormState extends State<ChecklistForm>
           Padding(
             padding: const EdgeInsets.only(top: 6, bottom: 10),
             child: Text(
-              section,
+              context.tSection(section),
               style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 13,
@@ -391,8 +392,7 @@ class _ChecklistFormState extends State<ChecklistForm>
         'Answers kept from an earlier configuration (${kept.length})',
         style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
       ),
-      subtitle: const Text(
-        'Not part of the current checklist; kept for history.',
+      subtitle: Text(context.ui('Not part of the current checklist; kept for history.'),
         style: TextStyle(fontSize: 11.5),
       ),
       children: [
@@ -449,7 +449,7 @@ class _ChecklistFormState extends State<ChecklistForm>
                 Expanded(
                   child: Text.rich(
                     TextSpan(
-                      text: q.text,
+                      text: context.tq(q.text),
                       children: [
                         if (q.required)
                           const TextSpan(
@@ -467,7 +467,7 @@ class _ChecklistFormState extends State<ChecklistForm>
                 if (widget.editable)
                   IconButton(
                     key: Key('cl_${q.id}_remark_toggle'),
-                    tooltip: 'Remarks',
+                    tooltip: context.ui('Remarks'),
                     visualDensity: VisualDensity.compact,
                     icon: Icon(
                       Icons.comment_outlined,
@@ -493,8 +493,8 @@ class _ChecklistFormState extends State<ChecklistForm>
                 enabled: widget.editable,
                 minLines: 1,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Remarks (optional)',
+                decoration: InputDecoration(
+                  labelText: context.ui('Remarks (optional)'),
                   isDense: true,
                 ),
                 onChanged: (t) => _put(_resp(q.id).copyWith(remarks: t.trim())),
@@ -520,9 +520,9 @@ class _ChecklistFormState extends State<ChecklistForm>
         return Wrap(
           spacing: 8,
           children: [
-            chip('yes', 'Yes'),
-            chip('no', 'No'),
-            if (q.allowNa) chip('na', 'N/A'),
+            chip('yes', context.t.yes),
+            chip('no', context.t.no),
+            if (q.allowNa) chip('na', context.isTamil ? context.t.notApplicable : 'N/A'),
           ],
         );
       case ChecklistResponseType.dropdown:
@@ -533,14 +533,14 @@ class _ChecklistFormState extends State<ChecklistForm>
               ? current
               : (current == 'na' && q.allowNa ? 'na' : null),
           isExpanded: true,
-          decoration: const InputDecoration(isDense: true, hintText: 'Select'),
+          decoration: InputDecoration(isDense: true, hintText: context.ui('Select')),
           items: [
             for (final o in q.options)
-              DropdownMenuItem(value: o, child: Text(o)),
+              DropdownMenuItem(value: o, child: Text(context.tq(o))),
             if (q.allowNa)
-              const DropdownMenuItem(
+              DropdownMenuItem(
                 value: 'na',
-                child: Text('Not applicable'),
+                child: Text(context.t.notApplicable),
               ),
           ],
           onChanged: widget.editable ? (v) => _setValue(q, v) : null,

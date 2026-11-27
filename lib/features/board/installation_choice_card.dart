@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -237,7 +238,7 @@ class InstallationChoiceCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        choice.name,
+                        context.ui(choice.name),
                         style: const TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
@@ -246,7 +247,7 @@ class InstallationChoiceCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        choice.description,
+                        context.ui(choice.description),
                         style: const TextStyle(
                           fontSize: 12,
                           color: AdinnColors.muted,

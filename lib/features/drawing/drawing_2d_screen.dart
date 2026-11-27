@@ -10,12 +10,15 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../../data/catalog/question_equivalence.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
+import '../../l10n/l10n.dart';
 import '../../state/app_controller.dart';
 import '../preview3d/preview_3d_screen.dart';
 import 'drawing_2d_painter.dart';
 import 'signage_geometry.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Default 2D technical drawing generated from the board's recce data.
 class Drawing2DScreen extends StatefulWidget {
@@ -79,13 +82,20 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
     final questions = unit == null
         ? SignageCatalog.questionsFor(board.mediaCode, board.installationCode)
         : SignageCatalog.questionsForUnit(board, unit);
-    final answers = SignageCatalog.answersOf(board, unit);
+    // This board's own final answers (never another board's).
+    final answers = unit == null
+        ? SignageCatalog.answersOf(board, unit)
+        : QuestionEquivalence.effectiveSiteAnswers(board, unit);
     final gps = shop.geo;
+    final siteRemarks = unit?.checklist['checklist_remarks']?.value;
     final notes = <String>[
       if (gps != null) 'GPS ${gps.coordinates} (±${gps.accuracyM.round()} m)',
+      if (shop.gstNumber.isNotEmpty) 'GST No. ${shop.gstNumber}',
       for (final q in questions)
         if (q.isVisible(answers) && q.isAnswered(answers))
-          '${q.label} ${SignageCatalog.answerText(q, answers[q.id])}',
+          '${context.tq(q.label)} ${_answer(q, answers[q.id])}',
+      if (siteRemarks is String && siteRemarks.trim().isNotEmpty)
+        'Additional site remarks: ${siteRemarks.trim()}',
       if (board.textNote.trim().isNotEmpty) 'Remark: ${board.textNote.trim()}',
     ];
     return DrawingInfo(
@@ -97,7 +107,19 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
       date: fmtDate(DateTime.now()),
       statusLabel: shop.status.label,
       notes: notes,
+      summaryTitle: context.isTamil
+          ? context.t.siteDetailsSummary
+          : 'SITE DETAILS SUMMARY',
     );
+  }
+
+  /// Answer wording for the sheet: Tamil for Yes / No and predefined
+  /// options; numbers, units and typed text stay as entered.
+  String _answer(SiteQuestion q, Object? v) {
+    if (!context.isTamil) return SignageCatalog.answerText(q, v);
+    if (v is bool) return v ? context.t.yes : context.t.no;
+    if (q.type == QuestionType.choice && v is String) return context.tq(v);
+    return SignageCatalog.answerText(q, v);
   }
 
   bool _referencedInSnapshots(Shop shop, String path) =>
@@ -108,7 +130,7 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
     if (media == null) {
       showSnack(
         context,
-        'Local storage is not available – drawing not saved',
+        context.ui('Local storage is not available – drawing not saved'),
         error: true,
       );
       return;
@@ -136,10 +158,10 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
       if (old != null && old != path && !_referencedInSnapshots(shop, old)) {
         await media.deleteIfExists(old);
       }
-      if (mounted) showSnack(context, 'Drawing saved to device storage');
+      if (mounted) showSnack(context, context.ui('Drawing saved to device storage'));
     } catch (e) {
       if (mounted) {
-        showSnack(context, 'Could not save drawing: $e', error: true);
+        showSnack(context, context.uf('Could not save drawing: {0}', [e]), error: true);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -153,7 +175,7 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
     final board = c.board(widget.shopId, widget.boardId);
     if (shop == null || board == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('2D Drawing')),
+        appBar: AdinnAppBar(title: Text(context.ui('2D Drawing'))),
         body: const EmptyState(
           icon: Icons.architecture,
           title: 'Board not found',
@@ -171,11 +193,11 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
     final showDrawing = !missingSelection || _useDefaults;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('2D Drawing'),
+            Text(context.ui('2D Drawing')),
             Text(
               board.drawingPath == null
                   ? board.name
@@ -193,12 +215,12 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
         actions: [
           if (showDrawing)
             IconButton(
-              tooltip: 'Fit to screen',
+              tooltip: context.ui('Fit to screen'),
               icon: const Icon(Icons.fit_screen_outlined),
               onPressed: _fit,
             ),
           IconButton(
-            tooltip: '3D view',
+            tooltip: context.ui('3D view'),
             icon: const Icon(Icons.view_in_ar_outlined),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -212,7 +234,7 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
           ),
           if (showDrawing && canEdit)
             IconButton(
-              tooltip: 'Save PNG',
+              tooltip: context.ui('Save PNG'),
               icon: _saving
                   ? const SizedBox(
                       width: 20,
@@ -234,7 +256,7 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
               action: OutlinedButton.icon(
                 onPressed: () => setState(() => _useDefaults = true),
                 icon: const Icon(Icons.visibility_outlined),
-                label: const Text('Preview with defaults'),
+                label: Text(context.ui('Preview with defaults')),
               ),
             )
           : Column(
@@ -247,9 +269,8 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
                       horizontal: 16,
                       vertical: 8,
                     ),
-                    child: const Text(
-                      'Default preview – some board details are missing, '
-                      'assumed values are marked in the site notes.',
+                    child: Text(context.ui('Default preview – some board details are missing, '
+                      'assumed values are marked in the site notes.'),
                       style: TextStyle(
                         fontSize: 12,
                         color: AdinnColors.warning,
@@ -284,6 +305,46 @@ class _Drawing2DScreenState extends State<Drawing2DScreen> {
                       );
                     },
                   ),
+                ),
+                // The sheet's notes column fits 11 lines; every answered
+                // question stays readable in full here (wrapped, scrollable).
+                Builder(
+                  builder: (_) {
+                    final info = _info(c, shop, board);
+                    if (info.notes.length <= 8) return const SizedBox.shrink();
+                    return Material(
+                      color: Colors.white,
+                      child: ExpansionTile(
+                        key: const Key('all_site_notes'),
+                        title: Text(
+                          '${info.summaryTitle} (${info.notes.length})',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        children: [
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 220),
+                            child: ListView(
+                              shrinkWrap: true,
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              children: [
+                                for (final n in info.notes)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Text(
+                                      '• $n',
+                                      style: const TextStyle(fontSize: 12.5),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 Container(
                   width: double.infinity,

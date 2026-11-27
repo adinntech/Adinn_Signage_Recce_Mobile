@@ -245,14 +245,15 @@ void main() {
   });
 
   group('advanced editor', () {
-    testWidgets('circle, freehand pen, undo and redo', (tester) async {
+    testWidgets('rectangle, freehand pen, undo and redo', (tester) async {
       _phone(tester);
       await tester.pumpWidget(
         MaterialApp(
           home: AnnotationEditorScreen(photo: _photo(), boardName: 'Board 1'),
         ),
       );
-      await _tool(tester, 'circle');
+      // Circle creation was removed from the field toolbar; Rect remains.
+      await _tool(tester, 'shapeRect');
       await tester.dragFrom(_canvasCentre(tester), const Offset(90, 60));
       await tester.pumpAndSettle();
       expect(find.text('1 marking'), findsOneWidget);
@@ -368,7 +369,9 @@ void main() {
       expect((a.measureW, a.measureH), (10.0, 4.0));
     });
 
-    testWidgets('dimension line asks for the measured value', (tester) async {
+    testWidgets('measurement label asks for the measured value', (
+      tester,
+    ) async {
       _phone(tester);
       AnnotationEditorResult? saved;
       await tester.pumpWidget(
@@ -380,25 +383,26 @@ void main() {
           ),
         ),
       );
-      await _tool(tester, 'dimension');
-      await tester.dragFrom(_canvasCentre(tester), const Offset(120, 0));
+      // Standalone Measure drawing tool was removed; a measurement label
+      // still opens the same value sheet.
+      await _tool(tester, 'measureLabel');
+      await tester.tapAt(_canvasCentre(tester));
       await tester.pumpAndSettle();
-      expect(find.text('Dimension value'), findsOneWidget);
+      expect(find.text('Measurement label'), findsOneWidget);
       await tester.enterText(
         find.byKey(const ValueKey('measure-value')),
         '6.5',
       );
       await tester.tap(find.byKey(const ValueKey('measure-save')));
       await tester.pumpAndSettle();
-      // Thickness applies to the selected marking.
-      await tester.tap(find.byKey(const ValueKey('thickness')));
-      await tester.pumpAndSettle();
+      // Stroke adjustment was removed: new annotations use a fixed 2.5.
+      expect(find.byKey(const ValueKey('thickness')), findsNothing);
       await tester.tap(find.byKey(const ValueKey('annotation-save')));
       await tester.pumpAndSettle();
       final d = saved!.annotations.single;
-      expect(d.type, AnnotationType.dimension);
+      expect(d.type, AnnotationType.measureLabel);
       expect(d.measureW, 6.5);
-      expect(d.thickness, 2);
+      expect(d.thickness, 2.5);
     });
   });
 }

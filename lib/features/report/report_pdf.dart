@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../l10n/ta_report.dart';
 import 'report_sheet.dart';
 
 /// A compressed picture for the PDF (JPEG or PNG bytes + pixel size).
@@ -22,7 +24,15 @@ class ReportInput {
     required this.data,
     this.images = const {},
     this.compress = true,
+    this.tamil = false,
+    this.taImages = const {},
   });
+
+  /// Tamil report: fixed vocabulary is shaped by Flutter's text engine in
+  /// the main isolate ([taImages], see [collectTamilRequests]) and embedded
+  /// as small text images. Free text stays exactly as entered.
+  final bool tamil;
+  final Map<String, ReportImage> taImages;
 
   /// Report data from [buildReportData] (the immutable snapshot).
   final Map<String, dynamic> data;
@@ -30,6 +40,190 @@ class ReportInput {
   /// Resolved pictures by image key (missing key = placeholder).
   final Map<String, ReportImage> images;
   final bool compress;
+}
+
+/// One Tamil text block that needs shaping.
+class TaRequest {
+  const TaRequest(this.text, this.size, this.bold, this.color, this.maxW);
+
+  final String text;
+  final double size;
+  final bool bold;
+  final int color;
+  final double maxW;
+
+  String get key => '$size|$bold|$color|$maxW|$text';
+}
+
+/// Pixel scale the text images are rendered at (image px / 2 = PDF pt).
+const kTaImageScale = 2.0;
+
+class _TaMode {
+  _TaMode(this.images, this.collect, this.tamil);
+
+  final Map<String, ReportImage> images;
+  final Map<String, TaRequest>? collect;
+
+  /// Translate the report's own labels (Tamil report).
+  final bool tamil;
+}
+
+/// Per-report rendering context. It lives in the ZONE of one build, so two
+/// overlapping English / Tamil reports can never see each other's state.
+_TaMode? get _ta => Zone.current[#reportTaMode] as _TaMode?;
+
+final _mappedPunctuation = RegExp(
+  '[–—−•…×‘’‚′“”'
+  '„″±°₹→← ]',
+);
+
+/// True when [s] has characters the built-in PDF fonts cannot print (Tamil
+/// and other scripts): such text is shaped by Flutter's text engine.
+bool needsShaping(String s) {
+  for (final r in s.runes) {
+    if (r > 255 && !_mappedPunctuation.hasMatch(String.fromCharCode(r))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Any user / data text in [data] that needs shaping (any language mode).
+bool reportNeedsShaping(Object? data) {
+  if (data is String) return needsShaping(data);
+  if (data is Map) return data.values.any(reportNeedsShaping);
+  if (data is Iterable) return data.any(reportNeedsShaping);
+  return false;
+}
+
+List<String> _chunks(String s, int max) {
+  final out = <String>[];
+  for (final para in s.split('\n')) {
+    var cur = '';
+    for (final w in para.split(' ')) {
+      var word = w;
+      while (word.length > max) {
+        if (cur.isNotEmpty) {
+          out.add(cur);
+          cur = '';
+        }
+        out.add(word.substring(0, max));
+        word = word.substring(max);
+      }
+      if (cur.isEmpty) {
+        cur = word;
+      } else if (cur.length + 1 + word.length <= max) {
+        cur = '$cur $word';
+      } else {
+        out.add(cur);
+        cur = word;
+      }
+    }
+    out.add(cur);
+  }
+  return out.where((e) => e.isNotEmpty).toList();
+}
+
+/// A text widget: plain PDF text in English; in Tamil mode the translated
+/// wording as a shaped image. A missing image is an ERROR (never a silent
+/// English fallback). Text without a Tamil wording is printed as entered.
+pw.Widget _txt(
+  String text,
+  pw.TextStyle style, {
+  double maxW = 330,
+  bool upper = false,
+  pw.TextOverflow? overflow,
+  int? maxLines,
+  bool translate = false,
+  pw.TextAlign? align,
+}) {
+  pw.Widget plain() => pw.Text(
+    upper ? pdfSafe(text).toUpperCase() : pdfSafe(text),
+    style: style,
+    textAlign: align,
+    overflow: overflow,
+    maxLines: maxLines,
+  );
+  final ta = _ta;
+  String? shaped;
+  if (ta != null && ta.tamil && translate) shaped = TamilReport.tr(text);
+  shaped ??= needsShaping(text) ? text : null;
+  if (shaped == null) return plain();
+  if (ta == null) {
+    throw StateError('Tamil text needs the shaping pass: $shaped');
+  }
+  final widgets = <pw.Widget>[];
+  // About one line of text per chunk (Tamil glyphs are ~0.7 em wide), so a
+  // chunk rarely wraps again and long text still splits across pages.
+  final perLine = (maxW / ((style.fontSize ?? 10) * 0.7)).floor().clamp(
+    12,
+    150,
+  );
+  for (final part in _chunks(shaped, perLine)) {
+    final req = TaRequest(
+      part,
+      style.fontSize ?? 10,
+      style.fontWeight == pw.FontWeight.bold,
+      (style.color ?? _ink).toInt(),
+      maxW,
+    );
+    final collect = ta.collect;
+    if (collect != null) {
+      collect[req.key] = req;
+      widgets.add(pw.SizedBox(height: req.size * 1.3));
+      continue;
+    }
+    final img = ta.images[req.key];
+    if (img == null) {
+      throw StateError('Tamil text could not be rendered: $part');
+    }
+    // Natural size (px / scale = pt); shrunk only when wider than its column.
+    final w = img.width / kTaImageScale, h = img.height / kTaImageScale;
+    final k = w > maxW ? maxW / w : 1.0;
+    widgets.add(
+      pw.Image(pw.MemoryImage(img.bytes), width: w * k, height: h * k),
+    );
+  }
+  if (widgets.length == 1) return widgets.single;
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: widgets,
+  );
+}
+
+/// First pass of a Tamil report: every Tamil text block (with its style and
+/// width) the report needs. Pure Dart.
+/// Text for the measurement sheets (same rules as the main report).
+pw.Widget reportTxt(
+  String text,
+  pw.TextStyle style, {
+  double maxW = 330,
+  bool translate = false,
+  int? maxLines,
+  pw.TextAlign? align,
+}) => _txt(
+  text,
+  style,
+  maxW: maxW,
+  translate: translate,
+  maxLines: maxLines,
+  align: align,
+);
+
+Future<List<TaRequest>> collectTamilRequests(ReportInput input) async {
+  final seen = <String, TaRequest>{};
+  await runZoned(
+    () => _buildReportPdf(
+      ReportInput(
+        data: input.data,
+        images: input.images,
+        compress: false,
+        tamil: input.tamil,
+      ),
+    ),
+    zoneValues: {#reportTaMode: _TaMode(const {}, seen, input.tamil)},
+  );
+  return seen.values.toList();
 }
 
 class ReportOutput {
@@ -95,7 +289,10 @@ String pdfSafe(Object? value) {
 }
 
 String _cell(Object? v) {
-  final s = pdfSafe(v).trim();
+  // Tamil / non-Latin text is kept exactly as entered (it is shaped later);
+  // only Latin text goes through the built-in-font filter.
+  final raw = '${v ?? ''}';
+  final s = needsShaping(raw) ? raw.trim() : pdfSafe(v).trim();
   if (s.isEmpty) return '-';
   return s.length <= kMaxCellChars
       ? s
@@ -116,7 +313,15 @@ Map<String, dynamic> _map(Object? v) =>
     v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
 /// Builds the measurement PDF. Pure: safe to run in an isolate.
-Future<ReportOutput> buildReportPdf(ReportInput input) async {
+Future<ReportOutput> buildReportPdf(ReportInput input) {
+  if (!input.tamil && input.taImages.isEmpty) return _buildReportPdf(input);
+  return runZoned(
+    () => _buildReportPdf(input),
+    zoneValues: {#reportTaMode: _TaMode(input.taImages, null, input.tamil)},
+  );
+}
+
+Future<ReportOutput> _buildReportPdf(ReportInput input) async {
   final d = input.data;
   final header = _map(d['header']);
   final banner = _map(d['banner']);
@@ -152,21 +357,43 @@ Future<ReportOutput> buildReportPdf(ReportInput input) async {
               child: pw.Row(
                 children: [
                   pw.Expanded(
-                    child: pw.Text(
-                      pdfSafe('${d['title']}  |  ${header['shopName']}'),
-                      style: const pw.TextStyle(fontSize: 8, color: _muted),
-                      maxLines: 1,
+                    child: pw.Row(
+                      children: [
+                        _txt(
+                          '${d['title']}',
+                          const pw.TextStyle(fontSize: 8, color: _muted),
+                          maxW: 260,
+                          translate: true,
+                        ),
+                        _txt(
+                          '  |  ${header['shopName']}',
+                          const pw.TextStyle(fontSize: 8, color: _muted),
+                          maxW: 260,
+                        ),
+                      ],
                     ),
                   ),
-                  pw.Text(
-                    pdfSafe(
-                      'v${header['version']}  ${draft ? 'DRAFT' : 'APPROVED'}',
-                    ),
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                      color: draft ? _red : _green,
-                    ),
+                  pw.Row(
+                    children: [
+                      pw.Text(
+                        pdfSafe('v${header['version']}  '),
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          fontWeight: pw.FontWeight.bold,
+                          color: draft ? _red : _green,
+                        ),
+                      ),
+                      _txt(
+                        draft ? 'DRAFT' : 'APPROVED',
+                        pw.TextStyle(
+                          fontSize: 8,
+                          fontWeight: pw.FontWeight.bold,
+                          color: draft ? _red : _green,
+                        ),
+                        maxW: 80,
+                        translate: true,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -180,19 +407,33 @@ Future<ReportOutput> buildReportPdf(ReportInput input) async {
         child: pw.Row(
           children: [
             pw.Expanded(
-              child: pw.Text(
-                pdfSafe(
-                  'Generated ${header['generatedAt']} - Adinn Signage Recce '
-                  '(offline). ${draft ? 'Draft - not approved for fabrication.' : ''}',
-                ),
-                style: const pw.TextStyle(fontSize: 7, color: _muted),
-                maxLines: 1,
+              child: reportTxt(
+                'Generated ${header['generatedAt']} - Adinn Signage Recce '
+                '(offline). ${draft ? 'Draft - not approved for fabrication.' : ''}',
+                const pw.TextStyle(fontSize: 7, color: _muted),
+                maxW: 420,
+                translate: true,
               ),
             ),
-            pw.Text(
-              reportPageLabel(ctx.pageNumber, ctx.pagesCount),
-              style: const pw.TextStyle(fontSize: 8, color: _ink),
-            ),
+            if (_ta == null)
+              pw.Text(
+                reportPageLabel(ctx.pageNumber, ctx.pagesCount),
+                style: const pw.TextStyle(fontSize: 8, color: _ink),
+              )
+            else
+              pw.Row(
+                children: [
+                  _txt(
+                    'Page',
+                    const pw.TextStyle(fontSize: 8, color: _ink),
+                    maxW: 60,
+                  ),
+                  pw.Text(
+                    ' ${ctx.pageNumber} / ${ctx.pagesCount}',
+                    style: const pw.TextStyle(fontSize: 8, color: _ink),
+                  ),
+                ],
+              ),
           ],
         ),
       ),
@@ -244,27 +485,28 @@ Future<ReportOutput> buildReportPdf(ReportInput input) async {
 // Sections
 // ---------------------------------------------------------------------------
 
-pw.Widget _note(String text) => pw.Text(
-  pdfSafe(text),
-  style: pw.TextStyle(
-    fontSize: 7.5,
-    color: _muted,
-    fontStyle: pw.FontStyle.italic,
-  ),
+pw.Widget _note(String text) => _txt(
+  text,
+  pw.TextStyle(fontSize: 7.5, color: _muted, fontStyle: pw.FontStyle.italic),
+  maxW: 500,
+  translate: true,
 );
 
 pw.Widget _heading(String text) => pw.Container(
   margin: const pw.EdgeInsets.only(top: 14, bottom: 6),
   padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
   color: _ink,
-  child: pw.Text(
-    pdfSafe(text).toUpperCase(),
-    style: pw.TextStyle(
+  child: _txt(
+    text,
+    pw.TextStyle(
       color: PdfColors.white,
       fontSize: 10.5,
       fontWeight: pw.FontWeight.bold,
       letterSpacing: 0.5,
     ),
+    maxW: 500,
+    upper: true,
+    translate: true,
   ),
 );
 
@@ -278,19 +520,22 @@ pw.Widget _subheading(String text, {String? trailing}) => pw.Container(
     crossAxisAlignment: pw.CrossAxisAlignment.end,
     children: [
       pw.Expanded(
-        child: pw.Text(
-          pdfSafe(text),
-          style: pw.TextStyle(
+        child: _txt(
+          text,
+          pw.TextStyle(
             fontSize: 10.5,
             fontWeight: pw.FontWeight.bold,
             color: _red,
           ),
+          maxW: 380,
+          translate: true,
         ),
       ),
       if (trailing != null)
-        pw.Text(
-          pdfSafe(trailing),
-          style: const pw.TextStyle(fontSize: 8, color: _muted),
+        _txt(
+          trailing,
+          const pw.TextStyle(fontSize: 8, color: _muted),
+          maxW: 200,
         ),
     ],
   ),
@@ -298,13 +543,11 @@ pw.Widget _subheading(String text, {String? trailing}) => pw.Container(
 
 pw.Widget _label(String text) => pw.Padding(
   padding: const pw.EdgeInsets.only(top: 6, bottom: 3),
-  child: pw.Text(
-    pdfSafe(text),
-    style: pw.TextStyle(
-      fontSize: 9,
-      fontWeight: pw.FontWeight.bold,
-      color: _ink,
-    ),
+  child: _txt(
+    text,
+    pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: _ink),
+    maxW: 500,
+    translate: true,
   ),
 );
 
@@ -320,24 +563,47 @@ pw.Widget _kv(List<List<String>> rows, {double keyFlex = 1.1}) => pw.Table(
       pw.TableRow(
         decoration: pw.BoxDecoration(color: i.isEven ? PdfColors.white : _grey),
         children: [
-          _td(rows[i].isEmpty ? '' : rows[i][0], bold: true),
-          _td(rows[i].length > 1 ? rows[i][1] : ''),
+          _td(
+            rows[i].isEmpty ? '' : rows[i][0],
+            bold: true,
+            maxW: kReportContentWidth * keyFlex / (keyFlex + 2) - 8,
+          ),
+          _td(
+            rows[i].length > 1 ? rows[i][1] : '',
+            maxW: kReportContentWidth * 2 / (keyFlex + 2) - 8,
+          ),
         ],
       ),
   ],
 );
 
-pw.Widget _td(String text, {bool bold = false, PdfColor? color}) => pw.Padding(
+pw.Widget _td(
+  String text, {
+  bool bold = false,
+  PdfColor? color,
+  double? maxW,
+}) => pw.Padding(
   padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-  child: pw.Text(
+  child: _txt(
     _cell(text),
-    style: pw.TextStyle(
+    pw.TextStyle(
       fontSize: 8,
       fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
       color: color ?? _ink,
     ),
+    maxW: maxW ?? (bold ? 180 : 330),
+    // Keys / header cells are the report's own wording; values are data
+    // (user text is never translated).
+    translate: bold || TamilReport.isFixedStatus(_cell(text)),
   ),
 );
+
+/// Usable width (pt) of column [j] of a flex table.
+double _colW(List<double>? flex, int n, int j) {
+  final f = flex ?? List.filled(n, 1.0);
+  final total = f.fold<double>(0, (a, b) => a + b);
+  return kReportContentWidth * f[j] / total - 8;
+}
 
 /// Table with a red header row.
 pw.Widget _table(
@@ -355,7 +621,13 @@ pw.Widget _table(
       repeat: true,
       decoration: const pw.BoxDecoration(color: _red),
       children: [
-        for (final h in headers) _td(h, bold: true, color: PdfColors.white),
+        for (var j = 0; j < headers.length; j++)
+          _td(
+            headers[j],
+            bold: true,
+            color: PdfColors.white,
+            maxW: _colW(flex, headers.length, j),
+          ),
       ],
     ),
     for (var i = 0; i < rows.length; i++)
@@ -363,7 +635,10 @@ pw.Widget _table(
         decoration: pw.BoxDecoration(color: i.isEven ? PdfColors.white : _grey),
         children: [
           for (var j = 0; j < headers.length; j++)
-            _td(j < rows[i].length ? rows[i][j] : ''),
+            _td(
+              j < rows[i].length ? rows[i][j] : '',
+              maxW: _colW(flex, headers.length, j),
+            ),
         ],
       ),
   ],
@@ -375,11 +650,14 @@ List<pw.Widget> _longText(String label, String text) {
   if (t.isEmpty) return const [];
   return [
     _label(label),
-    pw.Text(
-      t,
-      overflow: pw.TextOverflow.span,
-      style: const pw.TextStyle(fontSize: 8.5, lineSpacing: 1.5),
-    ),
+    if (needsShaping(t))
+      _txt(t, const pw.TextStyle(fontSize: 8.5), maxW: 500)
+    else
+      pw.Text(
+        t,
+        overflow: pw.TextOverflow.span,
+        style: const pw.TextStyle(fontSize: 8.5, lineSpacing: 1.5),
+      ),
   ];
 }
 
@@ -395,9 +673,11 @@ List<pw.Widget> _cover(
     child: pw.Row(
       children: [
         pw.Expanded(
-          child: pw.Text(
-            pdfSafe(d['title']),
-            style: pw.TextStyle(
+          child: _txt(
+            '${d['title']}',
+            maxW: 440,
+            translate: true,
+            pw.TextStyle(
               color: PdfColors.white,
               fontSize: 16,
               fontWeight: pw.FontWeight.bold,
@@ -426,18 +706,22 @@ List<pw.Widget> _cover(
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Text(
-          pdfSafe(banner['text']),
-          style: pw.TextStyle(
+        _txt(
+          '${banner['text']}',
+          maxW: 480,
+          translate: true,
+          pw.TextStyle(
             fontSize: 12,
             fontWeight: pw.FontWeight.bold,
             color: draft ? _red : _green,
           ),
         ),
         pw.SizedBox(height: 2),
-        pw.Text(
-          pdfSafe(banner['detail']),
-          style: const pw.TextStyle(fontSize: 8.5, color: _ink),
+        _txt(
+          '${banner['detail']}',
+          const pw.TextStyle(fontSize: 8.5, color: _ink),
+          maxW: 480,
+          translate: true,
         ),
       ],
     ),
@@ -508,9 +792,21 @@ List<pw.Widget> _group(
     ['Installation (group)', '${g['installation']}'],
     ['Quantity', '${g['quantity']} - ${g['sizeMode']}'],
   ]),
-  if (_rows(g['siteAnswers']).isNotEmpty) ...[
-    _label('Site questions'),
-    _kv(_rows(g['siteAnswers']), keyFlex: 1.6),
+  if (_rows(g['siteAnswers']).isNotEmpty || '${g['gst'] ?? ''}'.isNotEmpty) ...[
+    if (images['${g['summaryKey']}'] != null)
+      // Tamil mode: shaped by Flutter's text engine (title included).
+      pw.Image(
+        pw.MemoryImage(images['${g['summaryKey']}']!.bytes),
+        width: kReportContentWidth,
+        fit: pw.BoxFit.contain,
+      )
+    else ...[
+      _label('Site Details Summary'),
+      _kv([
+        if ('${g['gst'] ?? ''}'.isNotEmpty) ['GST No.', '${g['gst']}'],
+        ..._rows(g['siteAnswers']),
+      ], keyFlex: 1.6),
+    ],
   ],
   ..._longText('Group notes', '${g['note'] ?? ''}'),
   for (final it in (g['items'] as List? ?? const [])) ..._item(_map(it)),
@@ -533,6 +829,8 @@ List<pw.Widget> _item(Map<String, dynamic> it) {
       ['Width', '${it['width']}'],
       ['Height', '${it['height']}'],
       ['Installation type', '${it['installation']}'],
+      if ('${it['specNote'] ?? ''}'.isNotEmpty)
+        ['Specification', '${it['specNote']}'],
       if ('${ground['bottom']}'.isNotEmpty)
         ['Ground clearance (bottom height)', '${ground['bottom']}'],
       if ('${ground['top']}'.isNotEmpty)
@@ -564,11 +862,10 @@ List<pw.Widget> _item(Map<String, dynamic> it) {
       _label('Electrical information (as recorded - not a safety certificate)'),
       if (_rows(it['electrical']).isNotEmpty) _kv(_rows(it['electrical'])),
       if (_strings(it['electricalMarks']).isNotEmpty)
-        pw.Text(
-          pdfSafe(
-            'Marked on photos: ${_strings(it['electricalMarks']).join(', ')}',
-          ),
-          style: const pw.TextStyle(fontSize: 8),
+        _txt(
+          'Marked on photos: ${_strings(it['electricalMarks']).join(', ')}',
+          const pw.TextStyle(fontSize: 8),
+          maxW: 500,
         ),
     ],
     if (_rows(it['obstructions']).isNotEmpty) ...[
@@ -588,12 +885,11 @@ List<pw.Widget> _item(Map<String, dynamic> it) {
       ),
     ],
     if (_strings(it['perspectives']).isNotEmpty)
-      pw.Text(
-        pdfSafe(
-          'Perspective placement drawn on: '
-          '${_strings(it['perspectives']).join(', ')}',
-        ),
-        style: const pw.TextStyle(fontSize: 8),
+      _txt(
+        'Perspective placement drawn on: '
+        '${_strings(it['perspectives']).join(', ')}',
+        const pw.TextStyle(fontSize: 8),
+        maxW: 500,
       ),
     _label(
       'Site checklist - ${checklist['title']} '
@@ -633,9 +929,10 @@ pw.Widget _picture(Map<String, dynamic> p, Map<String, ReportImage> images) {
         color: _grey,
         border: pw.Border.all(color: _line),
       ),
-      child: pw.Text(
+      child: reportTxt(
         'Image not available on this device',
-        style: const pw.TextStyle(fontSize: 9, color: _muted),
+        const pw.TextStyle(fontSize: 9, color: _muted),
+        translate: true,
       ),
     );
   } else {
@@ -653,10 +950,11 @@ pw.Widget _picture(Map<String, dynamic> p, Map<String, ReportImage> images) {
       children: [
         pw.Center(child: body),
         pw.SizedBox(height: 3),
-        pw.Text(
-          pdfSafe(p['caption']),
-          textAlign: pw.TextAlign.center,
-          style: pw.TextStyle(
+        _txt(
+          '${p['caption']}',
+          maxW: 480,
+          translate: true,
+          pw.TextStyle(
             fontSize: 7.5,
             color: _muted,
             fontStyle: pw.FontStyle.italic,
@@ -685,15 +983,20 @@ List<pw.Widget> _review(Map<String, dynamic> r) => [
     ),
     ..._longText('Remarks', '${_map(rej)['remarks']}'),
     if (_strings(_map(rej)['reasons']).isNotEmpty)
-      pw.Text(
-        pdfSafe('Reasons: ${_strings(_map(rej)['reasons']).join(', ')}'),
-        style: const pw.TextStyle(fontSize: 8),
+      _txt(
+        'Reasons: ${_strings(_map(rej)['reasons']).join(', ')}',
+        const pw.TextStyle(fontSize: 8),
+        maxW: 500,
       ),
     for (final i in _strings(_map(rej)['issues']))
-      pw.Bullet(
-        text: pdfSafe(i),
-        style: const pw.TextStyle(fontSize: 8),
-        bulletSize: 3,
+      pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text('- ', style: const pw.TextStyle(fontSize: 8)),
+          pw.Expanded(
+            child: _txt(i, const pw.TextStyle(fontSize: 8), maxW: 480),
+          ),
+        ],
       ),
   ],
   if (_rows(r['comments']).isNotEmpty) ...[
@@ -706,9 +1009,10 @@ List<pw.Widget> _review(Map<String, dynamic> r) => [
   ] else
     pw.Padding(
       padding: const pw.EdgeInsets.only(top: 4),
-      child: pw.Text(
+      child: reportTxt(
         'No outstanding review comments.',
-        style: const pw.TextStyle(fontSize: 8, color: _muted),
+        const pw.TextStyle(fontSize: 8, color: _muted),
+        translate: true,
       ),
     ),
 ];
@@ -786,7 +1090,6 @@ pw.Widget measurementDiagram(Map<String, dynamic> d) {
 
   final labels = <pw.Widget>[];
   void label(double x, double yUp, String text, {bool centre = true}) {
-    final t = pdfSafe(text);
     final top = height - yUp - 5;
     labels.add(
       pw.Positioned(
@@ -794,10 +1097,12 @@ pw.Widget measurementDiagram(Map<String, dynamic> d) {
         top: math.max(0, math.min(height - 10, top)),
         child: pw.SizedBox(
           width: 120,
-          child: pw.Text(
-            t,
-            textAlign: centre ? pw.TextAlign.center : pw.TextAlign.left,
-            style: const pw.TextStyle(fontSize: 7, color: _ink),
+          child: reportTxt(
+            text,
+            const pw.TextStyle(fontSize: 7, color: _ink),
+            maxW: 120,
+            translate: true,
+            align: centre ? pw.TextAlign.center : pw.TextAlign.left,
           ),
         ),
       ),

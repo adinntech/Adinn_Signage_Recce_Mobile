@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../gsb/gsb_type_sheet.dart' show BoardTypeCard;
@@ -45,8 +46,7 @@ class _NlbTypeSheetState extends State<NlbTypeSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Select NLB Board Type',
+            Text(context.ui('Select NLB Board Type'),
               key: Key('nlb_type_title'),
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
@@ -73,7 +73,7 @@ class _NlbTypeSheetState extends State<NlbTypeSheet> {
                   child: OutlinedButton(
                     key: const Key('nlb_type_cancel'),
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(context.ui('Cancel')),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -83,7 +83,7 @@ class _NlbTypeSheetState extends State<NlbTypeSheet> {
                     onPressed: _selected == null
                         ? null
                         : () => Navigator.of(context).pop(_selected),
-                    child: const Text('Continue'),
+                    child: Text(context.ui('Continue')),
                   ),
                 ),
               ],

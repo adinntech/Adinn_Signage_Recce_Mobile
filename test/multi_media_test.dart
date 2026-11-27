@@ -15,6 +15,7 @@ import 'package:signage_recce/state/app_controller.dart';
 import 'package:signage_recce/state/version_diff.dart';
 
 import 'helpers.dart';
+import 'support/evidence_fixture.dart';
 
 void _paintOnce(CustomPainter painter, Size size) {
   final recorder = ui.PictureRecorder();
@@ -656,6 +657,7 @@ void main() {
       c.increaseQuantity(shop.id, b, 2);
       // Each physical board answers its own questions.
       completeAnswers(b);
+      ensureEvidenceForAllUnits(b);
       c.submitShop(shop.id);
       final v1Units = shop.latestSubmission!.shopSnapshot.boards.first.units
           .map((u) => u.id)

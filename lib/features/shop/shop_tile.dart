@@ -1,8 +1,8 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
@@ -27,6 +27,7 @@ class ShopTile extends StatelessWidget {
     final c = context.read<AppController>();
     final project = c.project(shop.projectId);
     final task = c.task(shop.taskId);
+    final taskTitle = task == null ? '' : context.taskTitle(task);
     final medias = shop.boards
         .map((b) => SignageCatalog.media(b.mediaCode)?.shortName)
         .whereType<String>()
@@ -60,7 +61,7 @@ class ShopTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          shop.name,
+                          context.shopName(shop),
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -69,8 +70,8 @@ class ShopTile extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           showProject
-                              ? '${project?.name ?? ''} • ${task?.title ?? ''}'
-                              : shop.fullAddress,
+                              ? '${project == null ? '' : context.projectName(project.id, project.name)} • $taskTitle'
+                              : context.shopFullAddress(shop),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -92,13 +93,13 @@ class ShopTile extends StatelessWidget {
                 children: [
                   StatusChip(shop.status, compact: true),
                   TagChip(
-                    '${shop.boards.length} board${shop.boards.length == 1 ? '' : 's'}',
+                    context.boardCount(shop.boards.length),
                     icon: Icons.dashboard_customize_outlined,
                   ),
                   for (final m in medias) TagChip(m, color: AdinnColors.red),
                   if (sub != null)
                     TagChip(
-                      'v${sub.version} • ${fmtRelative(sub.submittedAt)}',
+                      'v${sub.version} • ${context.fmtRelativeL(sub.submittedAt)}',
                       icon: Icons.history,
                       color: AdinnColors.info,
                     ),

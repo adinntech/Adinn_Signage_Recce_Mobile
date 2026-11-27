@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -15,6 +16,7 @@ import '../photos/site_photo_view.dart';
 import '../preview_live/capture_utils.dart';
 import '../survey/site_markup_painter.dart';
 import 'comparison_renderer.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Writes an exported comparison PNG and returns its path.
 typedef ComparisonWriter = Future<String> Function(Uint8List png);
@@ -200,11 +202,11 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
         ),
       );
       if (mounted) {
-        showSnack(context, 'Comparison saved for ${b.unitLabel(unit)}');
+        showSnack(context, context.uf('Comparison saved for {0}', [b.unitLabel(unit)]));
       }
     } catch (e) {
       if (mounted) {
-        showSnack(context, 'Could not save comparison: $e', error: true);
+        showSnack(context, context.uf('Could not save comparison: {0}', [e]), error: true);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -218,7 +220,7 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
     final b = c.board(widget.shopId, widget.boardId);
     if (shop == null || b == null || b.photos.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Before / Proposed')),
+        appBar: AdinnAppBar(title: Text(context.ui('Before / Proposed'))),
         body: const EmptyState(
           icon: Icons.photo_outlined,
           title: 'No site photo',
@@ -247,14 +249,13 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
     final saved = b.comparisons.reversed.toList();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Before / Proposed',
+            Text(context.ui('Before / Proposed'),
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
             Text(
@@ -274,8 +275,8 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
               key: const Key('cmp_photo'),
               initialValue: photo.id,
               isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Before (site photo)',
+              decoration: InputDecoration(
+                labelText: context.ui('Before (site photo)'),
               ),
               items: [
                 for (final p in b.photos)
@@ -292,7 +293,7 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
               key: const Key('cmp_unit'),
               initialValue: unitId,
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Signage item'),
+              decoration: InputDecoration(labelText: context.ui('Signage item')),
               items: [
                 for (final u in b.activeUnits)
                   DropdownMenuItem(
@@ -318,7 +319,7 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
               key: const Key('cmp_proposed'),
               initialValue: option!.key,
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Proposed'),
+              decoration: InputDecoration(labelText: context.ui('Proposed')),
               items: [
                 for (final o in options)
                   DropdownMenuItem(
@@ -330,21 +331,21 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
             ),
             const SizedBox(height: 10),
             SegmentedButton<CompareMode>(
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: CompareMode.sideBySide,
                   icon: Icon(Icons.view_column_outlined, size: 18),
-                  label: Text('Side', key: Key('cmp_mode_side')),
+                  label: Text(context.ui('Side'), key: Key('cmp_mode_side')),
                 ),
                 ButtonSegment(
                   value: CompareMode.slider,
                   icon: Icon(Icons.compare, size: 18),
-                  label: Text('Slider', key: Key('cmp_mode_slider')),
+                  label: Text(context.ui('Slider'), key: Key('cmp_mode_slider')),
                 ),
                 ButtonSegment(
                   value: CompareMode.toggle,
                   icon: Icon(Icons.fullscreen, size: 18),
-                  label: Text('Toggle', key: Key('cmp_mode_toggle')),
+                  label: Text(context.ui('Toggle'), key: Key('cmp_mode_toggle')),
                 ),
               ],
               selected: {_mode},
@@ -366,17 +367,15 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
                   color: AdinnColors.warning.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Text(
-                  'The proposed image has a different aspect ratio. It is '
-                  'shown letter-boxed (not stretched) – alignment may differ.',
+                child: Text(context.ui('The proposed image has a different aspect ratio. It is '
+                  'shown letter-boxed (not stretched) – alignment may differ.'),
                   style: TextStyle(fontSize: 12, color: AdinnColors.warning),
                 ),
               ),
             const SizedBox(height: 10),
             _viewer(photo, option, labels, aspect),
             const SizedBox(height: 6),
-            const Text(
-              'Visual proposal only – not an as-built installation photo.',
+            Text(context.ui('Visual proposal only – not an as-built installation photo.'),
               style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
             ),
             if (editable) ...[
@@ -393,7 +392,7 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.save_alt),
-                label: const Text('Save Comparison'),
+                label: Text(context.ui('Save Comparison')),
               ),
             ],
           ],
@@ -404,8 +403,7 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
           ),
           const SizedBox(height: 6),
           if (saved.isEmpty)
-            const Text(
-              'None saved yet.',
+            Text(context.ui('None saved yet.'),
               style: TextStyle(color: AdinnColors.muted, fontSize: 12.5),
             ),
           for (final r in saved)
@@ -444,7 +442,7 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
               trailing: editable
                   ? IconButton(
                       key: Key('cmp_delete_${r.id}'),
-                      tooltip: 'Delete comparison',
+                      tooltip: context.ui('Delete comparison'),
                       icon: const Icon(Icons.delete_outline),
                       onPressed: () async {
                         final ok = await confirmDialog(
@@ -499,13 +497,12 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
           key: const Key('cmp_missing'),
           color: AdinnColors.line,
           alignment: Alignment.center,
-          child: const Column(
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.broken_image_outlined, color: AdinnColors.muted),
               SizedBox(height: 4),
-              Text(
-                'Proposed image not found on device',
+              Text(context.ui('Proposed image not found on device'),
                 style: TextStyle(fontSize: 11, color: AdinnColors.muted),
               ),
             ],
@@ -663,17 +660,17 @@ class _ComparisonScreenState extends State<ComparisonScreen> {
           children: [
             Row(
               children: [
-                const Text('Before'),
+                Text(context.ui('Before')),
                 Switch(
                   key: const Key('cmp_toggle'),
                   value: _showProposed,
                   onChanged: (v) => setState(() => _showProposed = v),
                 ),
-                const Text('Proposed'),
+                Text(context.ui('Proposed')),
                 const Spacer(),
                 IconButton(
                   key: const Key('cmp_fullscreen'),
-                  tooltip: 'Full screen',
+                  tooltip: context.ui('Full screen'),
                   icon: const Icon(Icons.fullscreen),
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
@@ -751,7 +748,7 @@ class _FullScreenToggleState extends State<_FullScreenToggle> {
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
-    appBar: AppBar(
+    appBar: AdinnAppBar(
       backgroundColor: Colors.black,
       foregroundColor: Colors.white,
       title: Text(_proposed ? 'Proposed' : 'Original'),

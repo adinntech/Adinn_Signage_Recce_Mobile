@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +10,7 @@ import '../preview_live/live_preview_tab.dart' show PngWriter;
 import '../../state/app_controller.dart';
 import 'ar_preview_tab.dart';
 import 'ar_session_controller.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Full-screen Camera AR for one signage item. Works without any site photo
 /// (uses the live camera); Live Preview needs a captured photo.
@@ -37,7 +39,7 @@ class CameraArScreen extends StatelessWidget {
     if (photos.isEmpty) {
       showSnack(
         context,
-        'No site photos available. Capture a site photo to continue.',
+        context.ui('No site photos available. Capture a site photo to continue.'),
         error: true,
       );
       return;
@@ -63,7 +65,7 @@ class CameraArScreen extends StatelessWidget {
     final u = b?.unitById(unitId);
     if (shop == null || b == null || u == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: AdinnAppBar(),
         body: const EmptyState(icon: Icons.search_off, title: 'Item not found'),
       );
     }
@@ -71,7 +73,7 @@ class CameraArScreen extends StatelessWidget {
     final project = c.project(shop.projectId);
     final task = c.task(shop.taskId);
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         titleSpacing: 0,
         toolbarHeight: 66,
         title: Column(
@@ -85,7 +87,8 @@ class CameraArScreen extends StatelessWidget {
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             Text(
-              '${project?.name ?? 'Project'} • ${task?.title ?? 'Task'}',
+              '${project == null ? context.ui('Project') : context.projectName(project.id, project.name)} • '
+              '${task?.title ?? context.ui('Task')}',
               key: const ValueKey('ar_project_task'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

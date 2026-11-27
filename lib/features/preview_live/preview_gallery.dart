@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Opens / shares a saved GSB day-night comparison PDF.
 Future<void> openComparisonPdf(String path, String shopName) async {
@@ -128,8 +130,7 @@ class PreviewGallery extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        c.kind.label,
+                      Text(context.ui(c.kind.label),
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -185,18 +186,17 @@ class PreviewViewerScreen extends StatelessWidget {
     final media = SignageCatalog.media(board.mediaCode)?.shortName ?? '';
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(
-          capture.kind.label,
+        title: Text(context.ui(capture.kind.label),
           style: const TextStyle(color: Colors.white),
         ),
         actions: [
           if (capture.comparisonPdf != null)
             IconButton(
               key: const ValueKey('open-comparison-pdf'),
-              tooltip: 'Day / Night comparison PDF',
+              tooltip: context.ui('Day / Night comparison PDF'),
               icon: const Icon(Icons.picture_as_pdf_outlined),
               onPressed: () async {
                 final shop = context.read<AppController>().shop(capture.shopId);
@@ -207,7 +207,7 @@ class PreviewViewerScreen extends StatelessWidget {
                   );
                 } catch (e) {
                   if (context.mounted) {
-                    showSnack(context, 'Could not open PDF: $e', error: true);
+                    showSnack(context, context.uf('Could not open PDF: {0}', [e]), error: true);
                   }
                 }
               },
@@ -215,7 +215,7 @@ class PreviewViewerScreen extends StatelessWidget {
           if (shopId != null)
             IconButton(
               key: const ValueKey('delete-preview'),
-              tooltip: 'Delete',
+              tooltip: context.ui('Delete'),
               icon: const Icon(Icons.delete_outline),
               onPressed: () async {
                 final ok = await confirmDialog(
@@ -243,8 +243,7 @@ class PreviewViewerScreen extends StatelessWidget {
         child: Center(
           child: Image.file(
             File(capture.path),
-            errorBuilder: (_, _, _) => const Text(
-              'Image not found on device',
+            errorBuilder: (_, _, _) => Text(context.ui('Image not found on device'),
               style: TextStyle(color: Colors.white70),
             ),
           ),

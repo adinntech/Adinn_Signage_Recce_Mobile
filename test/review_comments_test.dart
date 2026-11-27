@@ -362,6 +362,10 @@ void main() {
       _reject(c, 'Retake');
       _switch(c, DemoAccounts.vendorPin);
       await c.removePhoto(_shopId, _boardId, _photoId);
+      // The seeded board now carries a second photo; drop it as well.
+      for (final p in [...c.board(_shopId, _boardId)!.photos]) {
+        await c.removePhoto(_shopId, _boardId, p.id);
+      }
       expect(c.board(_shopId, _boardId)!.photos, isEmpty);
 
       await tester.pumpWidget(

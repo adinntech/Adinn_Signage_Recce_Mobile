@@ -1,9 +1,10 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../../core/widgets/language_switcher.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import '../history/activity_screen.dart';
@@ -58,8 +59,10 @@ class DashboardScreen extends StatelessWidget {
               greeting: _greeting(),
               user: user,
               subtitle: reviewer
-                  ? '${c.pendingReviews.length} recce(s) awaiting your approval'
-                  : '${sum.notStarted + sum.inProgress + sum.rejected} shop(s) need field work',
+                  ? context.reccesAwaitApproval(c.pendingReviews.length)
+                  : context.shopsNeedFieldWork(
+                      sum.notStarted + sum.inProgress + sum.rejected,
+                    ),
             ),
           ),
           SliverPadding(
@@ -69,8 +72,8 @@ class DashboardScreen extends StatelessWidget {
                 child: ListTile(
                   key: const Key('dashboard_search'),
                   leading: const Icon(Icons.search),
-                  title: const Text(
-                    'Search shops, owners, areas, projects',
+                  title: Text(
+                    context.ui('Search shops, owners, areas, projects'),
                     style: TextStyle(color: AdinnColors.muted, fontSize: 14),
                   ),
                   onTap: () => showSearch<void>(
@@ -97,19 +100,19 @@ class DashboardScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             sliver: SliverToBoxAdapter(
               child: SectionCard(
-                title: 'Overall progress',
+                title: context.ui('Overall progress'),
                 icon: Icons.insights_outlined,
                 child: Column(
                   children: [
                     ProgressBarLabel(
                       value: sum.submittedRatio,
-                      label: 'Submitted for approval',
+                      label: context.ui('Submitted for approval'),
                       color: AdinnColors.info,
                     ),
                     const SizedBox(height: 12),
                     ProgressBarLabel(
                       value: sum.approvedRatio,
-                      label: 'Final approved',
+                      label: context.ui('Final approved'),
                       color: AdinnColors.success,
                     ),
                   ],
@@ -121,8 +124,10 @@ class DashboardScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
             sliver: SliverToBoxAdapter(
               child: _SectionTitle(
-                reviewer ? 'Awaiting your approval' : 'Needs rework',
-                action: attention.isEmpty ? null : 'View all',
+                context.ui(
+                  reviewer ? 'Awaiting your approval' : 'Needs rework',
+                ),
+                action: attention.isEmpty ? null : context.ui('View all'),
                 onAction: () => onOpenTab(2),
               ),
             ),
@@ -138,9 +143,11 @@ class DashboardScreen extends StatelessWidget {
                       color: AdinnColors.success,
                     ),
                     title: Text(
-                      reviewer
-                          ? 'No pending approvals'
-                          : 'No rejected recces – great work!',
+                      context.ui(
+                        reviewer
+                            ? 'No pending approvals'
+                            : 'No rejected recces – great work!',
+                      ),
                     ),
                   ),
                 ),
@@ -157,12 +164,12 @@ class DashboardScreen extends StatelessWidget {
               ),
             ),
           if (drafts.isNotEmpty) ...[
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
               sliver: SliverToBoxAdapter(
                 child: _SectionTitle(
-                  'Continue where you left off',
-                  key: Key('continue_drafts'),
+                  context.ui('Continue where you left off'),
+                  key: const Key('continue_drafts'),
                 ),
               ),
             ),
@@ -177,9 +184,11 @@ class DashboardScreen extends StatelessWidget {
             ),
           ],
           if (!reviewer) ...[
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-              sliver: SliverToBoxAdapter(child: _SectionTitle('My tasks')),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+              sliver: SliverToBoxAdapter(
+                child: _SectionTitle(context.ui('My tasks')),
+              ),
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -194,8 +203,8 @@ class DashboardScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
             sliver: SliverToBoxAdapter(
               child: _SectionTitle(
-                'Recent activity',
-                action: 'Timeline',
+                context.ui('Recent activity'),
+                action: context.ui('Timeline'),
                 onAction: () => onOpenTab(3),
               ),
             ),
@@ -207,7 +216,7 @@ class DashboardScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     if (recent.isEmpty)
-                      const ListTile(title: Text('No activity yet')),
+                      ListTile(title: Text(context.ui('No activity yet'))),
                     for (var i = 0; i < recent.length; i++)
                       ActivityTile(
                         event: recent[i],
@@ -269,7 +278,7 @@ class _Header extends StatelessWidget {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        user.role.label,
+                        context.ui(user.role.label),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -280,6 +289,8 @@ class _Header extends StatelessWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 6),
+                  const LanguageSwitcher(light: true),
                 ],
               ),
               const SizedBox(height: 22),
@@ -292,7 +303,7 @@ class _Header extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '$greeting,',
+                          '${context.ui(greeting)},',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.85),
                           ),
@@ -312,7 +323,7 @@ class _Header extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                '${fmtDate(DateTime.now())} • $subtitle',
+                '${context.fmtDateL(DateTime.now())} • $subtitle',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
               ),
             ],
@@ -421,7 +432,8 @@ class _StatsGrid extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: 2.1,
+          // Tamil labels need room to wrap to a second line.
+          childAspectRatio: context.isTamil ? 1.5 : 2.1,
           children: [
             for (final s in items)
               _StatTile(
@@ -490,8 +502,8 @@ class _StatTile extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      stat.label,
-                      maxLines: 1,
+                      context.ui(stat.label),
+                      maxLines: context.isTamil ? 2 : 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
@@ -567,7 +579,7 @@ class _TaskCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      task.title,
+                      context.taskTitle(task),
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
@@ -575,7 +587,7 @@ class _TaskCard extends StatelessWidget {
                     ),
                   ),
                   TagChip(
-                    task.priority,
+                    context.priorityLabel(task.priority),
                     color: task.priority == 'High'
                         ? AdinnColors.red
                         : AdinnColors.muted,
@@ -584,14 +596,17 @@ class _TaskCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '${project?.name ?? ''} • ${task.city}',
+                '${project == null ? '' : context.projectName(project.id, project.name)} • ${task.city}',
                 style: const TextStyle(color: AdinnColors.muted, fontSize: 12),
               ),
               const SizedBox(height: 10),
               ProgressBarLabel(
                 value: sum.submittedRatio,
-                label:
-                    '${sum.pending + sum.approved}/${sum.total} shops submitted • ${sum.label}',
+                label: context.shopsSubmittedSummary(
+                  sum.pending + sum.approved,
+                  sum.total,
+                  sum.label,
+                ),
               ),
               const SizedBox(height: 8),
               Row(
@@ -600,8 +615,15 @@ class _TaskCard extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text(
                     daysLeft < 0
-                        ? 'Overdue since ${fmtDate(task.dueDate)}'
-                        : 'Due ${fmtDate(task.dueDate)} ($daysLeft day${daysLeft == 1 ? '' : 's'} left)',
+                        ? context.uf('Overdue since {0}', [
+                            context.fmtDateL(task.dueDate),
+                          ])
+                        : context.uf(
+                            daysLeft == 1
+                                ? 'Due {0} ({1} day left)'
+                                : 'Due {0} ({1} days left)',
+                            [context.fmtDateL(task.dueDate), daysLeft],
+                          ),
                     style: TextStyle(fontSize: 12, color: dueColor),
                   ),
                 ],

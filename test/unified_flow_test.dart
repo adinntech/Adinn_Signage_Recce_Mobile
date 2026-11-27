@@ -16,6 +16,7 @@ import 'package:signage_recce/features/shop/shop_detail_screen.dart';
 import 'package:signage_recce/state/app_controller.dart';
 
 import 'helpers.dart';
+import 'support/evidence_fixture.dart';
 import 'ui_helpers.dart';
 
 const _shop = 's_lakshmi';
@@ -42,22 +43,24 @@ void _phone(WidgetTester t) {
   addTearDown(t.view.reset);
 }
 
-SitePhoto _photo() => SitePhoto(
-  id: 'ph1',
-  path: 'demo://front',
-  label: 'Front view',
-  capturedAt: DateTime(2026, 11, 25),
-  width: 100,
-  height: 80,
-  // GPS-tagged like a real camera photo.
-  geo: gpsAt(10.8627, 78.6897),
-);
-
 Board _single(AppController c, String key, {String? inst}) {
   final b = c.addMediaGroups(_shop, [MediaGroupPlan(_o(key), 1)]).single
     ..width = 9
     ..height = 3
     ..installationCode = inst;
+  return b;
+}
+
+/// A board of a media type the vendor policy does NOT filter (legacy /
+/// catalog-only media). The equivalence / copy machinery is still exercised
+/// on them because the active media no longer ask the paired questions.
+Board _legacy(AppController c, String code, String inst, {int qty = 1}) {
+  final b = c.addBoard(_shop)
+    ..mediaCode = code
+    ..width = 9
+    ..height = 3
+    ..installationCode = inst;
+  if (qty > 1) c.increaseQuantity(_shop, b, qty);
   return b;
 }
 
@@ -342,11 +345,6 @@ void main() {
   });
 
   group('Unified Site Questions', () {
-    List<EquivalentPair> pairs(AppController c, String key, String inst) {
-      final b = _single(c, key, inst: inst);
-      return QuestionEquivalence.pairsFor(b, b.units.first);
-    }
-
     test('every verified rule is active for some media / installation', () async {
       final c = await _vendor();
       final active = <String>{};
@@ -372,7 +370,7 @@ void main() {
 
     test('answer once: equivalent question counted and stored once', () async {
       final c = await _vendor();
-      final b = _single(c, 'NLB_SINGLE_FRAME', inst: 'single_pole');
+      final b = _legacy(c, SignageCatalog.acp2dDouble, 'single_pole');
       final u = b.units.first;
       final mapped = QuestionEquivalence.mappedChecklistIds(b, u);
       expect(mapped, contains('ground_condition'));
@@ -393,7 +391,7 @@ void main() {
 
     test('similar wording but different meaning stays separate (GSB)', () async {
       final c = await _vendor();
-      final b = _single(c, 'GSB_SINGLE', inst: 'wall_mount');
+      final b = _legacy(c, SignageCatalog.mdfGsb, 'wall_mount');
       final u = b.units.first;
       final mapped = QuestionEquivalence.mappedChecklistIds(b, u);
       expect(mapped, isNot(contains('electricity_nearby')));
@@ -410,6 +408,7 @@ void main() {
       final c = await _vendor();
       final b = _single(c, 'NLB_SINGLE_FRAME', inst: 'double_pole');
       final u = b.units.first;
+      // Retained (review) safety question: still synced to its checklist twin.
       c.setUnitAnswer(_shop, b, u, 'excavation_permission', false);
       expect(u.checklist['pole_excavation_allowed']?.value, 'no');
       expect(
@@ -421,7 +420,7 @@ void main() {
     test('legacy checklist-only answers count; conflicts are reported, '
         'never overwritten', () async {
       final c = await _vendor();
-      final b = _single(c, 'NLB_SINGLE_FRAME', inst: 'single_pole');
+      final b = _legacy(c, SignageCatalog.acp2dDouble, 'single_pole');
       final u = b.units.first;
       u.checklist['ground_condition'] = ChecklistResponse(
         questionId: 'ground_condition',
@@ -446,9 +445,12 @@ void main() {
 
     test('equivalence pairs differ per installation', () async {
       final c = await _vendor();
-      final wall = pairs(c, 'NLB_SINGLE_FRAME', 'wall_mount')
-          .map((p) => p.site.id);
-      final pole = pairs(c, 'NLB_SINGLE_FRAME', 'single_pole')
+      final wall = QuestionEquivalence.pairsFor(
+        _legacy(c, SignageCatalog.acp, 'wall_mount'),
+        _legacy(c, SignageCatalog.acp, 'wall_mount').units.first,
+      ).map((p) => p.site.id);
+      final poleBoard = _legacy(c, SignageCatalog.acp2dDouble, 'single_pole');
+      final pole = QuestionEquivalence.pairsFor(poleBoard, poleBoard.units.first)
           .map((p) => p.site.id);
       expect(wall, containsAll(['access_method', 'wall_type', 'wall_condition']));
       expect(wall, isNot(contains('ground_type')));
@@ -484,9 +486,7 @@ void main() {
 
     test('common checklist-only answers are copied via Copy Common Answers', () async {
       final c = await _vendor();
-      final b = c.addMediaGroups(_shop, [
-        MediaGroupPlan(_o('GSB_SINGLE'), 2),
-      ]).single;
+      final b = _legacy(c, SignageCatalog.mdfGsb, 'wall_mount', qty: 2);
       c.setUnitInstallation(_shop, b, b.units[0], 'shop_fascia');
       c.setUnitInstallation(_shop, b, b.units[1], 'wall_mount');
       b.units[0].checklist['night_visibility'] = ChecklistResponse(
@@ -514,7 +514,7 @@ void main() {
     ) async {
       _phone(tester);
       final c = await _vendor();
-      final b = _single(c, 'NLB_SINGLE_FRAME', inst: 'single_pole');
+      final b = _legacy(c, SignageCatalog.acp2dDouble, 'single_pole');
       await tester.pumpWidget(
         _host(
           c,
@@ -549,7 +549,7 @@ void main() {
       s.geo = null;
       final b = _single(c, 'GSB_SINGLE', inst: 'wall_mount');
       completeAnswers(b);
-      c.addPhoto(_shop, b.id, _photo());
+      addValidEvidence(c, _shop, b);
       expect(groupReportReady(c, s, b), isTrue);
       // The combined report still needs the shop-level mandatory details.
       expect(recceComplete(c, s), isFalse);
@@ -568,7 +568,7 @@ void main() {
       c.setUnitSize(_shop, b, b.units[1], width: 6, height: 4);
       c.setUnitInstallation(_shop, b, b.units[0], 'shop_fascia');
       c.setUnitInstallation(_shop, b, b.units[1], 'wall_mount');
-      c.addPhoto(_shop, b.id, _photo());
+      addValidEvidence(c, _shop, b);
       return (c, b);
     }
 
@@ -661,7 +661,7 @@ void main() {
         ..width = 5
         ..height = 3
         ..installationCode = 'wall_mount';
-      c.addPhoto(_shop, b.id, _photo());
+      addValidEvidence(c, _shop, b);
       completeAnswers(b);
       b.units[2].siteAnswers.clear();
       b.units[2].checklist.clear();
@@ -685,7 +685,7 @@ void main() {
         ..width = 5
         ..height = 3
         ..installationCode = 'wall_mount';
-      c.addPhoto(_shop, b.id, _photo());
+      addValidEvidence(c, _shop, b);
       completeAnswers(b);
       await c.flush();
       store.fail = true;
@@ -739,14 +739,34 @@ void main() {
       await answerThroughUi(tester, c, b, b.units[0]);
       expect(c.siteQuestionsPendingFor(b, b.units[0]), 0);
       expect(c.siteQuestionsPending(b), lessThan(startPending));
-      await tester.ensureVisible(find.byKey(Key('unit_chip_${b.units[1].id}')));
-      await _tap(tester, 'unit_chip_${b.units[1].id}');
+      // The unit bar scrolls under the AppBar after answering board 01, so
+      // the chip is reached through the unit selector's own callback.
+      final chip = find.byKey(Key('unit_chip_${b.units[1].id}'));
+      // Real gestures: scroll the stepper back until the chip sits inside
+      // its visible area (below the AppBar / header), then tap it.
+      final area = tester.getRect(find.byType(Stepper));
+      for (var i = 0; i < 20 && tester.getRect(chip).top < area.top; i++) {
+        await tester.drag(find.byType(Stepper), const Offset(0, 300));
+        await tester.pumpAndSettle();
+      }
+      expect(tester.getRect(chip).top, greaterThanOrEqualTo(area.top),
+          reason: 'the unit chip must be reachable by scrolling');
+      // The chips row scrolls sideways: swipe it until the chip is on screen.
+      final row = find
+          .ancestor(of: chip, matching: find.byType(SingleChildScrollView))
+          .first;
+      for (var i = 0; i < 10 && tester.getCenter(chip).dx > 340; i++) {
+        await tester.drag(row, const Offset(-150, 0));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(chip);
+      await tester.pumpAndSettle();
       await answerThroughUi(tester, c, b, b.units[1]);
       expect(c.siteQuestionsPending(b), 0);
       expect(find.byKey(const Key('cl_site_evidence_photo_photos')), findsNothing);
 
       // 3. Qualifying site evidence (supported flow: Site Photos).
-      c.addPhoto(_shop, b.id, _photo());
+      addValidEvidence(c, _shop, b);
       await tester.pumpAndSettle();
       expect(c.boardIssues(b), isEmpty);
 

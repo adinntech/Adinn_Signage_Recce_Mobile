@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -214,9 +215,9 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
         .where((e) => e.id == widget.commentId)
         .firstOrNull;
     if (shop == null || cm == null) {
-      return const SizedBox(
+      return SizedBox(
         height: 120,
-        child: Center(child: Text('Comment not found')),
+        child: Center(child: Text(context.ui('Comment not found'))),
       );
     }
     final board = shop.boards.where((b) => b.id == cm.groupId).firstOrNull;
@@ -238,8 +239,7 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
                 CommentMarkerDot(comment: cm, size: 32),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    cm.type.label,
+                  child: Text(context.ui(cm.type.label),
                     style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w800,
@@ -286,8 +286,7 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
               ),
             if (cm.responses.isNotEmpty) ...[
               const SizedBox(height: 12),
-              const Text(
-                'Responses',
+              Text(context.ui('Responses'),
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               for (final r in cm.responses)
@@ -325,8 +324,8 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
                 controller: _response,
                 maxLines: 3,
                 minLines: 1,
-                decoration: const InputDecoration(
-                  labelText: 'Your response / correction made',
+                decoration: InputDecoration(
+                  labelText: context.ui('Your response / correction made'),
                   alignLabelWithHint: true,
                 ),
               ),
@@ -341,7 +340,7 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
                             c.respondToComment(shop.id, cm.id, _response.text),
                         'Response saved',
                       ),
-                      child: const Text('Respond'),
+                      child: Text(context.ui('Respond')),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -358,17 +357,16 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
                           ),
                           'Marked as addressed',
                         ),
-                        child: const Text('Mark Addressed'),
+                        child: Text(context.ui('Mark Addressed')),
                       ),
                     ),
                 ],
               ),
               if (cm.status == CommentStatus.addressed)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 6),
-                  child: Text(
-                    'Addressed – waiting for the reviewer to verify. '
-                    'Addressed is not an approval.',
+                  child: Text(context.ui('Addressed – waiting for the reviewer to verify. '
+                    'Addressed is not an approval.'),
                     style: TextStyle(fontSize: 12, color: AdinnColors.muted),
                   ),
                 ),
@@ -390,7 +388,7 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
                         'Comment verified',
                       ),
                       icon: const Icon(Icons.verified_outlined),
-                      label: const Text('Verify'),
+                      label: Text(context.ui('Verify')),
                     ),
                   if (cm.status != CommentStatus.open &&
                       c.currentUser?.role == cm.reviewerRole &&
@@ -401,7 +399,7 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
                         () => c.reopenComment(shop.id, cm.id),
                         'Comment reopened',
                       ),
-                      child: const Text('Reopen'),
+                      child: Text(context.ui('Reopen')),
                     ),
                   if (c.canDeleteComment(shop, cm))
                     TextButton.icon(
@@ -415,8 +413,7 @@ class _CommentDetailSheetState extends State<CommentDetailSheet> {
                         Icons.delete_outline,
                         color: AdinnColors.red,
                       ),
-                      label: const Text(
-                        'Delete',
+                      label: Text(context.ui('Delete'),
                         style: TextStyle(color: AdinnColors.red),
                       ),
                     ),

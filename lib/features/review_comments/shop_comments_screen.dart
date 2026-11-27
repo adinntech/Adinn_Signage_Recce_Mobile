@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +9,7 @@ import '../../state/app_controller.dart';
 import '../photos/site_photo_view.dart';
 import 'comment_widgets.dart';
 import 'photo_comments_screen.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// All reviewer photo comments of a shop, grouped by submission version and
 /// photo. For a rejected recce it leads the vendor to each affected item.
@@ -34,7 +36,7 @@ class ShopCommentsScreen extends StatelessWidget {
     final shop = c.shop(shopId);
     if (shop == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: AdinnAppBar(),
         body: const EmptyState(icon: Icons.search_off, title: 'Shop not found'),
       );
     }
@@ -47,14 +49,13 @@ class ShopCommentsScreen extends StatelessWidget {
         : null;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Photo review comments',
+            Text(context.ui('Photo review comments'),
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
             Text(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import 'question_equivalence.dart';
 import 'site_checklists.dart';
+import 'vendor_question_policy.dart';
 
 /// How many display faces a media type has.
 enum MediaSidedness {
@@ -252,6 +253,16 @@ class SignageCatalog {
   static const acp3dDouble = "ACP3D_DS";
   static const mdfGsb = "MDF_GSB";
   static const mdfGsbDouble = "MDF_GSB_DS";
+
+  /// Custom ("+ Other") media and installation. Stable codes of their own:
+  /// never an alias of a standard fabrication code. No approved geometry or
+  /// fabrication specification exists for them ("Technical Specification
+  /// Required").
+  static const otherMedia = 'OTHER';
+  static const otherInstallation = 'other';
+
+  static bool isOtherMedia(String? code) => code == otherMedia;
+  static bool isOtherInstallation(String? code) => code == otherInstallation;
 
   /// Standalone MDF board. Deliberately NOT mapped to [mdfGsb]: no approved
   /// MDF-only fabrication / installation specification exists yet.
@@ -522,6 +533,17 @@ class SignageCatalog {
       color: Color(0xFF880E4F),
     ),
     MediaType(
+      code: otherMedia,
+      shortName: 'Other',
+      name: 'Other Media Type',
+      description: 'Described by the vendor (text or voice).',
+      icon: Icons.add_circle_outline,
+      depthFt: 0,
+      illuminated: false,
+      installations: [otherInstallation],
+      color: Color(0xFF607D8B),
+    ),
+    MediaType(
       code: mdf,
       // No approved standalone-MDF template, thickness, depth or LED rule
       // yet: left unconfigured on purpose (pending review).
@@ -590,14 +612,14 @@ class SignageCatalog {
     ),
     MediaOption(
       key: 'NLB_SINGLE_FRAME',
-      label: 'NLB Single Frame',
+      label: 'NLB Single Side',
       mediaCode: nlb,
       doubleSided: false,
       nlbSubtype: 'NLB_SINGLE_FRAME',
     ),
     MediaOption(
       key: 'NLB_BOX_FRAME',
-      label: 'NLB Box Frame',
+      label: 'NLB Double Side',
       mediaCode: nlb,
       doubleSided: true,
       nlbSubtype: 'NLB_BOX_FRAME',
@@ -773,6 +795,12 @@ class SignageCatalog {
       icon: Icons.signpost_outlined,
     ),
     InstallationType(
+      code: otherInstallation,
+      name: 'Other',
+      description: 'Described by the vendor (text or voice).',
+      icon: Icons.add_circle_outline,
+    ),
+    InstallationType(
       code: supportPipe,
       name: "Support Pipe",
       description: "Board held off the wall / parapet on MS support pipes.",
@@ -843,12 +871,30 @@ class SignageCatalog {
   /// Installation choices offered for [b].
   ///
   /// Every other media type keeps its existing catalog options unchanged.
-  static List<InstallationChoice> choicesForBoard(Board b) {
+  static List<InstallationChoice> choicesForBoard(Board b) => [
+    ..._baseChoices(b),
+    // "+ Other" is always the FINAL option of an applicable media.
+    if (offersOtherInstallation(b.mediaCode))
+      const InstallationChoice(
+        name: 'Other',
+        description: 'Described by the vendor (text or voice).',
+        art: InstallationArt.generic,
+        code: otherInstallation,
+        icon: Icons.add_circle_outline,
+      ),
+  ];
+
+  /// Active media and custom media offer a custom installation.
+  static bool offersOtherInstallation(String? mediaCode) =>
+      mediaCode == otherMedia || VendorQuestionPolicy.appliesTo(mediaCode);
+
+  static List<InstallationChoice> _baseChoices(Board b) {
     if (isGsbDouble(b)) return gsbDoubleChoices;
     if (isNlbBox(b)) return nlbBoxChoices;
     return [
       for (final i in installationsFor(b.mediaCode))
-        if (newInstallationCodes(b).contains(i.code))
+        if (i.code != otherInstallation &&
+            newInstallationCodes(b).contains(i.code))
         InstallationChoice(
           name: i.name,
           description: i.description,
@@ -918,7 +964,14 @@ class SignageCatalog {
   };
 
   /// Installation codes offered when choosing for [b] now.
-  static List<String> newInstallationCodes(Board b) {
+  static List<String> newInstallationCodes(Board b) => [
+    ..._standardNewCodes(b),
+    if (offersOtherInstallation(b.mediaCode) &&
+        !_standardNewCodes(b).contains(otherInstallation))
+      otherInstallation,
+  ];
+
+  static List<String> _standardNewCodes(Board b) {
     if (isGsbDouble(b)) return gsbDoubleInstallationCodes;
     if (isNlbBox(b)) return nlbBoxInstallationCodes;
     final only = _onlyForNew[b.mediaCode];
@@ -1614,7 +1667,10 @@ class SignageCatalog {
     final seen = <String>{};
     void addAll(Iterable<SiteQuestion> qs) {
       for (final q in qs) {
-        if (seen.add(q.id)) result.add(q);
+        if (seen.add(q.id) &&
+            VendorQuestionPolicy.siteActive(mediaCode, q.id)) {
+          result.add(q);
+        }
       }
     }
 
@@ -1677,7 +1733,40 @@ class SignageCatalog {
       return '$name: installation not valid for this media';
     }
     if (!b.unitHasSize(u)) return '$name: enter width and height';
+    // No approved fabrication specification: never draw misleading geometry.
+    if (isOtherMedia(b.mediaCode) || isOtherInstallation(inst)) {
+      return '$name: Technical Specification Required';
+    }
     return null;
+  }
+
+  /// Readable text of a custom description (text and / or voice).
+  static String customSummary(CustomSpec? s) {
+    if (s == null || !s.isValid) return 'Not described';
+    return [
+      if (s.text.trim().isNotEmpty) s.text.trim(),
+      if (s.voice != null)
+        'Voice description attached (${(s.voice!.durationMs / 1000).round()} s)',
+    ].join(' – ');
+  }
+
+  /// Media name for lists / reports (custom media show their description).
+  static String mediaDisplayName(Board b) {
+    final m = media(b.mediaCode);
+    if (m == null) return 'Media not set';
+    if (isOtherMedia(b.mediaCode)) {
+      return 'Other – ${customSummary(b.customMedia)}';
+    }
+    return m.name;
+  }
+
+  /// Installation name of one board (custom ones show their description).
+  static String installationNameOf(Board b, SignageUnit u, {String empty = 'Not set'}) {
+    final code = b.installationOf(u);
+    if (isOtherInstallation(code)) {
+      return 'Other – ${customSummary(u.customInstallation)}';
+    }
+    return installation(code)?.name ?? empty;
   }
 
   /// Boards of [b] that can be drawn / previewed.
@@ -1690,10 +1779,13 @@ class SignageCatalog {
   static String installationSummary(Board b, {String empty = 'Not set'}) {
     if (hasMixedInstallations(b)) {
       final names = [
-        for (final c in {for (final u in b.activeUnits) b.installationOf(u)})
-          installation(c)?.name ?? 'Not set',
+        for (final u in b.activeUnits) installationNameOf(b, u),
       ];
-      return 'Mixed (${names.join(' / ')})';
+      return 'Mixed (${names.toSet().join(' / ')})';
+    }
+    final first = b.activeUnits.firstOrNull;
+    if (first != null && isOtherInstallation(primaryInstallation(b))) {
+      return installationNameOf(b, first);
     }
     return installation(primaryInstallation(b))?.name ?? empty;
   }
@@ -1708,7 +1800,7 @@ class SignageCatalog {
     if (m == null) return 'Board';
     if (m.code == gsb) return b.doubleSided == true ? 'GSB Double' : 'GSB Single';
     if (m.code == nlb) {
-      if (b.isNlbBoxFrame) return 'NLB Box';
+      if (b.isNlbBoxFrame) return 'NLB Double';
       if (b.isNlbSingleFrame) return 'NLB Single';
       return 'NLB';
     }
@@ -1731,6 +1823,7 @@ class SignageCatalog {
       'GSB Double',
       'NLB Single',
       'NLB Box',
+      'NLB Double',
       'NLB',
       for (final m in allMediaTypes) m.shortName,
     };
@@ -1776,15 +1869,37 @@ class SignageCatalog {
       questionsFor(b.mediaCode, b.installationOf(u));
 
   /// Visible required questions of unit [u] that are not answered yet.
-  static List<SiteQuestion> missingAnswersFor(Board b, SignageUnit u) {
+  static List<SiteQuestion> missingAnswersFor(Board b, SignageUnit u) =>
+      _missing(b, u, measurements: false);
+
+  /// Required installation measurements (geometry inputs) still empty.
+  static List<SiteQuestion> missingMeasurementsFor(Board b, SignageUnit u) =>
+      _missing(b, u, measurements: true);
+
+  static List<SiteQuestion> _missing(
+    Board b,
+    SignageUnit u, {
+    required bool measurements,
+  }) {
     // Effective answers: an earlier checklist answer of the SAME (verified
     // equivalent) question counts, so nothing is asked twice.
     final a = QuestionEquivalence.effectiveSiteAnswers(b, u);
     return [
       for (final q in questionsForUnit(b, u))
-        if (q.required && q.isVisible(a) && !q.isAnswered(a)) q,
+        if (q.required &&
+            VendorQuestionPolicy.isMeasurement(b.mediaCode, q.id) ==
+                measurements &&
+            q.isVisible(a) &&
+            !q.isAnswered(a))
+          q,
     ];
   }
+
+  /// Geometry-only questions shown in the Installation step.
+  static List<SiteQuestion> measurementQuestionsFor(Board b, SignageUnit u) => [
+    for (final q in questionsForUnit(b, u))
+      if (VendorQuestionPolicy.isMeasurement(b.mediaCode, q.id)) q,
+  ];
 
   /// True when [q] is installation-specific for installation [inst].
   static bool isInstallationSpecific(String? inst, String id) =>
@@ -1792,6 +1907,9 @@ class SignageCatalog {
 
   /// Section of [q] for unit [u] (its own installation).
   static String questionSectionFor(Board b, SignageUnit u, SiteQuestion q) {
+    if (VendorQuestionPolicy.isSafety(b.mediaCode, q.id)) {
+      return 'Installation Safety';
+    }
     if (isInstallationSpecific(b.installationOf(u), q.id)) {
       return 'Installation-Specific Questions';
     }
@@ -2019,6 +2137,7 @@ class SignageCatalog {
       return questionsFor(board.mediaCode, primaryInstallation(board))
           .where(
             (q) =>
+                !VendorQuestionPolicy.isMeasurement(board.mediaCode, q.id) &&
                 q.required &&
                 q.isVisible(board.answers) &&
                 !q.isAnswered(board.answers),

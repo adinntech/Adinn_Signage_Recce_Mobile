@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../state/app_controller.dart';
 import '../annotation/annotation_painter.dart';
 import '../photos/site_photo_view.dart';
 import 'comment_widgets.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Reviewer comments pinned on one site photo. Reviewers add numbered
 /// markers at an exact spot; recce staff respond / mark them addressed.
@@ -101,7 +103,7 @@ class _PhotoCommentsScreenState extends State<PhotoCommentsScreen> {
         rejectsEvidence: result.rejects,
       );
       setState(() => _highlight = cm.id);
-      showSnack(context, 'Comment ${cm.markerLabel} added');
+      showSnack(context, context.uf('Comment {0} added', [cm.markerLabel]));
     } on StateError catch (e) {
       showSnack(context, e.message, error: true);
     }
@@ -113,7 +115,7 @@ class _PhotoCommentsScreenState extends State<PhotoCommentsScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => Scaffold(
-          appBar: AppBar(title: Text('v$oldVersion evidence vs current')),
+          appBar: AdinnAppBar(title: Text(context.uf('v{0} evidence vs current', [oldVersion]))),
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -153,7 +155,7 @@ class _PhotoCommentsScreenState extends State<PhotoCommentsScreen> {
           );
     if (shop == null || rp == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Review comments')),
+        appBar: AdinnAppBar(title: Text(context.ui('Review comments'))),
         body: const EmptyState(
           icon: Icons.search_off,
           title: 'Photo not found',
@@ -176,14 +178,13 @@ class _PhotoCommentsScreenState extends State<PhotoCommentsScreen> {
           ..sort();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Review comments',
+            Text(context.ui('Review comments'),
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
             Text(
@@ -198,7 +199,7 @@ class _PhotoCommentsScreenState extends State<PhotoCommentsScreen> {
           if (olderVersions.isNotEmpty)
             IconButton(
               key: const Key('rc_compare_versions'),
-              tooltip: 'Compare with v${olderVersions.first} evidence',
+              tooltip: context.uf('Compare with v{0} evidence', [olderVersions.first]),
               icon: const Icon(Icons.compare),
               onPressed: () => _compareVersions(shop, rp, olderVersions.first),
             ),
@@ -237,8 +238,7 @@ class _PhotoCommentsScreenState extends State<PhotoCommentsScreen> {
               width: double.infinity,
               color: AdinnColors.redLight,
               padding: const EdgeInsets.all(8),
-              child: const Text(
-                'Tap the photo exactly where the comment applies.',
+              child: Text(context.ui('Tap the photo exactly where the comment applies.'),
                 style: TextStyle(fontSize: 12.5, color: AdinnColors.redDark),
               ),
             ),
@@ -258,8 +258,7 @@ class _PhotoCommentsScreenState extends State<PhotoCommentsScreen> {
                           child: ListTile(
                             key: Key('rc_item_${cm.id}'),
                             leading: CommentMarkerDot(comment: cm, size: 32),
-                            title: Text(
-                              cm.type.label,
+                            title: Text(context.ui(cm.type.label),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
@@ -428,8 +427,7 @@ class _NewCommentSheetState extends State<_NewCommentSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Add review comment',
+            Text(context.ui('Add review comment'),
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
@@ -437,10 +435,10 @@ class _NewCommentSheetState extends State<_NewCommentSheet> {
               key: const Key('rc_type'),
               initialValue: _type,
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Comment type'),
+              decoration: InputDecoration(labelText: context.ui('Comment type')),
               items: [
                 for (final t in ReviewCommentType.values)
-                  DropdownMenuItem(value: t, child: Text(t.label)),
+                  DropdownMenuItem(value: t, child: Text(context.ui(t.label))),
               ],
               onChanged: (v) => setState(() => _type = v ?? _type),
             ),
@@ -449,11 +447,11 @@ class _NewCommentSheetState extends State<_NewCommentSheet> {
               key: const Key('rc_unit'),
               initialValue: _unitId,
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Signage item'),
+              decoration: InputDecoration(labelText: context.ui('Signage item')),
               items: [
-                const DropdownMenuItem<String?>(
+                DropdownMenuItem<String?>(
                   value: null,
-                  child: Text('Whole photo / media group'),
+                  child: Text(context.ui('Whole photo / media group')),
                 ),
                 for (final u in widget.units)
                   DropdownMenuItem<String?>(
@@ -473,7 +471,7 @@ class _NewCommentSheetState extends State<_NewCommentSheet> {
                 if (_error != null) setState(() => _error = null);
               },
               decoration: InputDecoration(
-                labelText: 'Rejection / clarification text *',
+                labelText: context.ui('Rejection / clarification text *'),
                 alignLabelWithHint: true,
                 errorText: _error,
               ),
@@ -483,9 +481,8 @@ class _NewCommentSheetState extends State<_NewCommentSheet> {
               contentPadding: EdgeInsets.zero,
               value: _rejects,
               onChanged: (v) => setState(() => _rejects = v ?? false),
-              title: const Text('Reject this photo / evidence'),
-              subtitle: const Text(
-                'Added to the item-specific issues when you reject the recce.',
+              title: Text(context.ui('Reject this photo / evidence')),
+              subtitle: Text(context.ui('Added to the item-specific issues when you reject the recce.'),
                 style: TextStyle(fontSize: 12),
               ),
             ),
@@ -502,7 +499,7 @@ class _NewCommentSheetState extends State<_NewCommentSheet> {
                   _NewComment(_type, _text.text.trim(), _unitId, _rejects),
                 );
               },
-              child: const Text('Save comment'),
+              child: Text(context.ui('Save comment')),
             ),
           ],
         ),

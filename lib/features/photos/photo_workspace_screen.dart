@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +9,7 @@ import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import '../annotation/annotation_editor_screen.dart';
+import '../annotation/photo_tour.dart';
 import '../ar/ar_preview_tab.dart';
 import '../compare/comparison_screen.dart';
 import '../ar/ar_session_controller.dart';
@@ -16,6 +18,7 @@ import '../preview_live/live_preview_tab.dart';
 import '../survey/markup_entry.dart';
 import 'annotation_apply.dart';
 import 'site_photo_view.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Photo preview section opened after a photo is captured (or tapped):
 /// 1. Photo Editor – advanced annotation on the original photo.
@@ -32,7 +35,11 @@ class PhotoWorkspaceScreen extends StatefulWidget {
     this.initialTab = 0,
     this.arPlatform,
     this.writer,
+    this.tour,
   });
+
+  /// Signage-marking tour after a new camera photo (null = none).
+  final PhotoTour? tour;
 
   final String shopId;
   final String boardId;
@@ -83,15 +90,13 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Signage items in this photo',
+              Text(context.ui('Signage items in this photo'),
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(20, 4, 20, 4),
-                child: Text(
-                  'One photo can show several units. The image is shared, '
-                  'never copied.',
+                child: Text(context.ui('One photo can show several units. The image is shared, '
+                  'never copied.'),
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: AdinnColors.muted),
                 ),
@@ -112,7 +117,7 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
                 padding: const EdgeInsets.all(12),
                 child: FilledButton(
                   onPressed: () => Navigator.pop(ctx, selected),
-                  child: const Text('Save'),
+                  child: Text(context.ui('Save')),
                 ),
               ),
             ],
@@ -136,7 +141,7 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
         widget.writer ??
         (media == null ? null : (png, folder) => writePng(media, png, folder));
     if (writer == null) {
-      showSnack(context, 'Storage not available', error: true);
+      showSnack(context, context.ui('Storage not available'), error: true);
       return;
     }
     setState(() => _exporting = true);
@@ -161,10 +166,10 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
         ),
       );
       if (mounted) {
-        showSnack(context, 'Annotated photo exported (original kept)');
+        showSnack(context, context.ui('Annotated photo exported (original kept)'));
       }
     } catch (e) {
-      if (mounted) showSnack(context, 'Export failed: $e', error: true);
+      if (mounted) showSnack(context, context.uf('Export failed: {0}', [e]), error: true);
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -178,7 +183,7 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
     final photo = b?.photos.where((p) => p.id == widget.photoId).firstOrNull;
     if (shop == null || b == null || photo == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: AdinnAppBar(),
         body: const EmptyState(
           icon: Icons.search_off,
           title: 'Photo not found',
@@ -192,7 +197,7 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
     final task = c.task(shop.taskId);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,13 +225,13 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
           if (editable)
             IconButton(
               key: const ValueKey('link_photo_units'),
-              tooltip: 'Signage items in this photo',
+              tooltip: context.ui('Signage items in this photo'),
               onPressed: () => _linkUnits(b, photo),
               icon: const Icon(Icons.link),
             ),
           IconButton(
             key: const ValueKey('open_compare'),
-            tooltip: 'Before / Proposed comparison',
+            tooltip: context.ui('Before / Proposed comparison'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => ComparisonScreen(
@@ -241,7 +246,7 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
           ),
           IconButton(
             key: const ValueKey('open_site_markup'),
-            tooltip: 'Site markup (perspective, markers, electrical)',
+            tooltip: context.ui('Site markup (perspective, markers, electrical)'),
             onPressed: () => openSiteMarkup(
               context,
               shopId: widget.shopId,
@@ -253,7 +258,7 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
           ),
           IconButton(
             key: const ValueKey('export_annotated'),
-            tooltip: 'Export annotated photo',
+            tooltip: context.ui('Export annotated photo'),
             onPressed: _exporting || !editable
                 ? null
                 : () => _export(shop, b, photo),
@@ -350,6 +355,7 @@ class _PhotoWorkspaceScreenState extends State<PhotoWorkspaceScreen>
             child: editable
                 ? AnnotationEditorScreen(
                     key: ValueKey('editor-${photo.id}-${unit.id}'),
+                    tour: widget.tour,
                     photo: photo,
                     boardName: b.name,
                     defaultUnit: b.unit,

@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import '../../core/widgets/common_widgets.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import '../location/gps_widgets.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Add a new shop to a task, or edit an existing shop's details.
 class ShopFormScreen extends StatefulWidget {
@@ -98,7 +100,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
           geo: _geo,
         ),
       );
-      showSnack(context, '${created.name} added');
+      showSnack(context, context.uf('{0} added', [created.name]));
       Navigator.of(context).pop(created);
     } else {
       final shop = c.shop(widget.shopId!)!;
@@ -118,7 +120,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
         title: 'Shop details updated',
         message: '${shop.name} details edited.',
       );
-      showSnack(context, 'Shop details saved');
+      showSnack(context, context.ui('Shop details saved'));
       Navigator.of(context).pop(shop);
     }
   }
@@ -165,7 +167,7 @@ class _ShopFormScreenState extends State<ShopFormScreen> {
   Widget build(BuildContext context) {
     final editing = widget.shopId != null;
     return Scaffold(
-      appBar: AppBar(title: Text(editing ? 'Edit Shop' : 'Add Shop')),
+      appBar: AdinnAppBar(title: Text(editing ? 'Edit Shop' : 'Add Shop')),
       body: SafeArea(
         child: Form(
           key: _formKey,

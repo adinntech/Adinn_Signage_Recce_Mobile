@@ -21,6 +21,12 @@ Future<void> answerThroughUi(
     await tester.pumpAndSettle();
   }
 
+  // Geometry inputs are entered in the Installation step (Installation
+  // Measurements, covered by its own widget test); here they are completed
+  // through the same controller call that form uses.
+  for (final q in SignageCatalog.missingMeasurementsFor(b, u)) {
+    c.setUnitAnswer('s_lakshmi', b, u, q.id, 5.0);
+  }
   for (var guard = 0; guard < 8; guard++) {
     final qs = SignageCatalog.missingAnswersFor(b, u);
     final cl = SiteChecklists.uniqueMissing(b, u);

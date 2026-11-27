@@ -13,6 +13,7 @@ import 'package:signage_recce/features/shop/shop_detail_screen.dart';
 import 'package:signage_recce/state/app_controller.dart';
 
 import 'helpers.dart';
+import 'support/evidence_fixture.dart';
 
 void _phone(WidgetTester tester) {
   tester.view.physicalSize = const Size(1080, 2340);
@@ -78,7 +79,8 @@ void main() {
     c.touchBoard('s_lakshmi', b);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('legacy_media_card')), findsOneWidget);
-    expect(find.text('Standee 2S'), findsOneWidget);
+    // The media-group tab now also shows the selected group's name.
+    expect(find.text('Standee 2S'), findsWidgets);
     expect(b.mediaCode, SignageCatalog.doubleStandee);
     // Single installation → auto-selected.
     expect(b.installationCode, SignageCatalog.freeStanding);
@@ -203,7 +205,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Add media type'), findsOneWidget);
-    expect(find.text('1 media type(s) • 3 signage units'), findsOneWidget);
+    expect(find.text('1 media type • 3 signage units'), findsOneWidget);
     await _show(tester, find.text('Qty 3'));
     expect(find.text('Qty 3'), findsOneWidget);
   });
@@ -219,6 +221,7 @@ void main() {
     c.increaseQuantity(shop.id, b, 2);
     // Each physical board answers its own questions.
     completeAnswers(b);
+    ensureEvidenceForAllUnits(b);
     c.submitShop(shop.id);
     c.logout();
     c.loginWithPin(DemoAccounts.businessPin);

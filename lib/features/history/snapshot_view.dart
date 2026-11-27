@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -37,26 +38,26 @@ class ShopSnapshotView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionCard(
-          title: 'Shop',
+          title: context.ui('Shop'),
           icon: Icons.storefront_outlined,
           child: Column(
             children: [
-              InfoRow('Name', shop.name),
-              InfoRow('Owner', shop.ownerName),
-              InfoRow('Phone', shop.phone),
-              InfoRow('Address', shop.fullAddress),
-              InfoRow('Landmark', shop.landmark),
-              if (shop.remarks.isNotEmpty) InfoRow('Remarks', shop.remarks),
+              InfoRow(context.ui('Name'), shop.name),
+              InfoRow(context.ui('Owner'), shop.ownerName),
+              InfoRow(context.ui('Phone'), shop.phone),
+              InfoRow(context.ui('Address'), shop.fullAddress),
+              InfoRow(context.ui('Landmark'), shop.landmark),
+              if (shop.remarks.isNotEmpty)
+                InfoRow(context.ui('Remarks'), shop.remarks),
             ],
           ),
         ),
         const SizedBox(height: 12),
         SectionCard(
-          title: 'Shop location (GPS)',
+          title: context.ui('Shop location (GPS)'),
           icon: Icons.my_location,
           child: shop.geo == null
-              ? const Text(
-                  'GPS location not captured in this version.',
+              ? Text(context.ui('GPS location not captured in this version.'),
                   style: TextStyle(color: AdinnColors.muted),
                 )
               : Column(
@@ -68,7 +69,7 @@ class ShopSnapshotView extends StatelessWidget {
                       onPressed: () =>
                           openInMaps(context, shop.geo!, shop.name),
                       icon: const Icon(Icons.map_outlined),
-                      label: const Text('Open in Maps'),
+                      label: Text(context.ui('Open in Maps')),
                     ),
                   ],
                 ),
@@ -147,8 +148,7 @@ class BoardSnapshotCard extends StatelessWidget {
             _UnitRow(board: board, unit: u, issues: issues),
           if (questions.isNotEmpty) ...[
             const Divider(height: 20),
-            const Text(
-              'Site answers',
+            Text(context.ui('Site answers'),
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
@@ -165,7 +165,7 @@ class BoardSnapshotCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           if (board.photos.isEmpty)
-            const Text('No photos', style: TextStyle(color: AdinnColors.muted)),
+            Text(context.ui('No photos'), style: TextStyle(color: AdinnColors.muted)),
           if (board.photos.isNotEmpty)
             SizedBox(
               height: 130,
@@ -216,7 +216,7 @@ class BoardSnapshotCard extends StatelessWidget {
           ],
           if (board.textNote.isNotEmpty || board.voiceNotes.isNotEmpty) ...[
             const Divider(height: 20),
-            const Text('Notes', style: TextStyle(fontWeight: FontWeight.w700)),
+            Text(context.ui('Notes'), style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             if (board.textNote.isNotEmpty)
               Padding(
@@ -242,7 +242,7 @@ class BoardSnapshotCard extends StatelessWidget {
                       ),
                     ),
                     icon: const Icon(Icons.architecture),
-                    label: const Text('2D'),
+                    label: Text(context.ui('2D')),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -257,7 +257,7 @@ class BoardSnapshotCard extends StatelessWidget {
                       ),
                     ),
                     icon: const Icon(Icons.view_in_ar),
-                    label: const Text('3D'),
+                    label: Text(context.ui('3D')),
                   ),
                 ),
               ],
@@ -281,7 +281,7 @@ class ReviewTrail extends StatelessWidget {
       _entry(
         icon: Icons.send,
         color: AdinnColors.info,
-        title: 'Submitted by ${submission.submittedByName}',
+        title: context.uf('Submitted by {0}', [submission.submittedByName]),
         when: submission.submittedAt,
         body: submission.vendorRemarks,
       ),
@@ -457,7 +457,7 @@ class _UnitRow extends StatelessWidget {
               style: const TextStyle(fontSize: 12),
             ),
           if (u.notes.isNotEmpty)
-            Text('Notes: ${u.notes}', style: const TextStyle(fontSize: 12)),
+            Text(context.uf('Notes: {0}', [u.notes]), style: const TextStyle(fontSize: 12)),
           Text(
             'Photos $photos • markings $markings • live preview $live • AR $ar',
             style: const TextStyle(fontSize: 11, color: AdinnColors.muted),

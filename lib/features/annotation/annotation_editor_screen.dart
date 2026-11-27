@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -10,6 +11,8 @@ import '../../data/models/models.dart';
 import '../photos/site_photo_view.dart';
 import 'annotation_geometry.dart';
 import 'annotation_painter.dart';
+import 'photo_tour.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Returned by [AnnotationEditorScreen] when the user taps Save.
 class AnnotationEditorResult {
@@ -18,6 +21,7 @@ class AnnotationEditorResult {
     this.applyWidth,
     this.applyHeight,
     this.applyUnit,
+    this.applyUnitId,
   });
 
   final List<Annotation> annotations;
@@ -26,6 +30,10 @@ class AnnotationEditorResult {
   final double? applyWidth;
   final double? applyHeight;
   final MeasureUnit? applyUnit;
+
+  /// Canonical physical-board ID of that rectangle. The measurement must be
+  /// applied to THIS board, never to `units.first` or the workspace unit.
+  final String? applyUnitId;
 }
 
 /// A signage unit the placement rectangles can be linked to.
@@ -188,51 +196,6 @@ extension AnnotationToolX on AnnotationTool {
 
 enum _DragOp { none, draw, move, handle }
 
-/// Tool categories of the tool bar ("All" shows every tool).
-enum _ToolGroup { all, draw, measure, markers, site }
-
-extension on _ToolGroup {
-  String get label => switch (this) {
-    _ToolGroup.all => 'All',
-    _ToolGroup.draw => 'Draw',
-    _ToolGroup.measure => 'Measure',
-    _ToolGroup.markers => 'Markers',
-    _ToolGroup.site => 'Site survey',
-  };
-
-  bool shows(AnnotationTool t) => switch (this) {
-    _ToolGroup.all => true,
-    _ToolGroup.draw => const {
-      AnnotationTool.select,
-      AnnotationTool.pan,
-      AnnotationTool.arrow,
-      AnnotationTool.text,
-      AnnotationTool.shapeRect,
-      AnnotationTool.circle,
-      AnnotationTool.line,
-      AnnotationTool.freehand,
-    }.contains(t),
-    _ToolGroup.measure => const {
-      AnnotationTool.select,
-      AnnotationTool.pan,
-      AnnotationTool.rectangle,
-      AnnotationTool.dimension,
-      AnnotationTool.measureLabel,
-    }.contains(t),
-    _ToolGroup.markers => const {
-      AnnotationTool.select,
-      AnnotationTool.pan,
-      AnnotationTool.poleMarker,
-      AnnotationTool.pipeMarker,
-      AnnotationTool.groundMarker,
-      AnnotationTool.numberMarker,
-    }.contains(t),
-    _ToolGroup.site => t == AnnotationTool.select || t == AnnotationTool.pan,
-  };
-
-  bool get showsExtra => this == _ToolGroup.all || this == _ToolGroup.site;
-}
-
 enum _SheetMode { rect, value, label }
 
 /// Full-screen editor to mark signage placement rectangles (with W × H
@@ -251,7 +214,11 @@ class AnnotationEditorScreen extends StatefulWidget {
     this.onSave,
     this.extraTools = const [],
     this.underlay,
+    this.tour,
   });
+
+  /// Guided signage-marking tour (null = none).
+  final PhotoTour? tour;
 
   final SitePhoto photo;
 
@@ -288,8 +255,6 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
     0xFF000000,
   ];
 
-  static const thicknessSteps = <double>[1, 2, 3.5];
-
   /// Gesture margin around the photo so handles near the edges stay usable.
   static const double _margin = 28;
 
@@ -299,14 +264,17 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   final List<List<Annotation>> _redo = [];
   final Set<AnnotationLayer> _hidden = {};
   AnnotationTool _tool = AnnotationTool.select;
-  _ToolGroup _group = _ToolGroup.all;
   String? _selectedId;
   int _color = palette.first;
-  double _thickness = 1;
+
+  /// Fixed default thickness for newly created annotations. The adjustment
+  /// control was removed from the field UI; saved legacy values are untouched.
+  double _thickness = 2.5;
   bool _dirty = false;
   double? _applyW;
   double? _applyH;
   MeasureUnit? _applyUnit;
+  String? _applyUnitId;
 
   // Drag state
   double _displayScale = 1;
@@ -579,7 +547,12 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
           _pushUndo(_beforeDrag);
           if (d.type == AnnotationType.rectangle) {
             d.label = _nextRectLabel();
-            final unit = _unitOption(widget.activeUnitId);
+            // Initial default only: the Signage Measurement dialog's
+            // explicit selection overrides this before Save.
+            final unit = _unitOption(
+              widget.activeUnitId ??
+                  (widget.units.length == 1 ? widget.units.first.id : null),
+            );
             if (unit != null) {
               d.itemId = unit.id;
               if (unit.hasSize) {
@@ -595,6 +568,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
           if (d.type != AnnotationType.freehand) _tool = AnnotationTool.select;
           _dirty = true;
           created = d;
+          if (d.type == AnnotationType.rectangle) widget.tour?.advanceTo(3);
         }
       case _DragOp.move:
       case _DragOp.handle:
@@ -698,66 +672,15 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   }
 
   Future<String?> _askText({required String title, String initial = ''}) {
-    final controller = TextEditingController(text: initial);
+    // The controller must live as long as the TextField that uses it. A
+    // whenComplete(controller.dispose) disposes it while the dismissing route
+    // is still rebuilding (keyboard animation) -> "used after disposed" and
+    // a cascading _dependents.isEmpty assertion. Own it in a StatefulWidget
+    // instead so dispose runs only after the TextField is unmounted.
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              key: const ValueKey('annotation-text-field'),
-              controller: controller,
-              autofocus: true,
-              maxLength: 60,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'e.g. Power point here',
-              ),
-              onSubmitted: (v) => Navigator.pop(ctx, v),
-            ),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                for (final s in const [
-                  'Installation remark',
-                  'Wall condition',
-                  'Pole position',
-                  'Fixing height',
-                  'Board name',
-                  'Electrical point',
-                  'Measurement clarification',
-                ])
-                  ActionChip(
-                    label: Text(s, style: const TextStyle(fontSize: 11)),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () {
-                      final t = controller.text.trim();
-                      controller.text = t.isEmpty ? '$s: ' : '$t, $s: ';
-                      controller.selection = TextSelection.collapsed(
-                        offset: controller.text.length,
-                      );
-                    },
-                  ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    ).whenComplete(controller.dispose);
+      builder: (_) => _TextPromptDialog(title: title, initial: initial),
+    );
   }
 
   Future<_DetailsResult?> _openSheet(
@@ -897,6 +820,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
       _applyW = sel.measureW;
       _applyH = sel.measureH;
       _applyUnit = sel.unit;
+      _applyUnitId = sel.itemId;
       _dirty = true;
     });
     ScaffoldMessenger.of(context)
@@ -923,26 +847,13 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
     });
   }
 
-  void _cycleThickness() {
-    final i = thicknessSteps.indexOf(_thickness);
-    final next = thicknessSteps[(i + 1) % thicknessSteps.length];
-    setState(() {
-      _thickness = next;
-      final sel = _selected;
-      if (sel != null && sel.thickness != next) {
-        _pushUndo();
-        sel.thickness = next;
-        _dirty = true;
-      }
-    });
-  }
-
   void _setTool(AnnotationTool tool) {
     setState(() {
       _tool = tool;
       _showLayerOf(tool);
       if (tool.creates != null) _selectedId = null;
     });
+    if (tool == AnnotationTool.rectangle) widget.tour?.advanceTo(2);
   }
 
   void _resetZoom() => _tc.value = Matrix4.identity();
@@ -956,10 +867,10 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(bottom: 4),
                 child: Text(
-                  'Layers',
+                  context.ui('Layers'),
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
                 ),
               ),
@@ -973,7 +884,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                 SwitchListTile(
                   key: ValueKey('layer-${layer.name}'),
                   dense: true,
-                  title: Text(layer.label),
+                  title: Text(context.ui(layer.label)),
                   subtitle: layer == AnnotationLayer.photo
                       ? null
                       : Text(
@@ -1007,20 +918,32 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
     applyWidth: _applyW,
     applyHeight: _applyH,
     applyUnit: _applyUnit,
+    applyUnitId: _applyUnitId,
   );
 
   void _save() {
     final onSave = widget.onSave;
+    // The tour completes only when a real, linked signage marking is saved.
+    final marked = _items.any(
+      (a) =>
+          a.type == AnnotationType.rectangle &&
+          a.w > 0 &&
+          a.h > 0 &&
+          a.itemId != null,
+    );
     if (onSave == null) {
+      if (marked) widget.tour?.finish();
       Navigator.of(context).pop(_result());
       return;
     }
     onSave(_result());
+    if (marked) widget.tour?.finish();
     setState(() {
       _dirty = false;
       _applyW = null;
       _applyH = null;
       _applyUnit = null;
+      _applyUnitId = null;
     });
   }
 
@@ -1029,16 +952,18 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
     final discard = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Discard changes?'),
-        content: const Text('Your markings on this photo have not been saved.'),
+        title: Text(context.ui('Discard changes?')),
+        content: Text(
+          context.ui('Your markings on this photo have not been saved.'),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep editing'),
+            child: Text(context.ui('Keep editing')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Discard'),
+            child: Text(context.ui('Discard')),
           ),
         ],
       ),
@@ -1052,30 +977,33 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
 
   List<Widget> _actions() => [
     IconButton(
-      tooltip: 'Undo',
+      tooltip: context.ui('Undo'),
       onPressed: _undo.isEmpty ? null : _undoLast,
       icon: const Icon(Icons.undo),
     ),
     IconButton(
-      tooltip: 'Redo',
+      tooltip: context.ui('Redo'),
       onPressed: _redo.isEmpty ? null : _redoLast,
       icon: const Icon(Icons.redo),
     ),
     IconButton(
-      tooltip: 'Reset zoom',
+      tooltip: context.ui('Reset zoom'),
       onPressed: _tc.value.isIdentity() ? null : _resetZoom,
       icon: const Icon(Icons.fit_screen_outlined),
     ),
     Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: FilledButton(
-        key: const ValueKey('annotation-save'),
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(60, 38),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: KeyedSubtree(
+        key: widget.tour?.saveKey,
+        child: FilledButton(
+          key: const ValueKey('annotation-save'),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(60, 38),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+          ),
+          onPressed: _embedded && !_dirty ? null : _save,
+          child: Text(context.ui('Save')),
         ),
-        onPressed: _embedded && !_dirty ? null : _save,
-        child: const Text('Save'),
       ),
     ),
   ];
@@ -1087,8 +1015,8 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
-          'Annotate photo',
+        Text(
+          context.ui('Annotate photo'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
@@ -1112,29 +1040,42 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
         backgroundColor: Colors.white,
         appBar: _embedded
             ? null
-            : AppBar(titleSpacing: 0, title: title, actions: _actions()),
-        body: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              if (_embedded)
-                Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Row(
-                    children: [
-                      Expanded(child: title),
-                      ..._actions(),
-                    ],
+            : AdinnAppBar(titleSpacing: 0, title: title, actions: _actions()),
+        body: Stack(
+          children: [
+            SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  if (_embedded)
+                    Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.only(left: 12),
+                      child: Row(
+                        children: [
+                          Expanded(child: title),
+                          ..._actions(),
+                        ],
+                      ),
+                    ),
+                  _hintBar(),
+                  Expanded(
+                    child: widget.tour == null
+                        ? _editorArea()
+                        : KeyedSubtree(
+                            key: widget.tour!.canvasKey,
+                            child: _editorArea(),
+                          ),
                   ),
-                ),
-              _hintBar(),
-              Expanded(child: _editorArea()),
-              if (sel != null) _contextBar(sel),
-              _paletteRow(),
-              _toolBar(),
-            ],
-          ),
+                  if (sel != null) _contextBar(sel),
+                  _paletteRow(),
+                  _toolBar(),
+                ],
+              ),
+            ),
+            if (widget.tour != null)
+              Positioned.fill(child: PhotoTourOverlay(tour: widget.tour!)),
+          ],
         ),
       ),
     );
@@ -1287,13 +1228,13 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Link marking to signage item',
+            Text(
+              context.ui('Link marking to signage item'),
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
             ),
             ListTile(
               leading: const Icon(Icons.link_off),
-              title: const Text('Not linked'),
+              title: Text(context.ui('Not linked')),
               onTap: () => Navigator.pop(ctx, ''),
             ),
             for (final u in widget.units)
@@ -1469,24 +1410,8 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
             ),
           ),
           IconButton(
-            key: const ValueKey('thickness'),
-            tooltip: 'Line thickness',
-            visualDensity: VisualDensity.compact,
-            onPressed: _cycleThickness,
-            icon: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.line_weight, size: 18),
-                Text(
-                  '${fmtNum(_thickness)}x',
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
             key: const ValueKey('layers'),
-            tooltip: 'Layers',
+            tooltip: context.ui('Layers'),
             visualDensity: VisualDensity.compact,
             onPressed: _openLayers,
             icon: Icon(
@@ -1504,90 +1429,67 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
     );
   }
 
+  /// Tools offered in the simplified field toolbar. Removed creation tools
+  /// (Circle, Line, Measure, Pole, Pipe, Ground) stay supported for legacy
+  /// annotations through the painter and selection/editing paths.
+  static const _creationTools = <AnnotationTool>{
+    AnnotationTool.select,
+    AnnotationTool.rectangle,
+    AnnotationTool.arrow,
+    AnnotationTool.text,
+    AnnotationTool.freehand,
+    AnnotationTool.shapeRect,
+    AnnotationTool.measureLabel,
+    AnnotationTool.numberMarker,
+    AnnotationTool.pan,
+  };
+
   Widget _toolBar() {
-    final groups = [
-      for (final g in _ToolGroup.values)
-        if (g != _ToolGroup.site || widget.extraTools.isNotEmpty) g,
-    ];
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: AdinnColors.line)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: 34,
-            // Non-lazy: every category chip is always built.
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-              child: Row(
-                children: [
-                  for (final g in groups)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        key: ValueKey('tool-group-${g.name}'),
-                        showCheckmark: false,
-                        label: Text(
-                          g.label,
-                          style: const TextStyle(fontSize: 11.5),
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        selected: _group == g,
-                        onSelected: (_) => setState(() => _group = g),
-                      ),
+      // One compact scrollable row; no category/filter chips.
+      child: SizedBox(
+        height: 62,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            children: [
+              for (final t in AnnotationTool.values.where(
+                _creationTools.contains,
+              ))
+                SizedBox(
+                  width: 64,
+                  child: KeyedSubtree(
+                    key: t == AnnotationTool.rectangle
+                        ? widget.tour?.signageKey
+                        : null,
+                    child: _ToolButton(
+                      key: ValueKey('tool-${t.name}'),
+                      icon: t.icon,
+                      label: t.label,
+                      selected: _tool == t,
+                      onTap: () => _setTool(t),
                     ),
-                ],
-              ),
-            ),
+                  ),
+                ),
+              for (final t in widget.extraTools)
+                SizedBox(
+                  width: 72,
+                  child: _ToolButton(
+                    key: ValueKey('tool-extra-${t.id}'),
+                    icon: t.icon,
+                    label: t.label,
+                    selected: false,
+                    onTap: t.onTap,
+                  ),
+                ),
+            ],
           ),
-          SizedBox(
-            height: 62,
-            // 15 tools: a non-lazy scroll row so every tool is always built.
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: Row(
-                children: [
-                  for (final t in AnnotationTool.values.where(_group.shows))
-                    SizedBox(
-                      width: 64,
-                      child: _ToolButton(
-                        key: ValueKey('tool-${t.name}'),
-                        icon: t.icon,
-                        label: t.label,
-                        selected: _tool == t,
-                        onTap: () => _setTool(t),
-                      ),
-                    ),
-                  if (widget.extraTools.isNotEmpty && _group == _ToolGroup.all)
-                    Container(
-                      width: 1,
-                      height: 40,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      color: AdinnColors.line,
-                    ),
-                  if (_group.showsExtra)
-                    for (final t in widget.extraTools)
-                      SizedBox(
-                        width: 72,
-                        child: _ToolButton(
-                          key: ValueKey('tool-extra-${t.id}'),
-                          icon: t.icon,
-                          label: t.label,
-                          selected: false,
-                          onTap: t.onTap,
-                        ),
-                      ),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1700,6 +1602,98 @@ class _ActionChip extends StatelessWidget {
 // Label / measurement bottom sheet
 // -----------------------------------------------------------------------------
 
+/// Text-entry dialog whose controller follows the dialog's own lifecycle.
+class _TextPromptDialog extends StatefulWidget {
+  const _TextPromptDialog({required this.title, required this.initial});
+
+  final String title;
+  final String initial;
+
+  @override
+  State<_TextPromptDialog> createState() => _TextPromptDialogState();
+}
+
+class _TextPromptDialogState extends State<_TextPromptDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            key: const ValueKey('annotation-text-field'),
+            controller: _controller,
+            autofocus: true,
+            maxLength: 60,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: context.ui('e.g. Power point here'),
+            ),
+            onSubmitted: (v) => Navigator.pop(context, v),
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final s in const [
+                'Installation remark',
+                'Wall condition',
+                'Pole position',
+                'Fixing height',
+                'Board name',
+                'Electrical point',
+                'Measurement clarification',
+              ])
+                ActionChip(
+                  label: Text(
+                    context.ui(s),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    final t = _controller.text.trim();
+                    _controller.text = t.isEmpty ? '$s: ' : '$t, $s: ';
+                    _controller.selection = TextSelection.collapsed(
+                      offset: _controller.text.length,
+                    );
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('annotation-text-cancel'),
+          onPressed: () => Navigator.pop(context),
+          child: Text(context.ui('Cancel')),
+        ),
+        FilledButton(
+          key: const ValueKey('annotation-text-add'),
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: Text(context.ui('Add')),
+        ),
+      ],
+    );
+  }
+}
+
 class _DetailsResult {
   const _DetailsResult({
     required this.label,
@@ -1801,8 +1795,8 @@ class _DetailsSheetState extends State<_DetailsSheet> {
     if (values.isEmpty) return const [];
     return [
       const SizedBox(height: 10),
-      const Text(
-        'Use a recorded measurement',
+      Text(
+        context.ui('Use a recorded measurement'),
         style: TextStyle(fontSize: 12, color: AdinnColors.muted),
       ),
       const SizedBox(height: 4),
@@ -1884,8 +1878,8 @@ class _DetailsSheetState extends State<_DetailsSheet> {
       key: const ValueKey('measure-unit'),
       initialValue: _unit,
       isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Unit',
+      decoration: InputDecoration(
+        labelText: context.ui('Unit'),
         contentPadding: EdgeInsets.fromLTRB(12, 14, 6, 14),
       ),
       items: [
@@ -1932,16 +1926,20 @@ class _DetailsSheetState extends State<_DetailsSheet> {
               ),
               if (_isRect) ...[
                 const SizedBox(height: 4),
-                const Text(
-                  'Enter the measured board size. You can skip and add it later.',
+                Text(
+                  context.ui(
+                    'Enter the measured board size. You can skip and add it later.',
+                  ),
                   style: TextStyle(fontSize: 12.5, color: AdinnColors.muted),
                 ),
               ],
               if (_isValue) ...[
                 const SizedBox(height: 4),
-                const Text(
-                  'Enter the value you measured on site. Photo pixels are '
-                  'never treated as real measurements.',
+                Text(
+                  context.ui(
+                    'Enter the value you measured on site. Photo pixels are '
+                    'never treated as real measurements.',
+                  ),
                   style: TextStyle(fontSize: 12.5, color: AdinnColors.muted),
                 ),
               ],
@@ -1951,14 +1949,14 @@ class _DetailsSheetState extends State<_DetailsSheet> {
                   key: const ValueKey('measure-item'),
                   initialValue: _itemId,
                   isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Signage item',
+                  decoration: InputDecoration(
+                    labelText: context.ui('Signage item'),
                     prefixIcon: Icon(Icons.link),
                   ),
                   items: [
-                    const DropdownMenuItem<String>(
+                    DropdownMenuItem<String>(
                       value: null,
-                      child: Text('Not linked'),
+                      child: Text(context.ui('Not linked')),
                     ),
                     for (final u in widget.units)
                       DropdownMenuItem(value: u.id, child: Text(u.label)),
@@ -1971,8 +1969,8 @@ class _DetailsSheetState extends State<_DetailsSheet> {
                 key: const ValueKey('measure-label'),
                 controller: _label,
                 textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Label',
+                decoration: InputDecoration(
+                  labelText: context.ui('Label'),
                   prefixIcon: Icon(Icons.label_outline),
                 ),
               ),
@@ -1989,7 +1987,9 @@ class _DetailsSheetState extends State<_DetailsSheet> {
                           decimal: true,
                         ),
                         inputFormatters: [numberFormatter],
-                        decoration: const InputDecoration(labelText: 'Width'),
+                        decoration: InputDecoration(
+                          labelText: context.ui('Width'),
+                        ),
                         validator: (v) => _validateNumber(v, _height.text),
                       ),
                     ),
@@ -2005,7 +2005,9 @@ class _DetailsSheetState extends State<_DetailsSheet> {
                           decimal: true,
                         ),
                         inputFormatters: [numberFormatter],
-                        decoration: const InputDecoration(labelText: 'Height'),
+                        decoration: InputDecoration(
+                          labelText: context.ui('Height'),
+                        ),
                         validator: (v) => _validateNumber(v, _width.text),
                       ),
                     ),
@@ -2027,8 +2029,8 @@ class _DetailsSheetState extends State<_DetailsSheet> {
                           decimal: true,
                         ),
                         inputFormatters: [numberFormatter],
-                        decoration: const InputDecoration(
-                          labelText: 'Measured value',
+                        decoration: InputDecoration(
+                          labelText: context.ui('Measured value'),
                         ),
                         validator: _validateValue,
                       ),
@@ -2054,7 +2056,7 @@ class _DetailsSheetState extends State<_DetailsSheet> {
                     child: FilledButton(
                       key: const ValueKey('measure-save'),
                       onPressed: _submit,
-                      child: const Text('Save'),
+                      child: Text(context.ui('Save')),
                     ),
                   ),
                 ],

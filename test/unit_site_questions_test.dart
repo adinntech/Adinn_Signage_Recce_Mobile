@@ -18,6 +18,7 @@ import 'package:signage_recce/features/report/report_service.dart';
 import 'package:signage_recce/state/app_controller.dart';
 
 import 'helpers.dart';
+import 'support/evidence_fixture.dart';
 import 'model_viewer_pdf_test.dart' show FakeModels;
 import 'report_test.dart' show FakeImages;
 
@@ -60,15 +61,6 @@ void _phone(WidgetTester t) {
   addTearDown(t.view.reset);
 }
 
-SitePhoto _photo() => SitePhoto(
-  id: 'ph1',
-  path: 'demo://front',
-  label: 'Front view',
-  capturedAt: DateTime(2026, 11, 24),
-  width: 100,
-  height: 80,
-);
-
 /// Completes one media group through the data layer (only used for the
 /// PDF-scope matrix; the visible-UI flow has its own test below).
 void _complete(AppController c, Board b, {String inst = 'double_pole'}) {
@@ -80,7 +72,7 @@ void _complete(AppController c, Board b, {String inst = 'double_pole'}) {
     u.installationCode = null;
   }
   completeAnswers(b);
-  c.addPhoto(_shop, b.id, _photo());
+  addValidEvidence(c, _shop, b);
 }
 
 void main() {
@@ -89,29 +81,38 @@ void main() {
       final (c, b) = await _gsbTwo();
       expect(b.areaSqFt, closeTo(42, 1e-9));
       expect(SignageCatalog.installationSummary(b), contains('Mixed'));
-      final q1 = SignageCatalog.questionsForUnit(b, b.units[0]).map((q) => q.id);
-      final q2 = SignageCatalog.questionsForUnit(b, b.units[1]).map((q) => q.id);
+      final q1 = SignageCatalog.questionsForUnit(
+        b,
+        b.units[0],
+      ).map((q) => q.id);
+      final q2 = SignageCatalog.questionsForUnit(
+        b,
+        b.units[1],
+      ).map((q) => q.id);
       expect(q1.toSet(), isNot(q2.toSet()), reason: 'own installation each');
       expect(c.siteQuestionsPendingFor(b, b.units[0]), greaterThan(0));
       expect(c.siteQuestionsPendingFor(b, b.units[1]), greaterThan(0));
     });
 
-    test('Site Questions never claims 0 while the checklist is pending', () async {
-      final (c, b) = await _gsbTwo();
-      final pending = c.siteQuestionsPending(b);
-      expect(pending, greaterThan(0));
-      // Same total the Board checklist lists (answers + checklist).
-      final listed = c
-          .boardIssueDetails(b)
-          .where((i) => i.section == IssueSection.questions)
-          .length;
-      expect(listed, greaterThan(0));
-      expect(
-        c.boardIssues(b).where((i) => i.contains('site checklist')),
-        hasLength(2),
-        reason: 'one checklist issue per physical board',
-      );
-    });
+    test(
+      'Site Questions never claims 0 while the checklist is pending',
+      () async {
+        final (c, b) = await _gsbTwo();
+        final pending = c.siteQuestionsPending(b);
+        expect(pending, greaterThan(0));
+        // Same total the Board checklist lists (answers + checklist).
+        final listed = c
+            .boardIssueDetails(b)
+            .where((i) => i.section == IssueSection.questions)
+            .length;
+        expect(listed, greaterThan(0));
+        expect(
+          c.boardIssues(b).where((i) => i.contains('site checklist')),
+          hasLength(2),
+          reason: 'one checklist issue per physical board',
+        );
+      },
+    );
 
     test('board 01 complete, board 02 still pending', () async {
       final (c, b) = await _gsbTwo();
@@ -122,43 +123,60 @@ void main() {
       _answerUnit(b, b.units[1]);
       expect(c.siteQuestionsPending(b), 0);
       expect(
-        c.boardIssues(b).where(
-          (i) => i.contains('site question') || i.contains('site checklist'),
-        ),
+        c
+            .boardIssues(b)
+            .where(
+              (i) =>
+                  i.contains('site question') || i.contains('site checklist'),
+            ),
         isEmpty,
       );
-      // Real remaining requirement stays visible.
-      expect(c.boardIssues(b), contains('Capture at least one site photo'));
+      // New rule: one GROUP-level photo issue, and one marking issue per
+      // physical board (never duplicated per board for the shared photos).
+      expect(
+        c
+            .boardIssues(b)
+            .where((i) => i.startsWith('Capture at least two site photos')),
+        hasLength(1),
+      );
+      expect(
+        c.boardIssues(b).where((i) => i.contains('signage marking is missing')),
+        hasLength(2),
+      );
     });
 
     test('issues point at the right board and section', () async {
       final (c, b) = await _gsbTwo();
       final d = c.boardIssueDetails(b);
       final u2 = d.firstWhere(
-        (i) =>
-            i.section == IssueSection.questions && i.unitId == b.units[1].id,
+        (i) => i.section == IssueSection.questions && i.unitId == b.units[1].id,
       );
       expect(u2.text, contains('Unit 02'));
       final u1 = d.firstWhere(
-        (i) =>
-            i.section == IssueSection.questions && i.unitId == b.units[0].id,
+        (i) => i.section == IssueSection.questions && i.unitId == b.units[0].id,
       );
       expect(u1.unitId, isNot(u2.unitId));
-      expect(
-        d.firstWhere((i) => i.section == IssueSection.photos).unitId,
-        isNull,
-      );
+      // Evidence issues now point at the physical board that lacks them.
+      final photoUnits = d
+          .where((i) => i.section == IssueSection.photos)
+          .map((i) => i.unitId)
+          .toSet();
+      // null = the single shared group-level missing-photo issue.
+      expect(photoUnits, {null, b.units[0].id, b.units[1].id});
     });
 
-    test('warnings stay advisory, not blocking', () async {
+    test('evidence is a blocking issue, no duplicate advisory', () async {
       final (c, b) = await _gsbTwo();
       _answerUnit(b, b.units[0]);
       _answerUnit(b, b.units[1]);
-      c.addPhoto(_shop, b.id, _photo());
+      addValidEvidence(c, _shop, b);
+      // New rule: every active board needs its own saved marking.
+      ensureEvidenceForAllUnits(b);
+      c.touchBoard(_shop, b);
       expect(c.boardIssues(b), isEmpty);
       expect(
         c.boardWarnings(b, null),
-        contains('Only one photo angle captured'),
+        isNot(contains('Only one photo angle captured')),
       );
     });
   });
@@ -166,17 +184,21 @@ void main() {
   group('Single board (NLB Single 9 x 3, Single Pole)', () {
     test('questions + checklist counted once, no false zero', () async {
       final c = await _vendor();
-      final b = c.addMediaGroups(_shop, [
-        MediaGroupPlan(_o('NLB_SINGLE_FRAME'), 1),
-      ]).single
-        ..width = 9
-        ..height = 3
-        ..installationCode = 'single_pole';
+      final b =
+          c.addMediaGroups(_shop, [
+              MediaGroupPlan(_o('NLB_SINGLE_FRAME'), 1),
+            ]).single
+            ..width = 9
+            ..height = 3
+            ..installationCode = 'single_pole';
       expect(c.siteQuestionsPending(b), greaterThan(0));
       expect(c.boardIssues(b).any((i) => i.contains('site checklist')), isTrue);
       _answerUnit(b, b.units.first);
       expect(c.siteQuestionsPending(b), 0);
-      expect(c.boardIssues(b).any((i) => i.contains('site checklist')), isFalse);
+      expect(
+        c.boardIssues(b).any((i) => i.contains('site checklist')),
+        isFalse,
+      );
     });
   });
 
@@ -185,11 +207,16 @@ void main() {
       final (c, b) = await _gsbTwo();
       final u1 = b.units[0], u2 = b.units[1];
       expect(identical(SignageCatalog.answersOf(b, u1), b.answers), isTrue);
-      expect(identical(SignageCatalog.answersOf(b, u2), u2.siteAnswers), isTrue);
+      expect(
+        identical(SignageCatalog.answersOf(b, u2), u2.siteAnswers),
+        isTrue,
+      );
       c.setUnitAnswer(_shop, b, u2, 'power_available', true);
       expect(SignageCatalog.answersOf(b, u2)['power_available'], true);
-      expect(SignageCatalog.answersOf(b, u1).containsKey('power_available'),
-          isFalse);
+      expect(
+        SignageCatalog.answersOf(b, u1).containsKey('power_available'),
+        isFalse,
+      );
       c.setUnitAnswer(_shop, b, u1, 'power_available', false);
       expect(SignageCatalog.answersOf(b, u2)['power_available'], true);
     });
@@ -198,8 +225,10 @@ void main() {
       final (c, b) = await _gsbTwo();
       final u = b.units[1];
       c.setUnitAnswer(_shop, b, u, 'power_available', false);
-      final q = SignageCatalog.questionsForUnit(b, u)
-          .firstWhere((x) => x.id == 'power_available');
+      final q = SignageCatalog.questionsForUnit(
+        b,
+        u,
+      ).firstWhere((x) => x.id == 'power_available');
       expect(q.isAnswered(SignageCatalog.answersOf(b, u)), isTrue);
     });
 
@@ -285,15 +314,18 @@ void main() {
       expect(b.answers['power_available'], true);
     });
 
-    test('manual answers survive; copying never completes the section', () async {
-      final (c, b) = await _gsbTwo();
-      final u1 = b.units[0], u2 = b.units[1];
-      c.setUnitAnswer(_shop, b, u1, 'power_available', true);
-      c.setUnitAnswer(_shop, b, u2, 'power_available', false);
-      c.copyCommonAnswers(_shop, b, b, sourceUnit: u1, targetUnit: u2);
-      expect(u2.siteAnswers['power_available'], false);
-      expect(c.siteQuestionsPendingFor(b, u2), greaterThan(0));
-    });
+    test(
+      'manual answers survive; copying never completes the section',
+      () async {
+        final (c, b) = await _gsbTwo();
+        final u1 = b.units[0], u2 = b.units[1];
+        c.setUnitAnswer(_shop, b, u1, 'power_available', true);
+        c.setUnitAnswer(_shop, b, u2, 'power_available', false);
+        c.copyCommonAnswers(_shop, b, b, sourceUnit: u1, targetUnit: u2);
+        expect(u2.siteAnswers['power_available'], false);
+        expect(c.siteQuestionsPendingFor(b, u2), greaterThan(0));
+      },
+    );
 
     test('works across media groups too', () async {
       final c = await _vendor();
@@ -303,10 +335,11 @@ void main() {
       ]);
       g[0].installationCode = 'double_pole';
       g[1].installationCode = 'wall_mount';
-      c.setUnitAnswer(_shop, g[0], g[0].units.first, 'owner_permission', true);
+      // owner_permission is no longer asked; existing_board is retained.
+      c.setUnitAnswer(_shop, g[0], g[0].units.first, 'existing_board', true);
       final n = c.copyCommonAnswers(_shop, g[0], g[1]);
       expect(n, greaterThan(0));
-      expect(g[1].answers['owner_permission'], true);
+      expect(g[1].answers['existing_board'], true);
     });
   });
 
@@ -463,8 +496,8 @@ void main() {
         groupIds: {g[0].id},
       );
       final sheets = [
-        for (final it in ((build.data['groups'] as List).single as Map)['items']
-            as List)
+        for (final it
+            in ((build.data['groups'] as List).single as Map)['items'] as List)
           (it as Map)['sheet'] as Map,
       ];
       expect(sheets, hasLength(2));
@@ -494,8 +527,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('unit_questions_header')), findsOneWidget);
       // Subtitle shows the real pending total, never a false zero.
-      String subtitle() =>
-          tester.widget<Text>(find.byKey(const Key('site_questions_subtitle'))).data!;
+      String subtitle() => tester
+          .widget<Text>(find.byKey(const Key('site_questions_subtitle')))
+          .data!;
       expect(subtitle(), isNot('0 required pending'));
       final startTotal = c.siteQuestionsPending(b);
 
@@ -530,7 +564,17 @@ void main() {
       expect(subtitle(), '0 required pending');
       expect(b.units[1].siteAnswers, isNotEmpty);
       // The remaining real requirement (photo) still blocks completion.
-      expect(c.boardIssues(b), contains('Capture at least one site photo'));
+      // One shared group photo issue + one marking issue per board.
+      expect(
+        c
+            .boardIssues(b)
+            .where((i) => i.startsWith('Capture at least two site photos')),
+        hasLength(1),
+      );
+      expect(
+        c.boardIssues(b).where((i) => i.contains('signage marking is missing')),
+        hasLength(2),
+      );
     });
   });
 }
@@ -540,7 +584,10 @@ void main() {
 void _answerUnit(Board b, SignageUnit u) {
   final a = SignageCatalog.answersOf(b, u);
   for (var guard = 0; guard < 5; guard++) {
-    final missing = SignageCatalog.missingAnswersFor(b, u);
+    final missing = [
+      ...SignageCatalog.missingAnswersFor(b, u),
+      ...SignageCatalog.missingMeasurementsFor(b, u),
+    ];
     if (missing.isEmpty) break;
     for (final q in missing) {
       a[q.id] = switch (q.type) {
@@ -551,7 +598,10 @@ void _answerUnit(Board b, SignageUnit u) {
       };
     }
   }
-  for (final q in SiteChecklists.questionsFor(b.mediaCode, b.installationOf(u))) {
+  for (final q in SiteChecklists.questionsFor(
+    b.mediaCode,
+    b.installationOf(u),
+  )) {
     if (!q.required || q.isAnswered(u.checklist[q.id])) continue;
     u.checklist[q.id] = ChecklistResponse(
       questionId: q.id,

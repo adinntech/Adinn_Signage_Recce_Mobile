@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import 'panorama_io.dart';
 import 'panorama_viewer_screen.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Optional 360° panoramas of a shop: import (Mode A), view and place
 /// signage (Mode C). Guided capture / stitching (Mode B) is not available
@@ -60,7 +62,7 @@ class _PanoramaListScreenState extends State<PanoramaListScreen> {
         writer: widget.writer ?? mediaPanoramaWriter(c.media),
       );
       await importer.importInto(c, widget.shopId, picked);
-      if (mounted) showSnack(context, 'Panorama imported');
+      if (mounted) showSnack(context, context.ui('Panorama imported'));
     } on PanoramaPickerException catch (e) {
       if (mounted) {
         setState(() {
@@ -93,7 +95,7 @@ class _PanoramaListScreenState extends State<PanoramaListScreen> {
     try {
       await c.deletePanorama(p.id);
     } on Object catch (e) {
-      if (mounted) showSnack(context, 'Could not remove: $e', error: true);
+      if (mounted) showSnack(context, context.uf('Could not remove: {0}', [e]), error: true);
     }
   }
 
@@ -114,7 +116,7 @@ class _PanoramaListScreenState extends State<PanoramaListScreen> {
     final shop = c.shop(widget.shopId);
     if (shop == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('360° site panorama')),
+        appBar: AdinnAppBar(title: Text(context.ui('360° site panorama'))),
         body: const EmptyState(
           icon: Icons.storefront_outlined,
           title: 'Shop not found',
@@ -124,7 +126,7 @@ class _PanoramaListScreenState extends State<PanoramaListScreen> {
     final editable = c.canEdit(shop);
     final items = c.panoramasForShop(shop.id);
     return Scaffold(
-      appBar: AppBar(title: const Text('360° site panorama')),
+      appBar: AdinnAppBar(title: Text(context.ui('360° site panorama'))),
       // A handful of panoramas per shop: a plain scroll view keeps every
       // entry built (no lazy list needed).
       body: SingleChildScrollView(
@@ -158,11 +160,10 @@ class _PanoramaListScreenState extends State<PanoramaListScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.file_upload_outlined),
-                      label: const Text('Import panorama from gallery'),
+                      label: Text(context.ui('Import panorama from gallery')),
                     )
                   else
-                    const Text(
-                      'View only – this recce cannot be edited now.',
+                    Text(context.ui('View only – this recce cannot be edited now.'),
                       key: Key('pano_read_only'),
                       style: TextStyle(fontSize: 12, color: AdinnColors.muted),
                     ),
@@ -186,7 +187,7 @@ class _PanoramaListScreenState extends State<PanoramaListScreen> {
                             TextButton(
                               key: const Key('pano_open_settings'),
                               onPressed: openAppSettings,
-                              child: const Text('Open app settings'),
+                              child: Text(context.ui('Open app settings')),
                             ),
                         ],
                       ),
@@ -238,7 +239,7 @@ class _PanoramaListScreenState extends State<PanoramaListScreen> {
                   trailing: editable
                       ? IconButton(
                           key: Key('pano_delete_${p.id}'),
-                          tooltip: 'Remove panorama',
+                          tooltip: context.ui('Remove panorama'),
                           onPressed: () => _delete(p),
                           icon: const Icon(Icons.delete_outline),
                         )
@@ -262,15 +263,14 @@ class _GuidedCaptureUnsupportedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Card(
+    return Card(
       key: Key('pano_guided_unsupported'),
       child: ListTile(
         leading: Icon(Icons.block_outlined, color: AdinnColors.muted),
-        title: Text('Guided 360° capture – not supported on this build'),
-        subtitle: Text(
-          'In-app capture and stitching of a panorama is not available '
+        title: Text(context.ui('Guided 360° capture – not supported on this build')),
+        subtitle: Text(context.ui('In-app capture and stitching of a panorama is not available '
           'offline. Normal photo capture and Live Preview remain available. '
-          'Remember: a panorama is an image, not a metric 3D reconstruction.',
+          'Remember: a panorama is an image, not a metric 3D reconstruction.'),
         ),
         isThreeLine: true,
       ),

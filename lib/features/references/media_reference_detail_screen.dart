@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import '../../state/app_controller.dart';
 import '../model3d/signage_spec.dart';
 import 'media_reference_library_screen.dart';
 import 'reference_image_picker.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// References of one catalog media: register (gallery photo or external
 /// link), edit metadata, submit for review, reviewer checklist with
@@ -53,7 +55,7 @@ class MediaReferenceDetailScreen extends StatelessWidget {
           usageRights: draft.usageRights,
           technicalNotes: draft.notes,
         );
-        showSnack(context, 'Reference registered');
+        showSnack(context, context.ui('Reference registered'));
       } else {
         c.replaceReference(
           replacing.id,
@@ -66,7 +68,7 @@ class MediaReferenceDetailScreen extends StatelessWidget {
           usageRights: draft.usageRights,
           technicalNotes: draft.notes,
         );
-        showSnack(context, 'Reference replaced – the old one is kept');
+        showSnack(context, context.ui('Reference replaced – the old one is kept'));
       }
     } on Object catch (e) {
       showSnack(context, _message(e), error: true);
@@ -85,7 +87,7 @@ class MediaReferenceDetailScreen extends StatelessWidget {
     final status = c.referenceLibraryStatus(mediaCode);
     final model = c.modelStatus(mediaCode);
     return Scaffold(
-      appBar: AppBar(title: Text(m?.name ?? mediaCode)),
+      appBar: AdinnAppBar(title: Text(m?.name ?? mediaCode)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
@@ -130,7 +132,7 @@ class MediaReferenceDetailScreen extends StatelessWidget {
                   key: const Key('ref_add'),
                   onPressed: () => _add(context),
                   icon: const Icon(Icons.add_photo_alternate_outlined),
-                  label: const Text('Add reference'),
+                  label: Text(context.ui('Add reference')),
                 ),
               ],
             ),
@@ -153,10 +155,9 @@ class MediaReferenceDetailScreen extends StatelessWidget {
               picker: _picker,
             ),
           if (history.isNotEmpty) ...[
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(4, 16, 4, 6),
-              child: Text(
-                'Replaced references (kept for history)',
+              child: Text(context.ui('Replaced references (kept for history)'),
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   color: AdinnColors.muted,
@@ -223,26 +224,26 @@ class _ReferenceCard extends StatelessWidget {
     final reason = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reject reference'),
+        title: Text(context.ui('Reject reference')),
         content: TextField(
           key: const Key('ref_reject_reason'),
           controller: ctrl,
           autofocus: true,
           maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Reason (required)',
-            hintText: 'e.g. Shows a non-lit board, frame not visible',
+          decoration: InputDecoration(
+            labelText: context.ui('Reason (required)'),
+            hintText: context.ui('e.g. Shows a non-lit board, frame not visible'),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(context.ui('Cancel')),
           ),
           FilledButton(
             key: const Key('ref_reject_confirm'),
             onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('Reject'),
+            child: Text(context.ui('Reject')),
           ),
         ],
       ),
@@ -250,7 +251,7 @@ class _ReferenceCard extends StatelessWidget {
     if (reason == null || !context.mounted) return;
     try {
       c.rejectReference(reference.id, reason);
-      showSnack(context, 'Reference rejected');
+      showSnack(context, context.ui('Reference rejected'));
     } on Object catch (e) {
       showSnack(context, _message(e), error: true);
     }
@@ -401,14 +402,14 @@ class _ReferenceCard extends StatelessWidget {
                     key: Key('ref_edit_${r.id}'),
                     onPressed: () => _edit(context),
                     icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Edit'),
+                    label: Text(context.ui('Edit')),
                   ),
                 if (onReplace != null && !r.isSuperseded)
                   TextButton.icon(
                     key: Key('ref_replace_${r.id}'),
                     onPressed: onReplace,
                     icon: const Icon(Icons.swap_horiz, size: 18),
-                    label: const Text('Replace'),
+                    label: Text(context.ui('Replace')),
                   ),
                 if (canSubmit)
                   FilledButton.tonalIcon(
@@ -419,13 +420,13 @@ class _ReferenceCard extends StatelessWidget {
                       'Sent for technical review',
                     ),
                     icon: const Icon(Icons.send_outlined, size: 18),
-                    label: const Text('Submit for review'),
+                    label: Text(context.ui('Submit for review')),
                   ),
                 if (reviewer && awaiting) ...[
                   OutlinedButton(
                     key: Key('ref_reject_${r.id}'),
                     onPressed: () => _reject(context),
-                    child: const Text('Reject'),
+                    child: Text(context.ui('Reject')),
                   ),
                   FilledButton(
                     key: Key('ref_approve_${r.id}'),
@@ -439,7 +440,7 @@ class _ReferenceCard extends StatelessWidget {
                             'Reference approved',
                           )
                         : null,
-                    child: const Text('Approve'),
+                    child: Text(context.ui('Approve')),
                   ),
                 ],
               ],
@@ -666,7 +667,7 @@ class _ReferenceFormState extends State<_ReferenceForm> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
-            const Text('Source', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(context.ui('Source'), style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -721,16 +722,15 @@ class _ReferenceFormState extends State<_ReferenceForm> {
                 labelText: external
                     ? 'Source URL (required)'
                     : 'Source URL (optional)',
-                hintText: 'https://…',
+                hintText: context.ui('https://…'),
               ),
             ),
             if (external)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 4),
-                child: Text(
-                  'Link only – the web image is not downloaded or bundled. '
+                child: Text(context.ui('Link only – the web image is not downloaded or bundled. '
                   'Usage rights stay "Unknown" until recorded, so it cannot '
-                  'be approved before that.',
+                  'be approved before that.'),
                   style: TextStyle(fontSize: 11, color: AdinnColors.muted),
                 ),
               ),
@@ -739,7 +739,7 @@ class _ReferenceFormState extends State<_ReferenceForm> {
               key: const Key('ref_rights'),
               isExpanded: true,
               initialValue: _rights,
-              decoration: const InputDecoration(labelText: 'Usage rights'),
+              decoration: InputDecoration(labelText: context.ui('Usage rights')),
               items: [
                 for (final r in ReferenceUsageRights.values)
                   DropdownMenuItem(value: r, child: Text(r.label)),
@@ -750,17 +750,17 @@ class _ReferenceFormState extends State<_ReferenceForm> {
             TextField(
               key: const Key('ref_owner'),
               controller: _owner,
-              decoration: const InputDecoration(
-                labelText: 'Owner / photographer',
+              decoration: InputDecoration(
+                labelText: context.ui('Owner / photographer'),
               ),
             ),
             const SizedBox(height: 8),
             TextField(
               key: const Key('ref_label'),
               controller: _label,
-              decoration: const InputDecoration(
-                labelText: 'Caption',
-                hintText: 'e.g. Factory sample – front view',
+              decoration: InputDecoration(
+                labelText: context.ui('Caption'),
+                hintText: context.ui('e.g. Factory sample – front view'),
               ),
             ),
             if (installs.isNotEmpty) ...[
@@ -769,13 +769,13 @@ class _ReferenceFormState extends State<_ReferenceForm> {
                 key: const Key('ref_installation'),
                 isExpanded: true,
                 initialValue: _installation,
-                decoration: const InputDecoration(
-                  labelText: 'Installation (optional)',
+                decoration: InputDecoration(
+                  labelText: context.ui('Installation (optional)'),
                 ),
                 items: [
-                  const DropdownMenuItem<String?>(
+                  DropdownMenuItem<String?>(
                     value: null,
-                    child: Text('Any / not specified'),
+                    child: Text(context.ui('Any / not specified')),
                   ),
                   for (final i in installs)
                     DropdownMenuItem<String?>(
@@ -791,7 +791,7 @@ class _ReferenceFormState extends State<_ReferenceForm> {
               key: const Key('ref_notes'),
               controller: _notes,
               maxLines: 2,
-              decoration: const InputDecoration(labelText: 'Technical notes'),
+              decoration: InputDecoration(labelText: context.ui('Technical notes')),
             ),
             if (_error != null)
               Padding(
@@ -806,7 +806,7 @@ class _ReferenceFormState extends State<_ReferenceForm> {
             FilledButton(
               key: const Key('ref_save'),
               onPressed: _picking ? null : _save,
-              child: const Text('Save reference'),
+              child: Text(context.ui('Save reference')),
             ),
           ],
         ),

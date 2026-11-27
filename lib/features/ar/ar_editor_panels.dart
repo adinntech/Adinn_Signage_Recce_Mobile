@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -123,7 +124,7 @@ class _NumberFieldState extends State<_NumberField> {
         errorText: _error,
         errorMaxLines: 2,
         suffixIcon: IconButton(
-          tooltip: 'Apply',
+          tooltip: context.ui('Apply'),
           visualDensity: VisualDensity.compact,
           icon: const Icon(Icons.check, size: 18),
           onPressed: widget.enabled ? _submit : null,
@@ -189,7 +190,7 @@ class ArToolPanel extends StatelessWidget {
           '${scene.tool.label}${p == null ? '' : ' • ${p.displayName}'}',
           trailing: IconButton(
             key: const ValueKey('ar_tool_close'),
-            tooltip: 'Close',
+            tooltip: context.ui('Close'),
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.close, size: 18),
             onPressed: () => scene.setTool(scene.tool),
@@ -258,8 +259,7 @@ class _ScalePanel extends StatelessWidget {
               color: AdinnColors.warning.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: const Text(
-              'Preview Scale Adjusted – Not Actual Size',
+            child: Text(context.ui('Preview Scale Adjusted – Not Actual Size'),
               style: TextStyle(
                 color: AdinnColors.warning,
                 fontSize: 11.5,
@@ -271,7 +271,7 @@ class _ScalePanel extends StatelessWidget {
           children: [
             IconButton(
               key: const ValueKey('ar_scale_minus'),
-              tooltip: 'Smaller',
+              tooltip: context.ui('Smaller'),
               onPressed: enabled && t.scale > ArObjectTransform.minScale
                   ? () => scene.stepScale(-1)
                   : null,
@@ -291,7 +291,7 @@ class _ScalePanel extends StatelessWidget {
             ),
             IconButton(
               key: const ValueKey('ar_scale_plus'),
-              tooltip: 'Larger',
+              tooltip: context.ui('Larger'),
               onPressed: enabled && t.scale < ArObjectTransform.maxScale
                   ? () => scene.stepScale(1)
                   : null,
@@ -315,12 +315,12 @@ class _ScalePanel extends StatelessWidget {
             OutlinedButton(
               key: const ValueKey('ar_scale_reset'),
               onPressed: enabled ? scene.resetScale : null,
-              child: const Text('Reset Scale'),
+              child: Text(context.ui('Reset Scale')),
             ),
             OutlinedButton(
               key: const ValueKey('ar_scale_fit'),
               onPressed: enabled ? scene.fitToDimensions : null,
-              child: const Text('Fit to Entered Dimensions'),
+              child: Text(context.ui('Fit to Entered Dimensions')),
             ),
           ],
         ),
@@ -371,7 +371,7 @@ class _RotatePanel extends StatelessWidget {
           children: [
             IconButton(
               key: const ValueKey('ar_rot_ccw'),
-              tooltip: 'Counter-clockwise',
+              tooltip: context.ui('Counter-clockwise'),
               onPressed: enabled ? () => scene.stepRotation(-1) : null,
               icon: const Icon(Icons.rotate_left),
             ),
@@ -389,7 +389,7 @@ class _RotatePanel extends StatelessWidget {
             ),
             IconButton(
               key: const ValueKey('ar_rot_cw'),
-              tooltip: 'Clockwise',
+              tooltip: context.ui('Clockwise'),
               onPressed: enabled ? () => scene.stepRotation(1) : null,
               icon: const Icon(Icons.rotate_right),
             ),
@@ -412,14 +412,14 @@ class _RotatePanel extends StatelessWidget {
             OutlinedButton(
               key: const ValueKey('ar_rot_reset'),
               onPressed: scene.canEditSelected ? scene.resetRotation : null,
-              child: const Text('Reset Rotation'),
+              child: Text(context.ui('Reset Rotation')),
             ),
             if (p != null && p.doubleSided)
               OutlinedButton.icon(
                 key: const ValueKey('ar_rot_flip'),
                 onPressed: scene.canEditSelected ? scene.flipFace : null,
                 icon: const Icon(Icons.flip, size: 18),
-                label: const Text('View other face'),
+                label: Text(context.ui('View other face')),
               ),
           ],
         ),
@@ -516,7 +516,7 @@ class _MovePanel extends StatelessWidget {
         ),
         Row(
           children: [
-            const Text('Step', style: TextStyle(fontSize: 12)),
+            Text(context.ui('Step'), style: TextStyle(fontSize: 12)),
             const SizedBox(width: 6),
             for (final s in const [0.01, 0.05, 0.10])
               Padding(
@@ -542,7 +542,7 @@ class _MovePanel extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           value: scene.freeAdjust,
           onChanged: scene.setFreeAdjust,
-          title: const Text('Free adjustment', style: TextStyle(fontSize: 13)),
+          title: Text(context.ui('Free adjustment'), style: TextStyle(fontSize: 13)),
           subtitle: Text(
             wall
                 ? 'Allows moving the sign off its wall.'
@@ -556,13 +556,13 @@ class _MovePanel extends StatelessWidget {
             OutlinedButton(
               key: const ValueKey('ar_move_reset'),
               onPressed: enabled ? scene.resetPosition : null,
-              child: const Text('Reset Position'),
+              child: Text(context.ui('Reset Position')),
             ),
             OutlinedButton.icon(
               key: const ValueKey('ar_move_reanchor'),
               onPressed: p == null ? null : () => scene.requestReanchor(),
               icon: const Icon(Icons.my_location, size: 18),
-              label: const Text('Re-anchor'),
+              label: Text(context.ui('Re-anchor')),
             ),
           ],
         ),
@@ -608,8 +608,7 @@ class _DimensionsPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
-          'Actual Dimensions (signage item)',
+        Text(context.ui('Actual Dimensions (signage item)'),
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
         ),
         InfoRow('Media Type', media?.name ?? 'Not set'),
@@ -646,8 +645,7 @@ class _DimensionsPanel extends StatelessWidget {
             color: AdinnColors.warning,
           ),
         const Divider(height: 14),
-        const Text(
-          'AR Preview Scale (this placement only)',
+        Text(context.ui('AR Preview Scale (this placement only)'),
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
         ),
         InfoRow('Preview scale', '${t.scalePercent}%'),
@@ -666,7 +664,7 @@ class _DimensionsPanel extends StatelessWidget {
           key: const ValueKey('ar_edit_dimensions'),
           onPressed: editable ? onEditDimensions : null,
           icon: const Icon(Icons.straighten, size: 18),
-          label: const Text('Edit Actual Dimensions'),
+          label: Text(context.ui('Edit Actual Dimensions')),
         ),
         if (!editable)
           const _Hint(
@@ -724,8 +722,7 @@ Future<ArInsertChoice?> showArInsertSheet(
         controller: scroll,
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          const Text(
-            'Insert Media',
+          Text(context.ui('Insert Media'),
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
           ),
           Text(
@@ -734,9 +731,9 @@ Future<ArInsertChoice?> showArInsertSheet(
           ),
           const SizedBox(height: 8),
           if (items.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(16),
-              child: Text('No signage items configured for this shop yet.'),
+              child: Text(context.ui('No signage items configured for this shop yet.')),
             ),
           for (final item in items)
             Card(
@@ -793,16 +790,15 @@ Future<ArInsertChoice?> showArInsertSheet(
                                 Navigator.pop(ctx, choice);
                               }
                             },
-                      child: const Text('Insert'),
+                      child: Text(context.ui('Insert')),
                     ),
                   ],
                 ),
               ),
             ),
           const SizedBox(height: 4),
-          const Text(
-            'Inserting places a 3D preview of an existing signage item. It '
-            'never creates a new item or changes the quantity.',
+          Text(context.ui('Inserting places a 3D preview of an existing signage item. It '
+            'never creates a new item or changes the quantity.'),
             style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
           ),
         ],
@@ -825,7 +821,7 @@ Future<ArInsertChoice?> _resolveInsert(
     case ArInsertCheck.engineLimit:
       showSnack(
         context,
-        'This AR engine can show only one model at a time.',
+        context.ui('This AR engine can show only one model at a time.'),
         error: true,
       );
       return null;
@@ -837,17 +833,16 @@ Future<ArInsertChoice?> _resolveInsert(
       return showDialog<ArInsertChoice>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text('${item.label} is already placed'),
-          content: const Text(
-            'This signage unit is already in the AR scene. A second copy is '
+          title: Text(context.uf('{0} is already placed', [item.label])),
+          content: Text(context.ui('This signage unit is already in the AR scene. A second copy is '
             'only a Preview Duplicate: it does not add a physical unit or '
             'change the quantity.\n\nTo add another physical unit, increase '
-            'the quantity in the media details.',
+            'the quantity in the media details.'),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+              child: Text(context.ui('Cancel')),
             ),
             TextButton(
               key: const ValueKey('ar_insert_select_existing'),
@@ -855,7 +850,7 @@ Future<ArInsertChoice?> _resolveInsert(
                 ctx,
                 ArInsertChoice(item, selectId: existing.placementId),
               ),
-              child: const Text('Select existing'),
+              child: Text(context.ui('Select existing')),
             ),
             FilledButton(
               key: const ValueKey('ar_insert_duplicate'),
@@ -863,7 +858,7 @@ Future<ArInsertChoice?> _resolveInsert(
                 ctx,
                 ArInsertChoice(item, previewDuplicate: true),
               ),
-              child: const Text('Add Preview Duplicate'),
+              child: Text(context.ui('Add Preview Duplicate')),
             ),
           ],
         ),
@@ -922,17 +917,16 @@ Future<void> showArObjectsSheet(
                 ),
               ),
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(8, 2, 8, 6),
-              child: Text(
-                'Selection, visibility and lock affect the preview only.',
+              child: Text(context.ui('Selection, visibility and lock affect the preview only.'),
                 style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
               ),
             ),
             if (list.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('No models inserted yet. Use Insert.'),
+                child: Text(context.ui('No models inserted yet. Use Insert.')),
               ),
             for (final p in list)
               Material(
@@ -997,17 +991,17 @@ Future<void> showArObjectsSheet(
                           }
                         },
                         itemBuilder: (_) => [
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'reset',
-                            child: Text('Reset Transform'),
+                            child: Text(context.ui('Reset Transform')),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'anchor',
-                            child: Text('Re-anchor'),
+                            child: Text(context.ui('Re-anchor')),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'remove',
-                            child: Text('Remove Placement'),
+                            child: Text(context.ui('Remove Placement')),
                           ),
                         ],
                       ),
@@ -1043,20 +1037,18 @@ Future<ArLayout?> showArLayoutsSheet(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Saved AR Layouts',
+            Text(context.ui('Saved AR Layouts'),
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
             ),
-            const Text(
-              'Layouts keep models and their preview transforms. Positions '
-              'must be re-anchored on site.',
+            Text(context.ui('Layouts keep models and their preview transforms. Positions '
+              'must be re-anchored on site.'),
               style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
             ),
             const SizedBox(height: 6),
             if (layouts.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text('No saved layouts for this shop yet.'),
+                child: Text(context.ui('No saved layouts for this shop yet.')),
               ),
             for (final l in layouts)
               ListTile(
@@ -1076,7 +1068,7 @@ Future<ArLayout?> showArLayoutsSheet(
                     if (editable)
                       IconButton(
                         key: ValueKey('ar_layout_delete_${l.id}'),
-                        tooltip: 'Delete layout',
+                        tooltip: context.ui('Delete layout'),
                         icon: const Icon(Icons.delete_outline),
                         onPressed: () async {
                           final ok = await confirmDialog(
@@ -1095,7 +1087,7 @@ Future<ArLayout?> showArLayoutsSheet(
                     FilledButton(
                       key: ValueKey('ar_layout_open_${l.id}'),
                       onPressed: () => Navigator.pop(ctx, l),
-                      child: const Text('Open'),
+                      child: Text(context.ui('Open')),
                     ),
                   ],
                 ),

@@ -27,6 +27,7 @@ import 'package:signage_recce/features/survey/unit_survey_screen.dart';
 import 'package:signage_recce/state/app_controller.dart';
 
 import 'helpers.dart';
+import 'support/evidence_fixture.dart';
 
 /// A store whose writes can be made to fail (disk full, permissions…).
 class FlakyStore extends MemoryLocalStore {
@@ -96,7 +97,7 @@ void main() {
         ..installationCode = SignageCatalog.wallMount
         ..width = 8
         ..height = 3;
-      c.addPhoto(shop.id, b.id, _photo('p1'));
+      addValidEvidence(c, shop.id, b);
       completeAnswers(b);
       // The helper answers "Yes" everywhere; answers that flag a site
       // constraint (visible wires, AC unit…) are set to "No" here.
@@ -421,45 +422,36 @@ void main() {
       expect(u.measurements.mm('bottom_height'), closeTo(answer * 304.8, 1e-6));
     });
 
-    testWidgets('photo editor tool categories filter the tool bar', (
-      tester,
-    ) async {
-      _phone(tester);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: AnnotationEditorScreen(
-            photo: _photo('p'),
-            boardName: 'GSB',
-            extraTools: [
-              AnnotationExtraTool(
-                id: 'perspective',
-                icon: Icons.crop_rotate,
-                label: 'Perspective',
-                onTap: () {},
-              ),
-            ],
+    testWidgets(
+      'photo editor shows remaining tools directly (no category chips)',
+      (tester) async {
+        _phone(tester);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AnnotationEditorScreen(
+              photo: _photo('p'),
+              boardName: 'GSB',
+              extraTools: [
+                AnnotationExtraTool(
+                  id: 'perspective',
+                  icon: Icons.crop_rotate,
+                  label: 'Perspective',
+                  onTap: () {},
+                ),
+              ],
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('tool-arrow')), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('tool-group-measure')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('tool-arrow')), findsNothing);
-      expect(find.byKey(const ValueKey('tool-dimension')), findsOneWidget);
-      await tester.ensureVisible(find.byKey(const ValueKey('tool-group-site')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('tool-group-site')));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('tool-extra-perspective')),
-        findsOneWidget,
-      );
-      await tester.ensureVisible(find.byKey(const ValueKey('tool-group-all')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('tool-group-all')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('tool-arrow')), findsOneWidget);
-    });
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('tool-arrow')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('tool-extra-perspective')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('tool-group-all')), findsNothing);
+        expect(find.byKey(const ValueKey('tool-dimension')), findsNothing);
+        expect(find.byKey(const ValueKey('tool-circle')), findsNothing);
+      },
+    );
   });
 }

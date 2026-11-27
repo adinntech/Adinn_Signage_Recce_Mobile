@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -31,13 +32,12 @@ class SitePhotoImage extends StatelessWidget {
       errorBuilder: (_, _, _) => Container(
         color: AdinnColors.line,
         alignment: Alignment.center,
-        child: const Column(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.broken_image_outlined, color: AdinnColors.muted),
             SizedBox(height: 4),
-            Text(
-              'Photo not found on device',
+            Text(context.ui('Photo not found on device'),
               style: TextStyle(fontSize: 11, color: AdinnColors.muted),
             ),
           ],

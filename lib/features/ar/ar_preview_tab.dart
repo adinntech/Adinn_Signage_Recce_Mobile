@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
@@ -219,7 +220,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
             _gestureHinted = true;
             showSnack(
               context,
-              'Choose Scale to pinch-resize or Rotate to twist the model.',
+              context.ui('Choose Scale to pinch-resize or Rotate to twist the model.'),
             );
           }
       }
@@ -285,7 +286,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
     final scene = _scene!;
     final p = scene.selected;
     if (p == null) {
-      showSnack(context, 'Select a model to delete.', error: true);
+      showSnack(context, context.ui('Select a model to delete.'), error: true);
       return;
     }
     await scene.remove(p.placementId);
@@ -301,7 +302,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
     if (shown.isEmpty) {
       showSnack(
         context,
-        'Place a signage model before capturing.',
+        context.ui('Place a signage model before capturing.'),
         error: true,
       );
       return;
@@ -317,7 +318,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
         widget.writer ??
         (media == null ? null : (png, folder) => writePng(media, png, folder));
     if (writer == null) {
-      showSnack(context, 'Storage not available', error: true);
+      showSnack(context, context.ui('Storage not available'), error: true);
       return;
     }
     setState(() => _saving = true);
@@ -380,7 +381,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
     } catch (e) {
       // Existing recce data is untouched on failure.
       if (mounted) {
-        showSnack(context, 'Could not save AR preview: $e', error: true);
+        showSnack(context, context.uf('Could not save AR preview: {0}', [e]), error: true);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -438,8 +439,8 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
       if (mounted) {
         showSnack(
           context,
-          'AR capture saved; comparison PDF failed ($e). Capture again '
-          'to retry.',
+          context.uf('AR capture saved; comparison PDF failed ({0}). Capture again '
+          'to retry.', [e]),
           error: true,
         );
       }
@@ -452,7 +453,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
     final shop = app.shop(widget.shopId);
     if (shop == null) return;
     if (scene.placements.isEmpty) {
-      showSnack(context, 'Insert at least one model before saving.');
+      showSnack(context, context.ui('Insert at least one model before saving.'));
       return;
     }
     final existing = scene.layoutId == null
@@ -508,8 +509,8 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
     if (!mounted || r.missing.isEmpty) return;
     showSnack(
       context,
-      '${r.missing.length} object(s) skipped: their signage item no longer '
-      'exists.',
+      context.uf('{0} object(s) skipped: their signage item no longer '
+      'exists.', [r.missing.length]),
       error: true,
     );
   }
@@ -539,8 +540,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'AR Previews',
+              Text(context.ui('AR Previews'),
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
               ),
               const SizedBox(height: 8),
@@ -592,8 +592,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'AR Previews',
+              Text(context.ui('AR Previews'),
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
@@ -623,7 +622,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
     key: const ValueKey('ar_open_live_secondary'),
     onPressed: widget.onOpenLivePreview,
     icon: const Icon(Icons.layers_outlined),
-    label: const Text('Open Live Preview'),
+    label: Text(context.ui('Open Live Preview')),
   );
 
   Widget _status(ArSessionController ar) {
@@ -636,16 +635,14 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
             color: AdinnColors.muted,
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Camera AR is not supported on this device.',
+          Text(context.ui('Camera AR is not supported on this device.'),
             key: ValueKey('ar-unsupported'),
             textAlign: TextAlign.center,
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'This phone cannot run ARCore. Use Live Preview to place the 3D '
-            'signage on a site photo.',
+          Text(context.ui('This phone cannot run ARCore. Use Live Preview to place the 3D '
+            'signage on a site photo.'),
             textAlign: TextAlign.center,
             style: TextStyle(color: AdinnColors.muted, fontSize: 12.5),
           ),
@@ -654,7 +651,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
             key: const ValueKey('ar_open_live'),
             onPressed: widget.onOpenLivePreview,
             icon: const Icon(Icons.layers_outlined),
-            label: const Text('Open Live Preview'),
+            label: Text(context.ui('Open Live Preview')),
           ),
         ]);
       case ArPhase.servicesMissing:
@@ -691,7 +688,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
                   : 'Install Google Play Services for AR',
             ),
           ),
-          TextButton(onPressed: ar.open, child: const Text('Check again')),
+          TextButton(onPressed: ar.open, child: Text(context.ui('Check again'))),
           _liveButton(),
         ]);
       case ArPhase.permissionDenied:
@@ -704,16 +701,15 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Allow the Camera permission to use Camera AR.',
+          Text(context.ui('Allow the Camera permission to use Camera AR.'),
             textAlign: TextAlign.center,
             style: TextStyle(color: AdinnColors.muted, fontSize: 12.5),
           ),
           const SizedBox(height: 12),
-          OutlinedButton(onPressed: ar.open, child: const Text('Try again')),
+          OutlinedButton(onPressed: ar.open, child: Text(context.ui('Try again'))),
           TextButton(
             onPressed: openAppSettings,
-            child: const Text('Open app settings'),
+            child: Text(context.ui('Open app settings')),
           ),
           _liveButton(),
         ]);
@@ -730,15 +726,15 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
           OutlinedButton(
             key: const ValueKey('ar_retry'),
             onPressed: ar.open,
-            child: const Text('Retry'),
+            child: Text(context.ui('Retry')),
           ),
           _liveButton(),
         ]);
       default:
-        return _centered(const [
+        return _centered([
           CircularProgressIndicator(),
           SizedBox(height: 12),
-          Text('Checking AR support…'),
+          Text(context.ui('Checking AR support…')),
         ]);
     }
   }
@@ -832,8 +828,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
               color: _statusColor(status),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Text(
-              status.label,
+            child: Text(context.ui(status.label),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 11,
@@ -884,7 +879,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
           PopupMenuButton<String>(
             key: const ValueKey('ar_more'),
             iconColor: iconColor,
-            tooltip: 'More',
+            tooltip: context.ui('More'),
             onSelected: (v) {
               switch (v) {
                 case 'layouts':
@@ -902,32 +897,32 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 key: ValueKey('ar_layouts'),
                 value: 'layouts',
-                child: Text('Saved AR Layouts'),
+                child: Text(context.ui('Saved AR Layouts')),
               ),
               CheckedPopupMenuItem(
                 key: const ValueKey('ar_planes'),
                 value: 'planes',
                 checked: ar.planesVisible,
-                child: const Text('Surface indicators'),
+                child: Text(context.ui('Surface indicators')),
               ),
               CheckedPopupMenuItem(
                 key: const ValueKey('ar_manual'),
                 value: 'manual',
                 checked: ar.manualPlacement,
-                child: const Text('Place without a detected surface'),
+                child: Text(context.ui('Place without a detected surface')),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 key: ValueKey('ar_gallery'),
                 value: 'gallery',
-                child: Text('AR Previews (captures)'),
+                child: Text(context.ui('AR Previews (captures)')),
               ),
               if (widget.onOpenLivePreview != null)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'live',
-                  child: Text('Open Live Preview (photo)'),
+                  child: Text(context.ui('Open Live Preview (photo)')),
                 ),
             ],
           ),
@@ -955,7 +950,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
         round(
           IconButton(
             key: const ValueKey('ar_objects'),
-            tooltip: 'Objects',
+            tooltip: context.ui('Objects'),
             color: Colors.white,
             onPressed: () => showArObjectsSheet(context, scene),
             icon: Badge(
@@ -1036,7 +1031,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
                       ),
                     ),
                   if (ar.phase == ArPhase.starting)
-                    const ColoredBox(
+                    ColoredBox(
                       color: Colors.black54,
                       child: Center(
                         child: Column(
@@ -1044,8 +1039,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
                           children: [
                             CircularProgressIndicator(color: Colors.white),
                             SizedBox(height: 10),
-                            Text(
-                              'Starting camera AR…',
+                            Text(context.ui('Starting camera AR…'),
                               style: TextStyle(color: Colors.white),
                             ),
                           ],
@@ -1254,7 +1248,7 @@ class _ArPreviewTabState extends State<ArPreviewTab> {
             child: CircularProgressIndicator(strokeWidth: 2),
           )
         : const Icon(Icons.camera_alt, size: 22),
-    label: const Text('Capture'),
+    label: Text(context.ui('Capture')),
   );
 
   Widget _toolbar(
@@ -1374,7 +1368,7 @@ class _LayoutNameDialogState extends State<_LayoutNameDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Save AR Layout'),
+    title: Text(context.ui('Save AR Layout')),
     content: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1382,7 +1376,7 @@ class _LayoutNameDialogState extends State<_LayoutNameDialog> {
         TextField(
           key: const ValueKey('ar_layout_name'),
           controller: _name,
-          decoration: const InputDecoration(labelText: 'Layout name'),
+          decoration: InputDecoration(labelText: context.ui('Layout name')),
         ),
         const SizedBox(height: 8),
         Text(
@@ -1396,13 +1390,13 @@ class _LayoutNameDialogState extends State<_LayoutNameDialog> {
     actions: [
       TextButton(
         onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
+        child: Text(context.ui('Cancel')),
       ),
       if (widget.updating)
         TextButton(
           key: const ValueKey('ar_layout_save_new'),
           onPressed: () => _done(true),
-          child: const Text('Save as new'),
+          child: Text(context.ui('Save as new')),
         ),
       FilledButton(
         key: const ValueKey('ar_layout_save'),

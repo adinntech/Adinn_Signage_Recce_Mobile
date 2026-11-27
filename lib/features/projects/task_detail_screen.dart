@@ -1,9 +1,10 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../../core/widgets/language_switcher.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import '../shop/shop_form_screen.dart';
@@ -39,7 +40,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     if (task == null) {
       return Scaffold(
         appBar: AppBar(),
-        body: const EmptyState(icon: Icons.search_off, title: 'Task not found'),
+        body: EmptyState(
+          icon: Icons.search_off,
+          title: context.ui('Task not found'),
+        ),
       );
     }
     final project = c.project(task.projectId);
@@ -49,7 +53,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final canAdd = c.isVendor && task.assignedVendorId == c.currentUser?.id;
 
     return Scaffold(
-      appBar: AppBar(title: Text(task.title)),
+      appBar: AppBar(
+        title: Text(context.taskTitle(task)),
+        actions: const [LanguageSwitcher(), SizedBox(width: 8)],
+      ),
       floatingActionButton: canAdd
           ? FloatingActionButton.extended(
               heroTag: 'add_shop',
@@ -66,7 +73,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 }
               },
               icon: const Icon(Icons.add_business_outlined),
-              label: const Text('Add Shop'),
+              label: Text(context.ui('Add Shop')),
             )
           : null,
       body: ListView(
@@ -80,7 +87,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        project?.name ?? '',
+                        project == null
+                            ? ''
+                            : context.projectName(project.id, project.name),
                         style: const TextStyle(
                           color: AdinnColors.red,
                           fontWeight: FontWeight.w800,
@@ -88,7 +97,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       ),
                     ),
                     TagChip(
-                      '${task.priority} priority',
+                      context.priorityBadge(task.priority),
                       color: task.priority == 'High'
                           ? AdinnColors.red
                           : AdinnColors.muted,
@@ -97,18 +106,20 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 ),
                 const SizedBox(height: 8),
                 InfoRow(
-                  'Location',
-                  '${task.location}, ${task.city}',
+                  context.ui('Location'),
+                  '${context.locationLabel(task.location)}, ${context.locationLabel(task.city)}',
                   icon: Icons.place_outlined,
                 ),
                 InfoRow(
-                  'Due date',
-                  fmtDate(task.dueDate),
+                  context.ui('Due date'),
+                  context.fmtDateL(task.dueDate),
                   icon: Icons.event_outlined,
                 ),
                 InfoRow(
-                  'Assigned to',
-                  c.userById(task.assignedVendorId)?.name ?? '—',
+                  context.ui('Assigned to'),
+                  context.personName(
+                    c.userById(task.assignedVendorId)?.name ?? '—',
+                  ),
                   icon: Icons.engineering_outlined,
                 ),
                 if (task.instructions.isNotEmpty) ...[
@@ -121,7 +132,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      'Instructions: ${task.instructions}',
+                      '${context.ui('Instructions')}: ${task.instructions}',
                       style: const TextStyle(fontSize: 13),
                     ),
                   ),
@@ -129,8 +140,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 const SizedBox(height: 12),
                 ProgressBarLabel(
                   value: sum.submittedRatio,
-                  label:
-                      '${sum.pending + sum.approved}/${sum.total} shops submitted • ${sum.label}',
+                  label: context.shopsSubmittedSummary(
+                    sum.pending + sum.approved,
+                    sum.total,
+                    sum.label,
+                  ),
                 ),
               ],
             ),
@@ -145,12 +159,21 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
                       label: Text(switch (f) {
-                        _ShopFilter.all => 'All (${all.length})',
-                        _ShopFilter.todo =>
-                          'To do (${sum.notStarted + sum.inProgress})',
-                        _ShopFilter.submitted => 'Submitted (${sum.pending})',
-                        _ShopFilter.approved => 'Approved (${sum.approved})',
-                        _ShopFilter.rejected => 'Rejected (${sum.rejected})',
+                        _ShopFilter.all => context.uf('All ({0})', [
+                          all.length,
+                        ]),
+                        _ShopFilter.todo => context.uf('To do ({0})', [
+                          sum.notStarted + sum.inProgress,
+                        ]),
+                        _ShopFilter.submitted => context.uf('Submitted ({0})', [
+                          sum.pending,
+                        ]),
+                        _ShopFilter.approved => context.uf('Approved ({0})', [
+                          sum.approved,
+                        ]),
+                        _ShopFilter.rejected => context.uf('Rejected ({0})', [
+                          sum.rejected,
+                        ]),
                       }),
                       selected: _filter == f,
                       onSelected: (_) => setState(() => _filter = f),
@@ -163,9 +186,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           if (shops.isEmpty)
             EmptyState(
               icon: Icons.storefront_outlined,
-              title: all.isEmpty ? 'No shops yet' : 'No shops in this filter',
+              title: context.ui(
+                all.isEmpty ? 'No shops yet' : 'No shops in this filter',
+              ),
               message: all.isEmpty && canAdd
-                  ? 'Tap "Add Shop" to start a recce for this location.'
+                  ? context.ui(
+                      'Tap "Add Shop" to start a recce for this location.',
+                    )
                   : null,
             ),
           for (final s in shops) ...[

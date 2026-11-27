@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -23,6 +24,7 @@ import '../model3d/technical_drawing_screen.dart';
 import 'renderer_painter.dart';
 import 'scene3d.dart';
 import 'signage_scene_builder.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 enum _Preset { front, side, back, top, iso }
 
@@ -218,7 +220,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
       _hFt = null;
       _clrFt = null;
     });
-    showSnack(context, 'Board dimensions updated');
+    showSnack(context, context.ui('Board dimensions updated'));
   }
 
   @override
@@ -228,7 +230,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     final board = c.board(widget.shopId, widget.boardId);
     if (shop == null || board == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('3D Preview')),
+        appBar: AdinnAppBar(title: Text(context.ui('3D Preview'))),
         body: const EmptyState(
           icon: Icons.view_in_ar_outlined,
           title: 'Board not found',
@@ -298,12 +300,12 @@ class _Preview3DScreenState extends State<Preview3DScreen>
         }
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: AdinnAppBar(
           toolbarHeight: 64,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('3D Preview'),
+              Text(context.ui('3D Preview')),
               Text(
                 '${board.name} · ${media?.shortName ?? 'Media?'} · '
                 '${inst?.name ?? 'Installation?'}',
@@ -327,7 +329,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
           actions: [
             IconButton(
               key: const Key('open_tech_drawing'),
-              tooltip: '2D technical drawing',
+              tooltip: context.ui('2D technical drawing'),
               icon: const Icon(Icons.architecture),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -342,7 +344,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
             if (parametric && canEdit)
               IconButton(
                 key: const Key('model_save'),
-                tooltip: 'Save changes',
+                tooltip: context.ui('Save changes'),
                 icon: Icon(
                   Icons.save_outlined,
                   color: dirty ? AdinnColors.red : null,
@@ -369,7 +371,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               onPressed: () => setState(() => _showDims = !_showDims),
             ),
             IconButton(
-              tooltip: 'Reset view',
+              tooltip: context.ui('Reset view'),
               icon: const Icon(Icons.restart_alt),
               onPressed: () => _animateTo(_home(g)),
             ),
@@ -577,7 +579,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
     child: Row(
       children: [
-        const Text('Signage item', style: TextStyle(fontSize: 12.5)),
+        Text(context.ui('Signage item'), style: TextStyle(fontSize: 12.5)),
         const SizedBox(width: 10),
         Expanded(
           child: DropdownButton<String>(
@@ -600,7 +602,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
             onChanged: (v) {
               if (v == null || v == unit.id) return;
               if (_isDirty) {
-                showSnack(context, 'Save or cancel the current edits first');
+                showSnack(context, context.ui('Save or cancel the current edits first'));
                 return;
               }
               setState(() {
@@ -638,7 +640,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     final r = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(f.label),
+        title: Text(context.ui(f.label)),
         content: TextField(
           key: const Key('spec_value_field'),
           controller: ctl,
@@ -655,12 +657,12 @@ class _Preview3DScreenState extends State<Preview3DScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(context.ui('Cancel')),
           ),
           FilledButton(
             key: const Key('spec_value_ok'),
             onPressed: () => Navigator.pop(ctx, ctl.text),
-            child: const Text('OK'),
+            child: Text(context.ui('OK')),
           ),
         ],
       ),
@@ -669,7 +671,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
     if (r == null || !mounted) return;
     final v = double.tryParse(r.trim());
     if (v == null) {
-      showSnack(context, 'Enter a number', error: true);
+      showSnack(context, context.ui('Enter a number'), error: true);
       return;
     }
     final mm = f.kind == SpecValueKind.length ? unit.toMm(v) : v;
@@ -787,8 +789,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               ),
             ),
           ),
-        const Text(
-          'View',
+        Text(context.ui('View'),
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         ),
         const SizedBox(height: 4),
@@ -829,8 +830,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
           ],
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Structure',
+        Text(context.ui('Structure'),
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         ),
         const SizedBox(height: 4),
@@ -886,17 +886,16 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                     }
                   }),
                   icon: const Icon(Icons.restart_alt, size: 18),
-                  label: const Text('Reset component'),
+                  label: Text(context.ui('Reset component')),
                 ),
             ],
           ),
         for (final f in fields) _specRow(spec, f, canEdit),
         if (spec.sources.values.contains(SpecSource.assumed))
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 4),
-            child: Text(
-              '* Not measured yet – illustrative default shown. Illustrative '
-              'parametric model, not a fabrication drawing.',
+            child: Text(context.ui('* Not measured yet – illustrative default shown. Illustrative '
+              'parametric model, not a fabrication drawing.'),
               style: TextStyle(fontSize: 11, color: AdinnColors.muted),
             ),
           ),
@@ -917,7 +916,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               _hFt = null;
               _clrFt = null;
             }),
-            child: const Text('Restore default view & values'),
+            child: Text(context.ui('Restore default view & values')),
           ),
         ),
       ],
@@ -1217,8 +1216,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
           margin: const EdgeInsets.only(top: 4),
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           color: Colors.black.withValues(alpha: 0.5),
-          child: const Text(
-            'Illustrative night render',
+          child: Text(context.ui('Illustrative night render'),
             style: TextStyle(color: Colors.white, fontSize: 10),
           ),
         ),
@@ -1316,13 +1314,12 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                 color: AdinnColors.warning.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Row(
+              child: Row(
                 children: [
                   Icon(Icons.rule, size: 14, color: AdinnColors.warning),
                   SizedBox(width: 4),
                   Flexible(
-                    child: Text(
-                      'Requires Engineering Review',
+                    child: Text(context.ui('Requires Engineering Review'),
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
@@ -1376,10 +1373,9 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               padding: const EdgeInsets.only(top: 4),
               child: Row(
                 children: [
-                  const SizedBox(
+                  SizedBox(
                     width: 120,
-                    child: Text(
-                      'LED set side',
+                    child: Text(context.ui('LED set side'),
                       style: TextStyle(fontSize: 12, color: AdinnColors.muted),
                     ),
                   ),
@@ -1404,12 +1400,11 @@ class _Preview3DScreenState extends State<Preview3DScreen>
               ),
             ),
           if (i.variant.isDouble)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 2),
-              child: Text(
-                'One physical LED set (side recorded above, quantity never '
+              child: Text(context.ui('One physical LED set (side recorded above, quantity never '
                 'doubled). Night View shows both flex faces softly lit as an '
-                'illustration; two-face optics need review.',
+                'illustration; two-face optics need review.'),
                 style: TextStyle(fontSize: 11, color: AdinnColors.muted),
               ),
             ),
@@ -1477,7 +1472,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                       key: Key('gsb_revert_${o.id}'),
                       onPressed: () =>
                           c.revertGsbOverride(shop.id, board, o.id),
-                      child: const Text('Revert'),
+                      child: Text(context.ui('Revert')),
                     ),
                 ],
               ),
@@ -1495,7 +1490,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                   plan: plan,
                 ),
                 icon: const Icon(Icons.edit_note, size: 18),
-                label: const Text('Edit / Override depth or frame'),
+                label: Text(context.ui('Edit / Override depth or frame')),
               ),
             ),
         ],
@@ -1569,8 +1564,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                       color: AdinnColors.red,
                     ),
                     const SizedBox(width: 8),
-                    const Text(
-                      'Dimensions',
+                    Text(context.ui('Dimensions'),
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(width: 8),
@@ -1647,7 +1641,7 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                           TextButton(
                             key: const Key('model_cancel'),
                             onPressed: dirty ? _cancelEdits : null,
-                            child: const Text('Cancel'),
+                            child: Text(context.ui('Cancel')),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -1669,11 +1663,10 @@ class _Preview3DScreenState extends State<Preview3DScreen>
                                               )
                                             : null,
                                         icon: const Icon(Icons.check, size: 18),
-                                        label: const Text('Apply to board'),
+                                        label: Text(context.ui('Apply to board')),
                                       ),
                                     )
-                                  : const Text(
-                                      'View only – changes are not saved',
+                                  : Text(context.ui('View only – changes are not saved'),
                                       textAlign: TextAlign.right,
                                       maxLines: 2,
                                       style: TextStyle(

@@ -138,10 +138,9 @@ void main() {
 
     await _tap(tester, find.byKey(const Key('qty_plus')));
     expect(b.quantity, 2);
-    expect(
-      find.text('Unit details (2) — placement, installation, notes'),
-      findsOneWidget,
-    );
+    // The separate Unit Details entry point was removed from Board Details.
+    expect(find.byKey(const Key('open_units')), findsNothing);
+    expect(find.textContaining('Unit details'), findsNothing);
     expect(b.areaSqFt, closeTo(36, 1e-9));
     expect(
       (tester.widget<Text>(find.byKey(const Key('total_area_value')))).data,
@@ -223,17 +222,8 @@ void main() {
     expect(find.byKey(const Key('board_name')), findsOneWidget);
     expect(find.byKey(const Key('unit_mm')), findsOneWidget);
     expect(find.byKey(const Key('unit_w_2')), findsOneWidget);
-    await _show(tester, find.byKey(const Key('open_units')));
-    expect(find.byKey(const Key('open_units')), findsOneWidget);
-    expect(
-      (tester.widget<Text>(
-        find.descendant(
-          of: find.byKey(const Key('open_units')),
-          matching: find.byType(Text),
-        ),
-      )).data,
-      'Unit details (3) — placement, installation, notes',
-    );
+    // No Unit Details button; per-board sizes stay in Board Details.
+    expect(find.byKey(const Key('open_units')), findsNothing);
   });
 
   testWidgets('restored compact measurements styling', (tester) async {
@@ -264,7 +254,7 @@ void main() {
     expect(find.text('Width *'), findsOneWidget);
     expect(find.text('Height *'), findsOneWidget);
     expect(find.text('Unit details — placement, installation, notes'),
-        findsOneWidget);
+        findsNothing);
     // No duplicate red heading inside the expanded form.
     expect(find.byKey(const Key('board_details_content')), findsOneWidget);
   });

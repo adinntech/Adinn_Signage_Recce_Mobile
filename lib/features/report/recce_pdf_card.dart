@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -44,12 +45,19 @@ class RecceReportCard extends StatefulWidget {
   final String shopId;
   final ReportService? service;
 
+  /// Platform adapters for widget tests (null in production): the report
+  /// service (storage), the PDF viewer (printing plugin) and the share sheet.
+  static ReportService? testService;
+  static Future<void> Function(Uint8List bytes, String name)? testViewer;
+  static Future<void> Function(Uint8List bytes, String name)? testShare;
+
   @override
   State<RecceReportCard> createState() => _RecceReportCardState();
 }
 
 class _RecceReportCardState extends State<RecceReportCard> {
-  late final ReportService _service = widget.service ?? ReportService();
+  late final ReportService _service =
+      widget.service ?? RecceReportCard.testService ?? ReportService();
   bool _busy = false;
   String _progress = '';
 
@@ -91,6 +99,7 @@ class _RecceReportCardState extends State<RecceReportCard> {
         widget.shopId,
         groupIds: ids,
         requireComplete: true,
+        tamil: c.isTamil,
         onProgress: (m) {
           if (mounted) setState(() => _progress = m);
         },
@@ -105,7 +114,11 @@ class _RecceReportCardState extends State<RecceReportCard> {
                 .map(SignageCatalog.mediaNameLabel)
                 .join('_');
       final name = recceReportFileName(shop, part, r.generatedAt);
-      if (preview) {
+      if (preview && RecceReportCard.testViewer != null) {
+        await RecceReportCard.testViewer!(bytes, name);
+      } else if (!preview && RecceReportCard.testShare != null) {
+        await RecceReportCard.testShare!(bytes, name);
+      } else if (preview) {
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ReportPreviewScreen(
@@ -122,8 +135,8 @@ class _RecceReportCardState extends State<RecceReportCard> {
       if (mounted) {
         showSnack(
           context,
-          'Could not create the report: ${e is StateError ? e.message : e}. '
-          'Tap again to retry.',
+          context.uf('Could not create the report: {0}. '
+          'Tap again to retry.', [e is StateError ? e.message : e]),
           error: true,
         );
       }
@@ -157,8 +170,7 @@ class _RecceReportCardState extends State<RecceReportCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Download Recce Report',
+                Text(context.ui('Download Recce Report'),
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
@@ -175,8 +187,7 @@ class _RecceReportCardState extends State<RecceReportCard> {
                         child: RadioListTile<String>(
                           key: const Key('scope_all'),
                           value: 'all',
-                          title: const Text(
-                            'Combined PDF – All Media Types',
+                          title: Text(context.ui('Combined PDF – All Media Types'),
                           ),
                           subtitle: Text(
                             combinedOk
@@ -221,7 +232,7 @@ class _RecceReportCardState extends State<RecceReportCard> {
                               ? const RecceReportScope.combined()
                               : RecceReportScope.group({choice!}),
                         ),
-                  child: const Text('Continue'),
+                  child: Text(context.ui('Continue')),
                 ),
               ],
             ),
@@ -252,12 +263,11 @@ class _RecceReportCardState extends State<RecceReportCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(Icons.picture_as_pdf_outlined, color: AdinnColors.red),
               SizedBox(width: 8),
-              Text(
-                'Recce Report',
+              Text(context.ui('Recce Report'),
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
               ),
             ],
@@ -299,7 +309,7 @@ class _RecceReportCardState extends State<RecceReportCard> {
                       ? () => _run(preview: true)
                       : null,
                   icon: const Icon(Icons.visibility_outlined),
-                  label: const Text('Preview PDF'),
+                  label: Text(context.ui('Preview PDF')),
                 ),
               ),
               const SizedBox(width: 8),
@@ -310,7 +320,7 @@ class _RecceReportCardState extends State<RecceReportCard> {
                       ? () => _run(preview: false)
                       : null,
                   icon: const Icon(Icons.download_outlined),
-                  label: const Text('Download PDF'),
+                  label: Text(context.ui('Download PDF')),
                 ),
               ),
             ],

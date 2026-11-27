@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +10,7 @@ import '../../state/app_controller.dart';
 import '../../state/version_diff.dart';
 import 'activity_screen.dart';
 import 'snapshot_view.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// All submitted versions of a shop recce with their review outcome.
 class VersionHistoryScreen extends StatelessWidget {
@@ -22,18 +24,21 @@ class VersionHistoryScreen extends StatelessWidget {
     final shop = c.shop(shopId);
     if (shop == null) {
       return Scaffold(
-        appBar: AppBar(),
-        body: const EmptyState(icon: Icons.search_off, title: 'Shop not found'),
+        appBar: AdinnAppBar(),
+        body: EmptyState(
+          icon: Icons.search_off,
+          title: context.ui('Shop not found'),
+        ),
       );
     }
     final versions = shop.submissions.reversed.toList();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Version History'),
+      appBar: AdinnAppBar(
+        title: Text(context.ui('Version History')),
         actions: [
           IconButton(
-            tooltip: 'Activity timeline',
+            tooltip: context.ui('Activity timeline'),
             icon: const Icon(Icons.timeline),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -44,10 +49,10 @@ class VersionHistoryScreen extends StatelessWidget {
         ],
       ),
       body: versions.isEmpty
-          ? const EmptyState(
+          ? EmptyState(
               icon: Icons.history_toggle_off,
-              title: 'Not submitted yet',
-              message: 'Each submission creates a new locked version here.',
+              title: context.ui('Not submitted yet'),
+              message: context.ui('Each submission creates a new locked version here.'),
             )
           : ListView.separated(
               padding: const EdgeInsets.all(16),
@@ -56,7 +61,8 @@ class VersionHistoryScreen extends StatelessWidget {
               itemBuilder: (context, i) {
                 if (i == 0) {
                   return Text(
-                    '${shop.name} • ${versions.length} version(s) • current: ${shop.status.label}',
+                    '${shop.name} • ${context.uf('{0} version(s)', [versions.length])} • '
+                    '${context.ui('current')}: ${context.statusLabel(shop.status)}',
                     style: const TextStyle(color: AdinnColors.muted),
                   );
                 }
@@ -171,10 +177,9 @@ class _VersionCard extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 6),
-              const Align(
+              Align(
                 alignment: Alignment.centerRight,
-                child: Text(
-                  'View snapshot ›',
+                child: Text(context.ui('View snapshot ›'),
                   style: TextStyle(
                     color: AdinnColors.red,
                     fontWeight: FontWeight.w700,
@@ -210,20 +215,20 @@ class VersionDetailScreen extends StatelessWidget {
         .firstOrNull;
     if (sub == null) {
       return Scaffold(
-        appBar: AppBar(),
-        body: const EmptyState(
+        appBar: AdinnAppBar(),
+        body: EmptyState(
           icon: Icons.search_off,
-          title: 'Version not found',
+          title: context.ui('Version not found'),
         ),
       );
     }
     return Scaffold(
-      appBar: AppBar(title: Text('Version v$version (locked)')),
+      appBar: AdinnAppBar(title: Text(context.uf('Version v{0} (locked)', [version]))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           SectionCard(
-            title: 'Approval trail',
+            title: context.ui('Approval trail'),
             icon: Icons.route_outlined,
             trailing: StatusChip(sub.outcome, compact: true),
             child: ReviewTrail(submission: sub),

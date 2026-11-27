@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -15,6 +16,7 @@ import '../photos/site_photo_view.dart';
 import 'perspective_math.dart';
 import 'site_markup_controller.dart';
 import 'site_markup_painter.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Opens the signage item behind a marker (e.g. its site survey screen).
 typedef OpenSignageItem =
@@ -122,7 +124,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
   }) async {
     final units = _units(s);
     if (units.isEmpty) {
-      showSnack(context, 'Add a signage item to this shop first', error: true);
+      showSnack(context, context.ui('Add a signage item to this shop first'), error: true);
       return null;
     }
     return showModalBottomSheet<String>(
@@ -200,12 +202,12 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(context.ui('Cancel')),
           ),
           FilledButton(
             key: const ValueKey('markup_text_ok'),
             onPressed: () => Navigator.pop(ctx, t.text),
-            child: const Text('OK'),
+            child: Text(context.ui('OK')),
           ),
         ],
       ),
@@ -290,7 +292,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
             ctrl.addDraftPoint(n);
           case ObstructionShape.rect:
           case ObstructionShape.arrow:
-            showSnack(context, 'Drag on the photo to draw the shape');
+            showSnack(context, context.ui('Drag on the photo to draw the shape'));
         }
     }
   }
@@ -298,7 +300,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
   Future<bool?> _confirmAlternative(String item) => showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Item already marked'),
+      title: Text(context.ui('Item already marked')),
       content: Text(
         '$item already has a primary placement marker on this photo. '
         'Add this one as an alternative placement?',
@@ -307,12 +309,12 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
         TextButton(
           key: const ValueKey('mk_dup_cancel'),
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
+          child: Text(context.ui('Cancel')),
         ),
         FilledButton(
           key: const ValueKey('mk_dup_alt'),
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Add alternative'),
+          child: Text(context.ui('Add alternative')),
         ),
       ],
     ),
@@ -448,7 +450,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
               enabled: editable,
               maxLines: 3,
               minLines: 1,
-              decoration: const InputDecoration(labelText: 'Placement notes'),
+              decoration: InputDecoration(labelText: context.ui('Placement notes')),
             ),
             const SizedBox(height: 12),
             Wrap(
@@ -460,20 +462,20 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                     key: const ValueKey('mk_renumber'),
                     onPressed: () => Navigator.pop(ctx, 'renumber'),
                     icon: const Icon(Icons.format_list_numbered, size: 18),
-                    label: const Text('Change number'),
+                    label: Text(context.ui('Change number')),
                   ),
                 if (item != null && widget.onOpenItem != null)
                   OutlinedButton.icon(
                     key: const ValueKey('mk_open_item'),
                     onPressed: () => Navigator.pop(ctx, 'open'),
                     icon: const Icon(Icons.open_in_new, size: 18),
-                    label: const Text('Edit item details'),
+                    label: Text(context.ui('Edit item details')),
                   ),
                 if (editable)
                   FilledButton(
                     key: const ValueKey('mk_notes_save'),
                     onPressed: () => Navigator.pop(ctx, 'save'),
-                    child: const Text('Done'),
+                    child: Text(context.ui('Done')),
                   ),
               ],
             ),
@@ -493,7 +495,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
       final n = await showDialog<int>(
         context: context,
         builder: (ctx) => SimpleDialog(
-          title: const Text('Marker number'),
+          title: Text(context.ui('Marker number')),
           children: [
             for (var i = 1; i <= count; i++)
               SimpleDialogOption(
@@ -527,10 +529,9 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
             child: ListView(
               shrinkWrap: true,
               children: [
-                const Padding(
+                Padding(
                   padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Text(
-                    'Linked signage items',
+                  child: Text(context.ui('Linked signage items'),
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                   ),
                 ),
@@ -552,7 +553,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                   child: FilledButton(
                     key: const ValueKey('markup_link_done'),
                     onPressed: () => Navigator.pop(ctx, selected.toList()),
-                    child: const Text('Done'),
+                    child: Text(context.ui('Done')),
                   ),
                 ),
               ],
@@ -585,18 +586,18 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
           controller: notes,
           maxLines: 4,
           minLines: 1,
-          decoration: const InputDecoration(labelText: 'Notes / location'),
+          decoration: InputDecoration(labelText: context.ui('Notes / location')),
         ),
         actions: [
           TextButton(
             key: const ValueKey('el_mark_links'),
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Link items…'),
+            child: Text(context.ui('Link items…')),
           ),
           FilledButton(
             key: const ValueKey('el_mark_save'),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save'),
+            child: Text(context.ui('Save')),
           ),
         ],
       ),
@@ -660,16 +661,15 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                 DropdownButtonFormField<ObstructionType>(
                   key: const ValueKey('ob_edit_type'),
                   initialValue: type,
-                  decoration: const InputDecoration(labelText: 'Type'),
+                  decoration: InputDecoration(labelText: context.ui('Type')),
                   items: [
                     for (final t in ObstructionType.values)
-                      DropdownMenuItem(value: t, child: Text(t.label)),
+                      DropdownMenuItem(value: t, child: Text(context.ui(t.label))),
                   ],
                   onChanged: (v) => setSheet(() => type = v ?? type),
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Severity',
+                Text(context.ui('Severity'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
@@ -678,8 +678,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                     for (final sv in Severity.values)
                       ButtonSegment(
                         value: sv,
-                        label: Text(
-                          sv.label,
+                        label: Text(context.ui(sv.label),
                           key: ValueKey('ob_edit_sev_${sv.name}'),
                         ),
                       ),
@@ -692,7 +691,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                   TextField(
                     key: const ValueKey('ob_edit_label'),
                     controller: label,
-                    decoration: const InputDecoration(labelText: 'Label text'),
+                    decoration: InputDecoration(labelText: context.ui('Label text')),
                   ),
                 ],
                 const SizedBox(height: 10),
@@ -701,19 +700,19 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                   controller: remarks,
                   maxLines: 3,
                   minLines: 1,
-                  decoration: const InputDecoration(labelText: 'Remarks'),
+                  decoration: InputDecoration(labelText: context.ui('Remarks')),
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String?>(
                   key: const ValueKey('ob_edit_evidence'),
                   initialValue: evidence,
-                  decoration: const InputDecoration(
-                    labelText: 'Evidence photo (optional)',
+                  decoration: InputDecoration(
+                    labelText: context.ui('Evidence photo (optional)'),
                   ),
                   items: [
-                    const DropdownMenuItem<String?>(
+                    DropdownMenuItem<String?>(
                       value: null,
-                      child: Text('None'),
+                      child: Text(context.ui('None')),
                     ),
                     for (final p in b?.photos ?? const <SitePhoto>[])
                       if (p.id != widget.photoId)
@@ -744,7 +743,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                 FilledButton(
                   key: const ValueKey('ob_edit_save'),
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('Save obstruction'),
+                  child: Text(context.ui('Save obstruction')),
                 ),
               ],
             ),
@@ -799,7 +798,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
     }
     c.saveSiteMarkup(s.id, widget.boardId, widget.photoId, ctrl.markup);
     ctrl.markSaved();
-    showSnack(context, 'Site markup saved');
+    showSnack(context, context.ui('Site markup saved'));
   }
 
   Future<void> _onPop(bool didPop, Object? _) async {
@@ -826,7 +825,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
     final photo = c.photo(widget.shopId, widget.boardId, widget.photoId);
     if (s == null || b == null || photo == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: AdinnAppBar(),
         body: const EmptyState(
           icon: Icons.search_off,
           title: 'Photo not found',
@@ -845,14 +844,13 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
       onPopInvokedWithResult: _onPop,
       child: Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(
+        appBar: AdinnAppBar(
           titleSpacing: 0,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Site markup',
+              Text(context.ui('Site markup'),
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
               Text(
@@ -866,19 +864,19 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
           actions: [
             IconButton(
               key: const ValueKey('markup_undo'),
-              tooltip: 'Undo',
+              tooltip: context.ui('Undo'),
               onPressed: ctrl.canUndo ? ctrl.undo : null,
               icon: const Icon(Icons.undo),
             ),
             IconButton(
               key: const ValueKey('markup_redo'),
-              tooltip: 'Redo',
+              tooltip: context.ui('Redo'),
               onPressed: ctrl.canRedo ? ctrl.redo : null,
               icon: const Icon(Icons.redo),
             ),
             IconButton(
               key: const ValueKey('markup_layers'),
-              tooltip: 'Show / hide layers',
+              tooltip: context.ui('Show / hide layers'),
               onPressed: _openLayers,
               icon: const Icon(Icons.layers_outlined),
             ),
@@ -894,7 +892,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                   onPressed: ctrl.dirty && problems.isEmpty
                       ? () => _save(c, s)
                       : null,
-                  child: const Text('Save'),
+                  child: Text(context.ui('Save')),
                 ),
               ),
           ],
@@ -1094,14 +1092,14 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
             ),
           ),
           IconButton(
-            tooltip: 'Remove last point',
+            tooltip: context.ui('Remove last point'),
             onPressed: ctrl.removeLastDraftPoint,
             icon: const Icon(Icons.backspace_outlined, size: 20),
           ),
           TextButton(
             key: const ValueKey('markup_draft_cancel'),
             onPressed: ctrl.cancelDraft,
-            child: const Text('Cancel'),
+            child: Text(context.ui('Cancel')),
           ),
           FilledButton(
             key: const ValueKey('markup_draft_done'),
@@ -1116,7 +1114,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                       ctrl.finishCableRoute(unitIds: [?ctrl.activeUnitId]);
                     }
                   },
-            child: const Text('Done'),
+            child: Text(context.ui('Done')),
           ),
         ],
       ),
@@ -1226,7 +1224,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
           ...actions,
           IconButton(
             key: const ValueKey('mk_deselect'),
-            tooltip: 'Deselect',
+            tooltip: context.ui('Deselect'),
             onPressed: () => ctrl.select(null),
             icon: const Icon(Icons.close, size: 20),
           ),
@@ -1276,7 +1274,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
               for (final t in ObstructionType.values)
                 DropdownMenuItem(
                   value: t,
-                  child: Text(t.label, style: const TextStyle(fontSize: 12.5)),
+                  child: Text(context.ui(t.label), style: const TextStyle(fontSize: 12.5)),
                 ),
             ],
             onChanged: (v) => setState(
@@ -1309,7 +1307,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
               padding: const EdgeInsets.only(right: 4),
               child: ChoiceChip(
                 key: ValueKey('ob_sev_${sv.name}'),
-                label: Text(sv.label, style: const TextStyle(fontSize: 12)),
+                label: Text(context.ui(sv.label), style: const TextStyle(fontSize: 12)),
                 selectedColor: severityColor(sv).withValues(alpha: 0.25),
                 selected: ctrl.obstructionSeverity == sv,
                 onSelected: (_) =>
@@ -1371,8 +1369,7 @@ class _SiteMarkupScreenState extends State<SiteMarkupScreen> {
                               : AdinnColors.ink,
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          t.label,
+                        Text(context.ui(t.label),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

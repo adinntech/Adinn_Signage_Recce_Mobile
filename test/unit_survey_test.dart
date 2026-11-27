@@ -15,6 +15,7 @@ import 'package:signage_recce/features/survey/unit_survey_screen.dart';
 import 'package:signage_recce/state/app_controller.dart';
 
 import 'helpers.dart';
+import 'support/evidence_fixture.dart';
 
 const _shopId = 's_lakshmi';
 
@@ -440,8 +441,41 @@ void main() {
     List<String> qids(String media, String inst) =>
         SiteChecklists.questionsFor(media, inst).map((q) => q.id).toList();
 
-    test('53 GSB checklist', () {
-      final ids = qids(SignageCatalog.gsb, SignageCatalog.shopFascia);
+    test('53 GSB checklist (definition kept; active set follows the vendor policy)',
+        () {
+      // Active GSB: only the vendor-approved checklist questions are asked.
+      final active = qids(SignageCatalog.gsb, SignageCatalog.shopFascia);
+      expect(
+        active,
+        containsAll(['electricity_nearby', 'visible_wires', 'checklist_remarks']),
+      );
+      // Feasibility-flag questions stay (Review: removal needs approval)...
+      expect(
+        active,
+        containsAll([
+          'structure_accessible',
+          'fixing_surface_available',
+          'ac_or_obstruction',
+          'location_approved_by_shop',
+        ]),
+      );
+      // ...while the plain vendor-rejected ones are hidden.
+      expect(
+        active,
+        isNot(
+          anyOf(
+            contains('existing_electrical_point'),
+            contains('night_visibility'),
+            contains('installation_height_measured'),
+            contains('access_equipment'),
+          ),
+        ),
+      );
+      // The DEFINITION itself is untouched (history / reviewer / legacy MDF+GSB).
+      final ids = [
+        for (final q in SiteChecklists.definitionFor(SignageCatalog.gsb)!.questions)
+          q.id,
+      ];
       expect(
         ids,
         containsAll([
@@ -471,10 +505,11 @@ void main() {
           SignageCatalog.wallMount,
         ]) {
           expect(
-            qids(SignageCatalog.gsb, inst),
+            qids(SignageCatalog.mdfGsb, inst),
             isNot(contains('ground_condition')),
           );
-          final std = qids(SignageCatalog.nlb, inst);
+          // ACP / legacy standard-board media keep the full standard list.
+          final std = qids(SignageCatalog.acp, inst);
           expect(
             std,
             containsAll([
@@ -486,6 +521,11 @@ void main() {
             ]),
           );
           expect(std, isNot(contains('pole_configuration_confirmed')));
+          // Active NLB: only the retained support-pipe + remarks questions.
+          expect(
+            qids(SignageCatalog.nlb, inst),
+            containsAll(['support_pipe_required', 'checklist_remarks']),
+          );
         }
       },
     );
@@ -496,7 +536,7 @@ void main() {
         SignageCatalog.doublePole,
       ]) {
         expect(
-          qids(SignageCatalog.gsb, inst),
+          qids(SignageCatalog.mdfGsbDouble, inst),
           containsAll([
             'ground_condition',
             'underground_utilities',
@@ -504,9 +544,15 @@ void main() {
           ]),
         );
         expect(
-          qids(SignageCatalog.nlb, inst),
+          qids(SignageCatalog.acp2dDouble, inst),
           contains('pole_configuration_confirmed'),
         );
+        // Active media keep only the retained safety checks.
+        expect(
+          qids(SignageCatalog.gsb, inst),
+          containsAll(['underground_utilities', 'pole_excavation_allowed']),
+        );
+        expect(qids(SignageCatalog.gsb, inst), isNot(contains('ground_condition')));
       }
     });
 
@@ -580,8 +626,9 @@ void main() {
         final (c, b, _) = await _setup(quantity: 2);
         completeAnswers(b);
         completeChecklists(b);
+        addValidEvidence(c, _shopId, b);
         final u2 = b.units[1];
-        u2.checklist.remove('structure_accessible');
+        u2.checklist.remove('electricity_nearby');
         final issues = c.boardIssues(b);
         expect(
           issues.where(
@@ -590,7 +637,7 @@ void main() {
           hasLength(1),
         );
         expect(issues.where((i) => i.contains('Unit 01')), isEmpty);
-        u2.checklist['structure_accessible'] = _r('structure_accessible', 'no');
+        u2.checklist['electricity_nearby'] = _r('electricity_nearby', 'no');
         expect(issues.length - 1, c.boardIssues(b).length);
         // "No" is a valid answer but flags the item for review.
         expect(feasibilityOf(b, u2).level, SiteFeasibility.requiresReview);
@@ -599,7 +646,7 @@ void main() {
 
     test('59 N/A only where the question allows it', () {
       final q = SiteChecklists.question(
-        SignageCatalog.gsb,
+        SignageCatalog.mdfGsb,
         'structure_accessible',
       )!;
       final na = SiteChecklists.question(
@@ -638,7 +685,7 @@ void main() {
     test(
       '60/61 configuration change keeps applicable and other answers',
       () async {
-        final (c, b, _) = await _setup();
+        final (c, b, _) = await _setup(media: SignageCatalog.mdfGsb);
         final u = b.units.first;
         c.saveChecklist(_shopId, b, u.id, {
           'installation_height_measured': _r(
@@ -651,7 +698,7 @@ void main() {
         expect(gsb.answered, 2);
         // GSB → NLB: the shared question stays answered, the GSB-only answer
         // is kept (not erased) but no longer counted; new questions incomplete.
-        b.mediaCode = SignageCatalog.nlb;
+        b.mediaCode = SignageCatalog.acp;
         final nlb = SiteChecklists.statusOf(b, u);
         expect(nlb.answered, 1);
         expect(u.checklist.containsKey('visible_wires'), isTrue);
@@ -661,7 +708,7 @@ void main() {
         );
         expect(nlb.isComplete, isFalse);
         // Back to GSB: the kept answer applies again.
-        b.mediaCode = SignageCatalog.gsb;
+        b.mediaCode = SignageCatalog.mdfGsb;
         expect(SiteChecklists.statusOf(b, u).answered, 2);
       },
     );
@@ -922,7 +969,8 @@ void main() {
       tester,
     ) async {
       phone(tester);
-      final (c, b, _) = await _setup();
+      // MDF+GSB keeps the full GSB checklist (not filtered by the policy).
+      final (c, b, _) = await _setup(media: SignageCatalog.mdfGsb);
       final u = b.units.first;
       await tester.pumpWidget(
         host(

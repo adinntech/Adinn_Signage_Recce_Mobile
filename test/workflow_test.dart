@@ -158,7 +158,11 @@ void main() {
       final issues = c.boardIssues(b);
       expect(issues, contains('Select a media type'));
       expect(issues, contains('Enter board width and height'));
-      expect(issues, contains('Capture at least one site photo'));
+      expect(issues, contains('Capture at least two site photos'));
+      expect(
+        issues.any((i) => i.contains('signage marking is missing')),
+        isTrue,
+      );
     });
 
     test('installation must match media type', () {

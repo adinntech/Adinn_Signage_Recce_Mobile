@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models/models.dart';
+import '../../l10n/l10n.dart';
 import '../../state/app_controller.dart';
 import '../approvals/approvals_screen.dart';
 import '../history/activity_screen.dart';
@@ -62,7 +63,7 @@ class _HomeShellState extends State<HomeShell> {
                           actions: [
                             TextButton(
                               onPressed: c.retrySave,
-                              child: const Text('Retry'),
+                              child: Text(context.ui('Retry')),
                             ),
                           ],
                         ),
@@ -74,7 +75,7 @@ class _HomeShellState extends State<HomeShell> {
                           actions: [
                             TextButton(
                               onPressed: c.dismissRecoveryNotice,
-                              child: const Text('OK'),
+                              child: Text(context.ui('OK')),
                             ),
                           ],
                         ),
@@ -88,15 +89,15 @@ class _HomeShellState extends State<HomeShell> {
         selectedIndex: _index,
         onDestinationSelected: _go,
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Home',
+          NavigationDestination(
+            icon: const Icon(Icons.dashboard_outlined),
+            selectedIcon: const Icon(Icons.dashboard),
+            label: context.t.navHome,
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: 'Projects',
+          NavigationDestination(
+            icon: const Icon(Icons.folder_outlined),
+            selectedIcon: const Icon(Icons.folder),
+            label: context.t.navProjects,
           ),
           NavigationDestination(
             icon: Badge(
@@ -107,17 +108,17 @@ class _HomeShellState extends State<HomeShell> {
               ),
             ),
             selectedIcon: Icon(reviewer ? Icons.fact_check : Icons.outbox),
-            label: reviewer ? 'Approvals' : 'Submitted',
+            label: reviewer ? context.t.navApprovals : context.t.navSubmitted,
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.timeline_outlined),
-            selectedIcon: Icon(Icons.timeline),
-            label: 'Activity',
+          NavigationDestination(
+            icon: const Icon(Icons.timeline_outlined),
+            selectedIcon: const Icon(Icons.timeline),
+            label: context.t.navActivity,
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: context.t.navProfile,
           ),
         ],
       ),

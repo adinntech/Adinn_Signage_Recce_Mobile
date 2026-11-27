@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
 import 'report_data.dart';
 import 'report_service.dart';
+import '../../core/widgets/adinn_app_bar.dart';
 
 /// Generate, preview, share and browse the shop's measurement PDFs.
 /// Everything stays on the device (no cloud upload, no e-mail).
@@ -52,7 +54,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        showSnack(context, 'Could not create the PDF: $e', error: true);
+        showSnack(context, context.uf('Could not create the PDF: {0}', [e]), error: true);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -64,7 +66,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (bytes == null && mounted) {
       showSnack(
         context,
-        'PDF file not found on this device. Generate it again.',
+        context.ui('PDF file not found on this device. Generate it again.'),
         error: true,
       );
     }
@@ -101,7 +103,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       await Printing.sharePdf(bytes: bytes, filename: _fileName(shop, r));
     } catch (e) {
       if (mounted) {
-        showSnack(context, 'Sharing is not available: $e', error: true);
+        showSnack(context, context.uf('Sharing is not available: {0}', [e]), error: true);
       }
     }
   }
@@ -116,7 +118,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
     if (!ok || !mounted) return;
     await context.read<AppController>().deleteReport(r.id);
-    if (mounted) showSnack(context, 'Report deleted');
+    if (mounted) showSnack(context, context.ui('Report deleted'));
   }
 
   @override
@@ -125,7 +127,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final shop = c.shop(widget.shopId);
     if (shop == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Measurement PDF')),
+        appBar: AdinnAppBar(title: Text(context.ui('Measurement PDF'))),
         body: const EmptyState(icon: Icons.search_off, title: 'Shop not found'),
       );
     }
@@ -135,12 +137,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ? 'Uses submitted version v${shop.currentVersion}.'
         : 'Uses the current draft data.';
     return Scaffold(
-      appBar: AppBar(
+      appBar: AdinnAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Measurement PDF'),
+            Text(context.ui('Measurement PDF')),
             Text(
               shop.name,
               maxLines: 1,
@@ -223,9 +225,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
           ],
           const SizedBox(height: 4),
-          const Text(
-            'Saved on this device only. Preview, then share via the Android '
-            'share sheet if needed.',
+          Text(context.ui('Saved on this device only. Preview, then share via the Android '
+            'share sheet if needed.'),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11.5, color: AdinnColors.muted),
           ),
@@ -284,17 +285,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           key: Key('report_preview_${r.id}'),
                           onPressed: () => _preview(shop, r),
                           icon: const Icon(Icons.visibility_outlined, size: 18),
-                          label: const Text('Preview'),
+                          label: Text(context.ui('Preview')),
                         ),
                         TextButton.icon(
                           key: Key('report_share_${r.id}'),
                           onPressed: () => _share(shop, r),
                           icon: const Icon(Icons.share_outlined, size: 18),
-                          label: const Text('Share'),
+                          label: Text(context.ui('Share')),
                         ),
                         IconButton(
                           key: Key('report_delete_${r.id}'),
-                          tooltip: 'Delete',
+                          tooltip: context.ui('Delete'),
                           onPressed: () => _delete(r),
                           icon: const Icon(
                             Icons.delete_outline,
@@ -328,7 +329,7 @@ class ReportPreviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(title)),
+    appBar: AdinnAppBar(title: Text(title)),
     body: PdfPreview(
       build: (_) async => bytes,
       pdfFileName: fileName,

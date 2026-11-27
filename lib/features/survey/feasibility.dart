@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -90,6 +91,17 @@ FeasibilityResult feasibilityOf(Board b, SignageUnit u, {Shop? shop}) {
     );
     raise(SiteFeasibility.requiresReview);
   }
+  // Explicit "Not Assessed" (N/A) on a safety check is never treated as
+  // safe: it needs technical review. (An unanswered check is already a
+  // missing required answer.)
+  for (final id in const ['underground_utilities', 'pole_excavation_allowed']) {
+    final r = u.checklist[id];
+    final q = SiteChecklists.question(b.mediaCode, id);
+    if (q != null && r != null && r.isNa) {
+      reasons.add('${q.text} – not assessed (requires review)');
+      raise(SiteFeasibility.requiresReview);
+    }
+  }
   final flags = SiteChecklists.reviewFlags(b, u);
   if (flags.isNotEmpty) {
     reasons.addAll(flags);
@@ -131,8 +143,7 @@ class FeasibilityChip extends StatelessWidget {
         Icon(level.icon, size: compact ? 13 : 15, color: level.color),
         const SizedBox(width: 4),
         Flexible(
-          child: Text(
-            level.label,
+          child: Text(context.ui(level.label),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

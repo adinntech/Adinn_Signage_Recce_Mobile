@@ -13,6 +13,7 @@ import 'package:signage_recce/features/report/report_service.dart';
 import 'package:signage_recce/state/app_controller.dart';
 
 import 'helpers.dart';
+import 'support/evidence_fixture.dart';
 import 'model_viewer_pdf_test.dart' show FakeModels;
 import 'report_test.dart' show FakeImages;
 
@@ -34,19 +35,8 @@ Future<(AppController, Board)> _done() async {
     ..height = 2
     ..installationCode = 'wall_mount';
   completeAnswers(b);
-  c.addPhoto(
-    _shop,
-    b.id,
-    SitePhoto(
-      id: 'p',
-      path: 'demo://x',
-      label: 'Front view',
-      capturedAt: DateTime(2026, 11, 26),
-      width: 10,
-      height: 10,
-      geo: gpsAt(10.8627, 78.6897),
-    ),
-  );
+  // Two distinct photos + a genuine signage marking of this board.
+  addValidEvidence(c, _shop, b);
   return (c, b);
 }
 
@@ -143,6 +133,8 @@ void main() {
     final (c, b) = await _done();
     c.increaseQuantity(_shop, b, 2);
     completeAnswers(b);
+    // The added board needs its own evidence too (two photos + marking).
+    ensureEvidenceForAllUnits(b);
     final files = <String, Uint8List>{};
     await pumpCard(tester, c, _svc(files, isolate: false));
     await tester.tap(find.byKey(const Key('recce_pdf_preview')));

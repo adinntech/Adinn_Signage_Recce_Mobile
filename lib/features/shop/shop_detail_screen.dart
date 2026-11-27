@@ -1,9 +1,11 @@
+import '../../l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../../core/widgets/language_switcher.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../state/app_controller.dart';
@@ -25,16 +27,64 @@ import '../survey/readiness.dart';
 import 'add_media_sheet.dart';
 import 'shop_form_screen.dart';
 
+/// Locale-aware "17 Nov 2026, 4:05 PM" for predefined date labels.
+String _fmtDateTimeL(BuildContext context, DateTime value) {
+  final d = value.toLocal();
+  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  return '${context.fmtDateL(d)}, $h:${two(d.minute)} '
+      '${d.hour < 12 ? 'AM' : 'PM'}';
+}
+
+/// Localize each installation value separately BEFORE composing the summary.
+/// Never pass a finished English sentence to an exact-match dictionary.
+String _installationSummaryL(BuildContext context, Board b) {
+  const empty = 'Installation not set';
+  if (!context.isTamil) {
+    return SignageCatalog.installationSummary(b, empty: empty);
+  }
+  if (SignageCatalog.hasMixedInstallations(b)) {
+    final names = <String>[
+      for (final u in b.activeUnits)
+        context.installationLabel(
+          SignageCatalog.installationNameOf(b, u, empty: empty),
+        ),
+    ].toSet().toList();
+    return context.uf('Mixed ({0})', [names.join(' / ')]);
+  }
+  final first = b.activeUnits.firstOrNull;
+  if (first != null &&
+      SignageCatalog.isOtherInstallation(
+        SignageCatalog.primaryInstallation(b),
+      )) {
+    return context.installationLabel(
+      SignageCatalog.installationNameOf(b, first, empty: empty),
+    );
+  }
+  return context.installationLabel(
+    SignageCatalog.installation(SignageCatalog.primaryInstallation(b))?.name ??
+        empty,
+  );
+}
+
+/// App-generated names get a Tamil prefix; custom names stay untouched.
+String _boardNameL(BuildContext context, Board b) =>
+    SignageCatalog.isAutoBoardName(b.name)
+    ? context.generatedBoardName(b.name)
+    : b.name;
+
+String _unitNameL(BuildContext context, Board b, SignageUnit u) {
+  final name = SignageCatalog.unitName(b, u);
+  return SignageCatalog.isAutoBoardName(name)
+      ? context.generatedBoardName(name)
+      : name;
+}
+
 class ShopDetailScreen extends StatelessWidget {
   const ShopDetailScreen({super.key, required this.shopId});
 
   final String shopId;
 
-  void _openBoard(
-    BuildContext context,
-    String boardId, {
-    BoardIssue? issue,
-  }) {
+  void _openBoard(BuildContext context, String boardId, {BoardIssue? issue}) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => BoardEditorScreen(
@@ -66,7 +116,10 @@ class ShopDetailScreen extends StatelessWidget {
     if (shop == null) {
       return Scaffold(
         appBar: AppBar(),
-        body: const EmptyState(icon: Icons.search_off, title: 'Shop not found'),
+        body: EmptyState(
+          icon: Icons.search_off,
+          title: context.ui('Shop not found'),
+        ),
       );
     }
     final editable = c.canEdit(shop);
@@ -75,11 +128,12 @@ class ShopDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(shop.name, overflow: TextOverflow.ellipsis),
+        title: Text(context.shopName(shop), overflow: TextOverflow.ellipsis),
         actions: [
+          const LanguageSwitcher(),
           if (editable)
             IconButton(
-              tooltip: 'Edit shop details',
+              tooltip: context.ui('Edit shop details'),
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -106,11 +160,13 @@ class ShopDetailScreen extends StatelessWidget {
                 case 'delete':
                   final ok = await confirmDialog(
                     context,
-                    title: 'Delete shop?',
-                    message:
-                        'This removes ${shop.name} and all its boards, photos '
-                        'and notes from this device.',
-                    confirmText: 'Delete',
+                    title: context.ui('Delete shop?'),
+                    message: context.uf(
+                      'This removes {0} and all its boards, photos '
+                      'and notes from this device.',
+                      [shop.name],
+                    ),
+                    confirmText: context.ui('Delete'),
                     destructive: true,
                   );
                   if (ok && context.mounted) {
@@ -120,26 +176,26 @@ class ShopDetailScreen extends StatelessWidget {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'history',
                 child: ListTile(
                   leading: Icon(Icons.history),
-                  title: Text('Version history'),
+                  title: Text(context.ui('Version history')),
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'timeline',
                 child: ListTile(
                   leading: Icon(Icons.timeline),
-                  title: Text('Activity timeline'),
+                  title: Text(context.ui('Activity timeline')),
                 ),
               ),
               if (c.canDeleteShop(shop))
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'delete',
                   child: ListTile(
                     leading: Icon(Icons.delete_outline),
-                    title: Text('Delete shop'),
+                    title: Text(context.ui('Delete shop')),
                   ),
                 ),
             ],
@@ -153,18 +209,24 @@ class ShopDetailScreen extends StatelessWidget {
           StatusBanner(shop: shop),
           const SizedBox(height: 12),
           SectionCard(
-            title: 'Shop details',
+            title: context.ui('Shop details'),
             icon: Icons.storefront_outlined,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                InfoRow('Project', project?.name ?? ''),
-                InfoRow('Task', task?.title ?? ''),
-                InfoRow('Owner', shop.ownerName),
-                InfoRow('Phone', shop.phone),
-                InfoRow('Address', shop.fullAddress),
-                InfoRow('Landmark', shop.landmark),
-                if (shop.remarks.isNotEmpty) InfoRow('Remarks', shop.remarks),
+                InfoRow(
+                  context.ui('Project'),
+                  project == null
+                      ? ''
+                      : context.projectName(project.id, project.name),
+                ),
+                InfoRow(context.ui('Task'), task?.title ?? ''),
+                InfoRow(context.ui('Owner'), context.shopOwner(shop)),
+                InfoRow(context.ui('Phone'), shop.phone),
+                InfoRow(context.ui('Address'), context.shopFullAddress(shop)),
+                InfoRow(context.ui('Landmark'), shop.landmark),
+                if (shop.remarks.isNotEmpty)
+                  InfoRow(context.ui('Remarks'), shop.remarks),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -172,7 +234,7 @@ class ShopDetailScreen extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: () => dialNumber(context, shop.phone),
                         icon: const Icon(Icons.call),
-                        label: const Text('Call shop'),
+                        label: Text(context.ui('Call shop')),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -185,7 +247,11 @@ class ShopDetailScreen extends StatelessWidget {
                           ),
                         ),
                         icon: const Icon(Icons.history),
-                        label: Text('Versions (${shop.submissions.length})'),
+                        label: Text(
+                          context.uf('Versions ({0})', [
+                            shop.submissions.length,
+                          ]),
+                        ),
                       ),
                     ),
                   ],
@@ -214,7 +280,9 @@ class ShopDetailScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Signage requirements (${shop.boards.length})',
+                      context.uf('Signage requirements ({0})', [
+                        shop.boards.length,
+                      ]),
                       style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
@@ -222,8 +290,14 @@ class ShopDetailScreen extends StatelessWidget {
                     ),
                     if (shop.boards.isNotEmpty)
                       Text(
-                        '${shop.boards.map((b) => b.mediaCode).whereType<String>().toSet().length} media type(s) • '
-                        '${shop.unitCount} signage unit${shop.unitCount == 1 ? '' : 's'}',
+                        context.mediaBoardSummary(
+                          shop.boards
+                              .map((b) => b.mediaCode)
+                              .whereType<String>()
+                              .toSet()
+                              .length,
+                          shop.unitCount,
+                        ),
                         style: const TextStyle(
                           fontSize: 12,
                           color: AdinnColors.muted,
@@ -233,11 +307,17 @@ class ShopDetailScreen extends StatelessWidget {
                 ),
               ),
               if (editable)
-                TextButton.icon(
-                  key: const Key('add_board'),
-                  onPressed: () => _addMedia(context),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add media type'),
+                Flexible(
+                  child: TextButton.icon(
+                    key: const Key('add_board'),
+                    onPressed: () => _addMedia(context),
+                    icon: const Icon(Icons.add),
+                    label: Text(
+                      context.ui('Add media type'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -245,11 +325,13 @@ class ShopDetailScreen extends StatelessWidget {
           if (shop.boards.isEmpty)
             EmptyState(
               icon: Icons.dashboard_customize_outlined,
-              title: 'No signage added',
+              title: context.ui('No signage added'),
               message: editable
-                  ? 'Add every media type needed at this shop – shop-name '
-                        'board, standees, glass branding… Each can have its '
-                        'own quantity.'
+                  ? context.ui(
+                      'Add every media type needed at this shop – shop-name '
+                      'board, standees, glass branding… Each can have its '
+                      'own quantity.',
+                    )
                   : null,
             ),
           for (final b in shop.boards) ...[
@@ -286,29 +368,46 @@ class StatusBanner extends StatelessWidget {
     ReviewRecord? rejection;
     switch (status) {
       case RecceStatus.notStarted:
-        title = 'Recce not started';
-        body = 'Add boards, capture photos and submit for approval.';
+        title = context.ui('Recce not started');
+        body = context.ui(
+          'Add boards, capture photos and submit for approval.',
+        );
       case RecceStatus.inProgress:
         title = sub == null
-            ? 'Draft in progress'
-            : 'Draft in progress (next: v${sub.version + 1})';
-        body = 'Complete all boards, then submit for Business approval.';
+            ? context.ui('Draft in progress')
+            : context.uf('Draft in progress (next: v{0})', [sub.version + 1]);
+        body = context.ui(
+          'Complete all boards, then submit for Business approval.',
+        );
       case RecceStatus.pendingBusiness:
-        title = 'v${sub?.version ?? 1} waiting for Business Team approval';
-        body = sub == null ? null : 'Submitted ${fmtDateTime(sub.submittedAt)}';
+        title = context.uf('v{0} waiting for Business Team approval', [
+          sub?.version ?? 1,
+        ]);
+        body = sub == null
+            ? null
+            : context.uf('Submitted {0}', [
+                _fmtDateTimeL(context, sub.submittedAt),
+              ]);
       case RecceStatus.pendingOps:
-        title = 'v${sub?.version ?? 1} waiting for Recce Ops approval';
-        body = 'Business Team approved. Final technical check pending.';
+        title = context.uf('v{0} waiting for Recce Ops approval', [
+          sub?.version ?? 1,
+        ]);
+        body = context.ui(
+          'Business Team approved. Final technical check pending.',
+        );
       case RecceStatus.approved:
-        title = 'v${sub?.version ?? 1} final approved';
-        body = 'Approved by Business Team and Recce Operations.';
+        title = context.uf('v{0} final approved', [sub?.version ?? 1]);
+        body = context.ui('Approved by Business Team and Recce Operations.');
       case RecceStatus.rejectedBusiness:
       case RecceStatus.rejectedOps:
         rejection = sub?.reviews.lastOrNull;
-        title =
-            'v${sub?.version ?? 1} rejected by ${rejection?.stage.label ?? 'reviewer'}';
-        body =
-            'Fix the issues below and resubmit as v${(sub?.version ?? 1) + 1}.';
+        title = context.uf('v{0} rejected by {1}', [
+          sub?.version ?? 1,
+          context.ui(rejection?.stage.label ?? 'reviewer'),
+        ]);
+        body = context.uf('Fix the issues below and resubmit as v{0}.', [
+          (sub?.version ?? 1) + 1,
+        ]);
     }
     final color = status.color;
     return Container(
@@ -350,7 +449,7 @@ class StatusBanner extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${rejection.reviewerName} • ${fmtDateTime(rejection.at)}',
+                    '${rejection.reviewerName} • ${_fmtDateTimeL(context, rejection.at)}',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AdinnColors.muted,
@@ -371,8 +470,8 @@ class StatusBanner extends StatelessWidget {
                   ],
                   if (rejection.issues.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    const Text(
-                      'Items to correct',
+                    Text(
+                      context.ui('Items to correct'),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -467,7 +566,7 @@ class _BoardCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      board.name,
+                      _boardNameL(context, board),
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
@@ -476,11 +575,10 @@ class _BoardCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       [
-                        media?.shortName ?? 'Media not set',
-                        SignageCatalog.installationSummary(
-                          board,
-                          empty: 'Installation not set',
+                        context.mediaLabel(
+                          media?.shortName ?? context.ui('Media not set'),
                         ),
+                        _installationSummaryL(context, board),
                       ].join(' • '),
                       style: const TextStyle(
                         fontSize: 12,
@@ -493,50 +591,65 @@ class _BoardCard extends StatelessWidget {
                       runSpacing: 6,
                       children: [
                         TagChip(
-                          'Qty ${board.quantity}',
+                          context.uf('Qty {0}', [board.quantity]),
                           icon: Icons.format_list_numbered,
                         ),
                         TagChip(
                           board.isSameSize
                               ? fmtSize(board.width, board.height, board.unit)
-                              : 'Varied sizes',
+                              : context.ui('Varied sizes'),
                           icon: Icons.straighten,
                         ),
                         if (board.quantity > 1)
                           TagChip(
                             board.isSameSize
-                                ? 'Same size'
-                                : '${board.activeUnits.where(board.unitHasSize).length}/${board.quantity} sized',
+                                ? context.ui('Same size')
+                                : context.uf('{0}/{1} sized', [
+                                    board.activeUnits
+                                        .where(board.unitHasSize)
+                                        .length,
+                                    board.quantity,
+                                  ]),
                             icon: Icons.view_list_outlined,
                           ),
                         TagChip(
-                          '${board.photos.length} photo${board.photos.length == 1 ? '' : 's'}',
+                          context.countLabel(
+                            board.photos.length,
+                            'photo',
+                            'photos',
+                            context.ui('Photos'),
+                          ),
                           icon: Icons.photo_camera_outlined,
                         ),
                         if (board.previews.isNotEmpty)
                           TagChip(
-                            '${board.previews.length} preview${board.previews.length == 1 ? '' : 's'}',
+                            context.countLabel(
+                              board.previews.length,
+                              'preview',
+                              'previews',
+                              context.ui('Preview'),
+                            ),
                             icon: Icons.layers_outlined,
                           ),
                         if (board.voiceNotes.isNotEmpty)
                           TagChip(
-                            '${board.voiceNotes.length} voice',
+                            context.uf('{0} voice', [board.voiceNotes.length]),
                             icon: Icons.mic_none,
                           ),
                         if (rejected > 0)
                           TagChip(
-                            '$rejected to correct',
+                            context.uf('{0} to correct', [rejected]),
                             icon: Icons.report_gmailerrorred,
                             color: AdinnColors.red,
                           ),
                         issues.isEmpty
-                            ? const TagChip(
-                                'Complete',
+                            ? TagChip(
+                                context.ui('Complete'),
                                 icon: Icons.check_circle,
                                 color: AdinnColors.success,
                               )
                             : TagChip(
-                                '${issues.length} pending',
+                                context.uf('{0} pending', [issues.length]),
                                 icon: Icons.error_outline,
                                 color: AdinnColors.warning,
                               ),
@@ -577,7 +690,9 @@ class _BoardCard extends StatelessWidget {
                             ),
                           if (board.activeUnits.length > 12)
                             Text(
-                              '+${board.activeUnits.length - 12} more',
+                              context.uf('+{0} more', [
+                                board.activeUnits.length - 12,
+                              ]),
                               style: const TextStyle(fontSize: 11),
                             ),
                         ],
@@ -588,7 +703,7 @@ class _BoardCard extends StatelessWidget {
               ),
               if (editable)
                 PopupMenuButton<String>(
-                  tooltip: 'Board options',
+                  tooltip: context.ui('Board options'),
                   onSelected: (v) async {
                     final ctrl = context.read<AppController>();
                     if (v == 'edit') {
@@ -597,7 +712,10 @@ class _BoardCard extends StatelessWidget {
                       ctrl.increaseQuantity(shop.id, board, board.quantity + 1);
                       showSnack(
                         context,
-                        '${board.name}: quantity ${board.quantity}',
+                        context.uf('{0}: quantity {1}', [
+                          board.name,
+                          board.quantity,
+                        ]),
                       );
                     } else if (v == 'units') {
                       Navigator.of(context).push(
@@ -612,7 +730,7 @@ class _BoardCard extends StatelessWidget {
                       );
                     } else if (v == 'dup') {
                       ctrl.duplicateBoard(shop.id, board.id);
-                      showSnack(context, 'Board duplicated');
+                      showSnack(context, context.ui('Board duplicated'));
                     } else if (v == 'del') {
                       final submitted = shop.submissions.any(
                         (s) => (s.snapshot['boards'] as List? ?? const [])
@@ -632,18 +750,27 @@ class _BoardCard extends StatelessWidget {
                       if (ok) await ctrl.deleteBoard(shop.id, board.id);
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Edit media')),
-                    PopupMenuItem(value: 'qty', child: Text('Add quantity')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Text(context.ui('Edit media')),
+                    ),
+                    PopupMenuItem(
+                      value: 'qty',
+                      child: Text(context.ui('Add quantity')),
+                    ),
                     PopupMenuItem(
                       value: 'units',
-                      child: Text('View individual units'),
+                      child: Text(context.ui('View individual units')),
                     ),
                     PopupMenuItem(
                       value: 'dup',
-                      child: Text('Duplicate configuration'),
+                      child: Text(context.ui('Duplicate configuration')),
                     ),
-                    PopupMenuItem(value: 'del', child: Text('Delete')),
+                    PopupMenuItem(
+                      value: 'del',
+                      child: Text(context.ui('Delete')),
+                    ),
                   ],
                 ),
             ],
@@ -667,26 +794,48 @@ class _BottomAction extends StatelessWidget {
       final next = shop.submissions.length + 1;
       button = ElevatedButton.icon(
         key: const Key('open_submit'),
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => SubmissionScreen(shopId: shop.id),
           ),
         ),
         icon: const Icon(Icons.send_outlined),
-        label: Text(
-          next == 1 ? 'REVIEW & SUBMIT' : 'REVIEW & RESUBMIT (v$next)',
+        label: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 170),
+          child: Text(
+            next == 1
+                ? context.ui('REVIEW & SUBMIT')
+                : context.uf('REVIEW & RESUBMIT (v{0})', [next]),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       );
     } else if (c.canReview(shop)) {
       button = ElevatedButton.icon(
         key: const Key('open_review'),
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ReviewScreen(shopId: shop.id),
           ),
         ),
         icon: const Icon(Icons.fact_check_outlined),
-        label: Text('REVIEW v${shop.latestSubmission?.version ?? 1}'),
+        label: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 170),
+          child: Text(
+            context.uf('REVIEW v{0}', [shop.latestSubmission?.version ?? 1]),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       );
     }
     if (button == null) return const SizedBox.shrink();
@@ -724,32 +873,34 @@ class _SurveyDocsCard extends StatelessWidget {
     final reports = c.reportsForShop(shop.id);
     final feasibility = shopFeasibility(shop);
     return SectionCard(
-      title: 'Site survey & documents',
+      title: context.ui('Site survey & documents'),
       icon: Icons.fact_check_outlined,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              const Text(
-                'Site feasibility',
+              Text(
+                context.ui('Site feasibility'),
                 style: TextStyle(fontSize: 13, color: AdinnColors.muted),
               ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: FeasibilityChip(
-                  feasibility,
-                  key: const Key('shop_feasibility'),
-                  compact: true,
-                ),
+              FeasibilityChip(
+                feasibility,
+                key: const Key('shop_feasibility'),
+                compact: true,
               ),
             ],
           ),
           const SizedBox(height: 2),
-          const Text(
-            'Operational indicator from recorded obstructions, electrical and '
-            'checklist answers – not a structural, electrical or municipal '
-            'certification.',
+          Text(
+            context.ui(
+              'Operational indicator from recorded obstructions, electrical and '
+              'checklist answers – not a structural, electrical or municipal '
+              'certification.',
+            ),
             style: TextStyle(fontSize: 11, color: AdinnColors.muted),
           ),
           const Divider(height: 18),
@@ -761,11 +912,15 @@ class _SurveyDocsCard extends StatelessWidget {
               Icons.mode_comment_outlined,
               color: open > 0 ? AdinnColors.red : AdinnColors.ink,
             ),
-            title: const Text('Photo review comments'),
+            title: Text(context.ui('Photo review comments')),
             subtitle: Text(
               comments.isEmpty
-                  ? 'No reviewer comments'
-                  : '$open open • $addressed addressed • $verified verified',
+                  ? context.ui('No reviewer comments')
+                  : context.uf('{0} open • {1} addressed • {2} verified', [
+                      open,
+                      addressed,
+                      verified,
+                    ]),
               style: TextStyle(
                 color: open > 0 && shop.status.isRejected
                     ? AdinnColors.red
@@ -784,12 +939,14 @@ class _SurveyDocsCard extends StatelessWidget {
             dense: true,
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.picture_as_pdf_outlined),
-            title: const Text('Measurement PDF report'),
+            title: Text(context.ui('Measurement PDF report')),
             subtitle: Text(
               reports.isEmpty
-                  ? 'Not generated yet'
-                  : '${reports.length} report(s) • latest '
-                        '${fmtDateTime(reports.first.generatedAt)}',
+                  ? context.ui('Not generated yet')
+                  : context.uf('{0} report(s) • latest {1}', [
+                      reports.length,
+                      _fmtDateTimeL(context, reports.first.generatedAt),
+                    ]),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
@@ -803,11 +960,13 @@ class _SurveyDocsCard extends StatelessWidget {
             dense: true,
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.panorama_photosphere_outlined),
-            title: const Text('360° site panorama'),
+            title: Text(context.ui('360° site panorama')),
             subtitle: Text(
               c.panoramasForShop(shop.id).isEmpty
-                  ? 'Optional – none imported'
-                  : '${c.panoramasForShop(shop.id).length} panorama(s)',
+                  ? context.ui('Optional – none imported')
+                  : context.uf('{0} panorama(s)', [
+                      c.panoramasForShop(shop.id).length,
+                    ]),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
@@ -852,7 +1011,7 @@ class _ProgressCard extends StatelessWidget {
         : c.boardIssueDetails(pending.first).first;
     return SectionCard(
       key: const Key('recce_progress'),
-      title: 'Recce progress',
+      title: context.ui('Recce progress'),
       icon: Icons.donut_large_outlined,
       trailing: ReadinessChip(level, short: true),
       child: Column(
@@ -860,14 +1019,12 @@ class _ProgressCard extends StatelessWidget {
         children: [
           ProgressBarLabel(
             value: total == 0 ? 0 : ready / total,
-            label:
-                '$ready of $total signage unit${total == 1 ? '' : 's'} '
-                'ready for review',
+            label: context.readyUnitsSummary(ready, total),
             color: AdinnColors.success,
           ),
           const SizedBox(height: 6),
           Text(
-            level.label,
+            context.ui(level.label),
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w700,
@@ -881,9 +1038,17 @@ class _ProgressCard extends StatelessWidget {
               onPressed: () => onContinue(pending.first.id, next),
               icon: const Icon(Icons.play_arrow),
               label: Text(
-                'Continue: '
-                '${pending.first.unitById(next?.unitId) != null && pending.first.activeUnits.length > 1 ? SignageCatalog.unitName(pending.first, pending.first.unitById(next!.unitId)!) : pending.first.name}'
-                ' – ${next?.text ?? ''}',
+                context.continueAction(
+                  pending.first.unitById(next?.unitId) != null &&
+                          pending.first.activeUnits.length > 1
+                      ? _unitNameL(
+                          context,
+                          pending.first,
+                          pending.first.unitById(next!.unitId)!,
+                        )
+                      : _boardNameL(context, pending.first),
+                  context.ui(next?.text ?? ''),
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
