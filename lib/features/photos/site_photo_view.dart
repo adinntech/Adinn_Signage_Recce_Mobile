@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show consolidateHttpClientResponseBytes
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../data/storage/web_media.dart';
 import '../../data/models/models.dart';
 import '../annotation/annotation_painter.dart';
 
@@ -34,10 +35,11 @@ class SitePhotoImage extends StatelessWidget {
         errorBuilder: (_, _, _) => Container(color: AdinnColors.line, alignment: Alignment.center, child: const Icon(Icons.broken_image_outlined, color: AdinnColors.muted)),
       );
     }
-    return Image.file(
-      File(photo.path),
+    final mem = isMemPath(photo.path) ? getMem(photo.path) : null;
+    final ImageProvider provider = mem != null ? MemoryImage(mem) : FileImage(File(photo.path));
+    return Image(
+      image: cacheWidth == null ? provider : ResizeImage(provider, width: cacheWidth),
       fit: BoxFit.fill,
-      cacheWidth: cacheWidth,
       gaplessPlayback: true,
       errorBuilder: (_, _, _) => Container(
         color: AdinnColors.line,
@@ -262,6 +264,7 @@ Future<Uint8List?> readPhotoBytes(String path) async {
         client.close();
       }
     }
+    if (isMemPath(path)) return getMem(path);
     final file = File(path);
     if (!await file.exists()) return null;
     return await file.readAsBytes();

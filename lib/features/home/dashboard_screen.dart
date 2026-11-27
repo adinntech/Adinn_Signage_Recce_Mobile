@@ -36,7 +36,7 @@ class DashboardScreen extends StatelessWidget {
         : c.visibleShops.where((s) => s.status.isRejected).toList();
     final tasks = c.visibleTasks
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
-    final recent = c.activities().take(4).toList();
+    final recent = c.activities().take(3).toList();
     // Field work started but not submitted yet, most recent first.
     final drafts = reviewer
         ? const <Shop>[]
@@ -81,147 +81,70 @@ class DashboardScreen extends StatelessWidget {
               ),
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: _StatsGrid(
-                reviewer: reviewer,
-                summary: sum,
-                awaiting: c.pendingReviews.length,
-                reviewed: c.reviewedByMe.length,
-                onTap: onOpenTab,
-              ),
+          // Only what needs the person's attention, in this order: Needs rework (Awaiting your approval for a reviewer), Continue where
+          // you left off (only when something is pending), My tasks, Recent activity. A section with nothing in it is not drawn.
+          if (attention.isNotEmpty) ...[
+            _sectionTitle(
+              reviewer ? 'Awaiting your approval' : 'Needs rework',
+              action: 'View all',
+              onAction: () => onOpenTab(2),
             ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: SectionCard(
-                title: 'Overall progress',
-                icon: Icons.insights_outlined,
-                child: Column(
-                  children: [
-                    ProgressBarLabel(
-                      value: sum.submittedRatio,
-                      label: 'Submitted for approval',
-                      color: AdinnColors.info,
-                    ),
-                    const SizedBox(height: 12),
-                    ProgressBarLabel(
-                      value: sum.approvedRatio,
-                      label: 'Final approved',
-                      color: AdinnColors.success,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-            sliver: SliverToBoxAdapter(
-              child: _SectionTitle(
-                reviewer ? 'Awaiting your approval' : 'Needs rework',
-                action: attention.isEmpty ? null : 'View all',
-                onAction: () => onOpenTab(2),
-              ),
-            ),
-          ),
-          if (attention.isEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+            _list(attention.length.clamp(0, _maxShops), (i) => ShopTile(shop: attention[i], showProject: true, compact: true)),
+          ],
+          if (drafts.isNotEmpty) ...[
+            _sectionTitle('Continue where you left off', key: const Key('continue_drafts')),
+            _list(drafts.length.clamp(0, _maxShops), (i) => ShopTile(shop: drafts[i], showProject: true, compact: true)),
+          ],
+          if (!reviewer && tasks.isNotEmpty) ...[
+            _sectionTitle('My tasks', action: tasks.length > _maxTasks ? 'View all' : null, onAction: () => onOpenTab(1)),
+            _list(tasks.length.clamp(0, _maxTasks), (i) => _TaskCard(task: tasks[i])),
+          ],
+          if (recent.isNotEmpty) ...[
+            _sectionTitle('Recent activity', action: 'Timeline', onAction: () => onOpenTab(3)),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              sliver: SliverToBoxAdapter(
                 child: Card(
-                  child: ListTile(
-                    leading: const Icon(
-                      Icons.check_circle_outline,
-                      color: AdinnColors.success,
-                    ),
-                    title: Text(
-                      reviewer
-                          ? 'No pending approvals'
-                          : 'No rejected recces – great work!',
-                    ),
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < recent.length; i++) ActivityTile(event: recent[i], isLast: i == recent.length - 1),
+                    ],
                   ),
                 ),
               ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList.separated(
-                itemCount: attention.take(3).length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (_, i) =>
-                    ShopTile(shop: attention[i], showProject: true),
-              ),
             ),
-          if (drafts.isNotEmpty) ...[
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-              sliver: SliverToBoxAdapter(
-                child: _SectionTitle(
-                  'Continue where you left off',
-                  key: Key('continue_drafts'),
+          ],
+          if (attention.isEmpty && drafts.isEmpty && (reviewer || tasks.isEmpty) && recent.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Card(
+                  child: ListTile(
+                    leading: Icon(Icons.check_circle_outline, color: AdinnColors.success),
+                    title: Text('All caught up'),
+                  ),
                 ),
               ),
             ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList.separated(
-                itemCount: drafts.take(3).length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (_, i) =>
-                    ShopTile(shop: drafts[i], showProject: true),
-              ),
-            ),
-          ],
-          if (!reviewer) ...[
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-              sliver: SliverToBoxAdapter(child: _SectionTitle('My tasks')),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList.separated(
-                itemCount: tasks.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (_, i) => _TaskCard(task: tasks[i]),
-              ),
-            ),
-          ],
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-            sliver: SliverToBoxAdapter(
-              child: _SectionTitle(
-                'Recent activity',
-                action: 'Timeline',
-                onAction: () => onOpenTab(3),
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            sliver: SliverToBoxAdapter(
-              child: Card(
-                child: Column(
-                  children: [
-                    if (recent.isEmpty)
-                      const ListTile(title: Text('No activity yet')),
-                    for (var i = 0; i < recent.length; i++)
-                      ActivityTile(
-                        event: recent[i],
-                        isLast: i == recent.length - 1,
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],
       ),
     );
   }
+
+  /// The home page stays short: at most this many rows per section; the rest is one tap away ("View all").
+  static const _maxShops = 2;
+  static const _maxTasks = 3;
+
+  static Widget _sectionTitle(String text, {Key? key, String? action, VoidCallback? onAction}) => SliverPadding(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+    sliver: SliverToBoxAdapter(child: _SectionTitle(text, key: key, action: action, onAction: onAction)),
+  );
+
+  static Widget _list(int count, Widget Function(int) item) => SliverPadding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    sliver: SliverList.separated(itemCount: count, separatorBuilder: (_, _) => const SizedBox(height: 10), itemBuilder: (_, i) => item(i)),
+  );
 }
 
 class _Header extends StatelessWidget {
@@ -255,7 +178,7 @@ class _Header extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const AdinnLogo(size: 26, light: true),
+                  const AdinnLogo(size: 30, light: true),
                   const SizedBox(width: 12),
                   const Spacer(),
                   Flexible(
@@ -314,192 +237,6 @@ class _Header extends StatelessWidget {
               Text(
                 '${fmtDate(DateTime.now())} • $subtitle',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsGrid extends StatelessWidget {
-  const _StatsGrid({
-    required this.reviewer,
-    required this.summary,
-    required this.awaiting,
-    required this.reviewed,
-    required this.onTap,
-  });
-
-  final bool reviewer;
-  final ProgressSummary summary;
-  final int awaiting;
-  final int reviewed;
-  final ValueChanged<int> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = reviewer
-        ? [
-            _Stat(
-              'Awaiting you',
-              awaiting,
-              Icons.pending_actions,
-              AdinnColors.warning,
-              2,
-            ),
-            _Stat(
-              'Reviewed by you',
-              reviewed,
-              Icons.task_alt,
-              AdinnColors.info,
-              2,
-            ),
-            _Stat(
-              'Final approved',
-              summary.approved,
-              Icons.verified,
-              AdinnColors.success,
-              1,
-            ),
-            _Stat(
-              'Rejected',
-              summary.rejected,
-              Icons.report_gmailerrorred,
-              AdinnColors.red,
-              1,
-            ),
-          ]
-        : [
-            _Stat(
-              'Assigned shops',
-              summary.total,
-              Icons.storefront,
-              AdinnColors.ink,
-              1,
-            ),
-            _Stat(
-              'In progress',
-              summary.inProgress + summary.notStarted,
-              Icons.edit_note,
-              AdinnColors.info,
-              1,
-            ),
-            _Stat(
-              'Pending approval',
-              summary.pending,
-              Icons.hourglass_top,
-              AdinnColors.warning,
-              2,
-            ),
-            _Stat(
-              'Approved',
-              summary.approved,
-              Icons.verified,
-              AdinnColors.success,
-              2,
-            ),
-            _Stat(
-              'Rejected',
-              summary.rejected,
-              Icons.report_gmailerrorred,
-              AdinnColors.red,
-              2,
-            ),
-            _Stat('Projects', -1, Icons.folder_open, AdinnColors.purple, 1),
-          ];
-
-    return LayoutBuilder(
-      builder: (context, box) {
-        final cols = box.maxWidth > 560 ? 3 : 2;
-        return GridView.count(
-          crossAxisCount: cols,
-          // Without this, GridView adds the status-bar inset as top padding.
-          padding: EdgeInsets.zero,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 2.1,
-          children: [
-            for (final s in items)
-              _StatTile(
-                stat: s,
-                value: s.value >= 0
-                    ? '${s.value}'
-                    : '${context.read<AppController>().projects.length}',
-                onTap: () => onTap(s.tab),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _Stat {
-  const _Stat(this.label, this.value, this.icon, this.color, this.tab);
-  final String label;
-  final int value;
-  final IconData icon;
-  final Color color;
-  final int tab;
-}
-
-class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.stat,
-    required this.value,
-    required this.onTap,
-  });
-
-  final _Stat stat;
-  final String value;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: stat.color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(stat.icon, color: stat.color, size: 20),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      stat.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AdinnColors.muted,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),

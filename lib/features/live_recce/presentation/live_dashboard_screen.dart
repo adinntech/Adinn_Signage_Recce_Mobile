@@ -17,11 +17,24 @@ import 'live_shops_screen.dart';
 import 'live_widgets.dart';
 import 'notifications_screen.dart';
 
-/// Dashboard: the field numbers of `GET /recce/dashboard` (assigned, started, submitted, under review, approved, rework, completed,
-/// pending, average time, rework rate) with a bar per project, and the shops that need attention. When the dashboard cannot be read
-/// the counts of the shop list (`meta.summary`) are shown instead, with the reason and a Retry.
+/// Tab numbers of the home shell, so the dashboard can jump to them ("View All", "View Timeline").
+abstract final class HomeTab {
+  static const home = 0;
+  static const projects = 1;
+  static const submitted = 2;
+  static const activity = 3;
+  static const profile = 4;
+}
+
+/// Home: logo header with the bell and the profile picture, a search box, the six field numbers, overall progress, the shops that
+/// need attention (rework), the shops to continue, a bar per project and the recent activity. The numbers are those of
+/// `GET /recce/dashboard`; when it cannot be read the counts of the shop list (`meta.summary`) are shown instead, with the reason
+/// and a Retry.
 class LiveDashboardScreen extends StatefulWidget {
-  const LiveDashboardScreen({super.key});
+  const LiveDashboardScreen({super.key, this.onOpenTab});
+
+  /// Switches the home shell to another tab (see [HomeTab]); null when the screen is shown on its own.
+  final ValueChanged<int>? onOpenTab;
 
   @override
   State<LiveDashboardScreen> createState() => _LiveDashboardScreenState();
@@ -65,6 +78,8 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LiveShopsScreen(projectId: p.projectId, title: p.projectCode.isEmpty ? 'Project' : p.projectCode)));
   }
 
+  void _tab(int i) => widget.onOpenTab?.call(i);
+
   @override
   Widget build(BuildContext context) {
     final list = context.watch<ShopListController>();
@@ -74,10 +89,28 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
     final chat = context.watch<ChatHub>();
     final user = context.watch<LiveAuthController>().user;
     final c = list.counts;
-    final attention = list.shops.where((s) => s.status == 'REWORK_REQUIRED' || s.reworkOpen).take(5).toList();
+    final attention = list.shops.where((s) => s.status == 'REWORK_REQUIRED' || s.reworkOpen).toList();
+    final resume = list.shops.where((s) => ShopFilter.inProgress.matches(s.status)).toList();
     final data = dash.data;
+    final n = _Numbers.of(data, c, list.shops);
     return Scaffold(
-      appBar: AppBar(title: const Text('Dashboard'), actions: const [NotificationBell()]),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        titleSpacing: 16,
+        title: Row(children: [
+          const AdinnLogo(size: 22),
+          Container(width: 1, height: 24, margin: const EdgeInsets.symmetric(horizontal: 8), color: AdinnColors.line),
+          const Flexible(child: Text('Signage Recce', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800))),
+          if (user != null) ...[
+            const SizedBox(width: 6),
+            Flexible(child: TagChip(user.role.label, color: AdinnColors.red)),
+          ],
+        ]),
+        actions: [
+          const NotificationBell(),
+          Padding(padding: const EdgeInsets.only(right: 12), child: Avatar(_initials(user?.name ?? '?'), size: 34)),
+        ],
+      ),
       body: !list.loaded && list.loading
           ? const Center(child: CircularProgressIndicator())
           : !list.loaded && list.error != null
@@ -87,15 +120,10 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                   color: AdinnColors.red,
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                     children: [
-                      Text('Hello, ${user?.name.split(' ').first ?? ''}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                      Text(user?.vendorName ?? user?.role.label ?? '', style: const TextStyle(color: AdinnColors.muted)),
-                      const SizedBox(height: 14),
-                      if (notes.unread > 0) ...[
-                        _UnreadBanner(unread: notes.unread, messages: notes.unreadMessages),
-                        const SizedBox(height: 12),
-                      ],
+                      _SearchRow(onTap: () => _open('Assigned shops', ShopFilter.all)),
+                      const SizedBox(height: 12),
                       if (queue.totalPending > 0) ...[
                         _UploadBanner(queue: queue),
                         const SizedBox(height: 12),
@@ -105,60 +133,149 @@ class _LiveDashboardScreenState extends State<LiveDashboardScreen> {
                         DashboardErrorNotice(message: dash.error!, onRetry: dash.load),
                         const SizedBox(height: 12),
                       ],
-                      if (data != null) ..._fieldNumbers(data) else _shopCounts(c),
+                      DashTileGrid(tiles: [
+                        DashTile('Assigned Shops', '${n.assigned}', Icons.storefront_outlined, AdinnColors.red, onTap: () => _open('All shops', ShopFilter.all)),
+                        DashTile('Started', '${n.started}', Icons.play_circle_outline, AdinnColors.red, onTap: () => _open('Started shops', ShopFilter.inProgress)),
+                        DashTile('Submitted', '${n.submitted}', Icons.send_outlined, AdinnColors.red, onTap: () => _open('Submitted shops', ShopFilter.submitted)),
+                        DashTile('Under Review', '${n.underReview}', Icons.hourglass_top_outlined, AdinnColors.red, onTap: () => _open('Submitted shops', ShopFilter.submitted)),
+                        DashTile('Approved', '${n.approved}', Icons.check_circle_outline, AdinnColors.success, onTap: () => _open('Approved shops', ShopFilter.approved)),
+                        DashTile('Rework', '${n.rework}', Icons.sync, AdinnColors.red, onTap: () => _open('Rework shops', ShopFilter.rework)),
+                      ]),
+                      const SizedBox(height: 12),
+                      OverallProgressCard(assigned: n.assigned, submitted: n.submitted, approved: data?.completed ?? n.approved),
+                      if (data != null) ...[
+                        const SizedBox(height: 10),
+                        _ExtraNumbers(data),
+                        const SizedBox(height: 10),
+                        const DashboardNote('Completed = approved by both reviewers on the latest version. An approval of an older version does not count. Pending = assigned shops that are not completed yet.'),
+                      ],
                       const SizedBox(height: 18),
+                      if (attention.isNotEmpty) ...[
+                        DashSectionHeader('Needs Your Attention', onAction: () => _open('Rework shops', ShopFilter.rework)),
+                        for (final s in attention.take(3)) ...[
+                          AttentionCard(shop: s, unread: shopUnreadCount(chat, notes, s.siteId), onTap: () => openShop(context, s.siteId)),
+                          const SizedBox(height: 10),
+                        ],
+                        const SizedBox(height: 8),
+                      ] else if (c.total == 0)
+                        const EmptyState(icon: Icons.inbox_outlined, title: 'No shops assigned yet', message: 'Operations will assign shops to you. Pull down to refresh.'),
+                      if (resume.isNotEmpty) ...[
+                        DashSectionHeader('Continue Where You Left Off', onAction: () => _open('In progress', ShopFilter.inProgress)),
+                        for (final s in resume.take(3)) ...[
+                          ResumeRow(shop: s, onTap: () => openShop(context, s.siteId)),
+                          const SizedBox(height: 10),
+                        ],
+                        const SizedBox(height: 8),
+                      ],
                       if (data != null && data.projects.isNotEmpty) ...[
-                        const Text('Project-wise progress', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                        const SizedBox(height: 4),
+                        DashSectionHeader('Project-wise Progress', onAction: () => _tab(HomeTab.projects)),
                         const _BarLegend(),
                         const SizedBox(height: 8),
-                        for (final p in data.projects) ...[
+                        for (final p in data.projects.take(3)) ...[
                           ProjectProgressCard(project: p, onTap: () => _openProject(p)),
                           const SizedBox(height: 10),
                         ],
                         const SizedBox(height: 8),
                       ],
-                      if (attention.isNotEmpty) ...[
-                        const Text('Needs your attention', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                        const SizedBox(height: 8),
-                        for (final s in attention) ...[
-                          ShopCard(shop: s, unread: shopUnreadCount(chat, notes, s.siteId), onTap: () => openShop(context, s.siteId)),
-                          const SizedBox(height: 10),
-                        ],
-                      ] else if (c.total == 0)
-                        const EmptyState(icon: Icons.inbox_outlined, title: 'No shops assigned yet', message: 'Operations will assign shops to you. Pull down to refresh.'),
+                      if (notes.items.isNotEmpty) ...[
+                        DashSectionHeader('Recent Activity', action: 'View Timeline', onAction: () => _tab(HomeTab.activity)),
+                        ActivityTimeline(items: notes.items.take(3).toList()),
+                      ],
                     ],
                   ),
                 ),
     );
   }
+}
 
-  /// The numbers of `GET /recce/dashboard`, and what "Completed" means.
-  List<Widget> _fieldNumbers(FieldDashboard d) => [
-        KpiGrid(cards: [
-          KpiCard('Assigned shops', '${d.assignedShops}', Icons.storefront_outlined, AdinnColors.ink, subtitle: '${d.assignedProjects} project${d.assignedProjects == 1 ? '' : 's'}', onTap: () => _open('All shops', ShopFilter.all)),
-          KpiCard('Started', '${d.started}', Icons.play_circle_outline, statusColor('IN_PROGRESS'), subtitle: 'visit started'),
-          KpiCard('Submitted', '${d.submitted}', Icons.send_outlined, statusColor('SUBMITTED'), subtitle: 'at least once', onTap: () => _open('Submitted shops', ShopFilter.submitted)),
-          KpiCard('Under review', '${d.underReview}', Icons.hourglass_top_outlined, statusColor('UNDER_REVIEW'), subtitle: 'waiting for a reviewer', onTap: () => _open('Submitted shops', ShopFilter.submitted)),
-          KpiCard('Approved', '${d.approved}', Icons.verified_outlined, statusColor('APPROVED'), onTap: () => _open('Approved shops', ShopFilter.approved)),
-          KpiCard('Rework', '${d.rework}', Icons.flag_outlined, statusColor('REWORK_REQUIRED'), subtitle: 'asked right now', onTap: () => _open('Rework shops', ShopFilter.rework)),
-          KpiCard('Completed', '${d.completed}', Icons.task_alt, AdinnColors.success, subtitle: 'approved by all reviewers'),
-          KpiCard('Pending', '${d.pending}', Icons.pending_actions_outlined, AdinnColors.warning, subtitle: 'assigned, not completed'),
-          KpiCard('Avg. completion', fmtHours(d.avgCompletionHours), Icons.timer_outlined, AdinnColors.info, subtitle: d.avgCompletionHours == null ? 'no completed shop yet' : 'visit start to final approval'),
-          KpiCard('Rework rate', fmtPercent(d.reworkPercent), Icons.loop, AdinnColors.red, subtitle: '${d.reworkCount} of ${d.submitted} submitted'),
+String _initials(String name) {
+  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return '?';
+  return parts.take(2).map((p) => p[0].toUpperCase()).join();
+}
+
+/// The six numbers of the tiles: from the dashboard when it was read, else from the shop list that is already in memory.
+class _Numbers {
+  const _Numbers({required this.assigned, required this.started, required this.submitted, required this.underReview, required this.approved, required this.rework});
+
+  final int assigned;
+  final int started;
+  final int submitted;
+  final int underReview;
+  final int approved;
+  final int rework;
+
+  factory _Numbers.of(FieldDashboard? d, DashboardCounts c, List<ShopSummary> shops) {
+    if (d != null) {
+      return _Numbers(assigned: d.assignedShops, started: d.started, submitted: d.submitted, underReview: d.underReview, approved: d.approved, rework: d.rework);
+    }
+    return _Numbers(
+      assigned: c.total,
+      started: c.total - shops.where((s) => s.status == 'NOT_STARTED').length,
+      submitted: c.submitted,
+      underReview: shops.where((s) => s.status == 'UNDER_REVIEW').length,
+      approved: c.approved,
+      rework: c.rework,
+    );
+  }
+}
+
+/// Search box of the home screen: a tap opens the shop list, which has the real search and the status chips.
+class _SearchRow extends StatelessWidget {
+  const _SearchRow({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Expanded(
+        child: TextField(
+          key: const ValueKey('home-search'),
+          readOnly: true,
+          onTap: onTap,
+          decoration: const InputDecoration(hintText: 'Search shops, projects, areas...', prefixIcon: Icon(Icons.search)),
+        ),
+      ),
+      const SizedBox(width: 10),
+      Material(
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AdinnColors.line)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: const SizedBox(width: 50, height: 50, child: Icon(Icons.tune, color: AdinnColors.ink)),
+        ),
+      ),
+    ]);
+  }
+}
+
+/// Completed, pending, average completion time and rework rate (the numbers that have no tile).
+class _ExtraNumbers extends StatelessWidget {
+  const _ExtraNumbers(this.d);
+  final FieldDashboard d;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget cell(String label, String value, Color color) => Expanded(
+          child: Column(children: [
+            FittedBox(fit: BoxFit.scaleDown, child: Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: color))),
+            const SizedBox(height: 2),
+            FittedBox(fit: BoxFit.scaleDown, child: Text(label, style: const TextStyle(fontSize: 11.5, color: AdinnColors.muted))),
+          ]),
+        );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Row(children: [
+          cell('Completed', '${d.completed}', AdinnColors.success),
+          cell('Pending', '${d.pending}', AdinnColors.warning),
+          cell('Avg. completion', fmtHours(d.avgCompletionHours), AdinnColors.info),
+          cell('Rework rate', fmtPercent(d.reworkPercent), AdinnColors.red),
         ]),
-        const SizedBox(height: 12),
-        const DashboardNote('Completed = approved by both reviewers on the latest version. An approval of an older version does not count. Pending = assigned shops that are not completed yet.'),
-      ];
-
-  /// What the shop list already knows (the counts of `meta.summary`): shown while the dashboard loads and when it cannot be read.
-  Widget _shopCounts(DashboardCounts c) => KpiGrid(cards: [
-        KpiCard('Total', '${c.total}', Icons.storefront_outlined, AdinnColors.ink, onTap: () => _open('All shops', ShopFilter.all)),
-        KpiCard('Pending', '${c.pending}', Icons.pending_actions_outlined, statusColor('IN_PROGRESS'), onTap: () => _open('Pending shops', ShopFilter.inProgress)),
-        KpiCard('Submitted', '${c.submitted}', Icons.send_outlined, statusColor('SUBMITTED'), onTap: () => _open('Submitted shops', ShopFilter.submitted)),
-        KpiCard('Approved', '${c.approved}', Icons.verified_outlined, statusColor('APPROVED'), onTap: () => _open('Approved shops', ShopFilter.approved)),
-        KpiCard('Rework', '${c.rework}', Icons.flag_outlined, statusColor('REWORK_REQUIRED'), onTap: () => _open('Rework shops', ShopFilter.rework)),
-      ]);
+      ),
+    );
+  }
 }
 
 /// What the colours of a project bar mean.
@@ -179,39 +296,6 @@ class _BarLegend extends StatelessWidget {
       dot('Started', progressBarColors.working),
       dot('Not started', progressBarColors.notStarted),
     ]);
-  }
-}
-
-/// "3 unread notifications, 2 new messages": a tap opens the bell. Both numbers come from the one notifications read.
-class _UnreadBanner extends StatelessWidget {
-  const _UnreadBanner({required this.unread, required this.messages});
-  final int unread;
-  final int messages;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      key: const ValueKey('unread-banner'),
-      color: AdinnColors.info.withValues(alpha: 0.08),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const NotificationsScreen())),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(children: [
-            const Icon(Icons.notifications_active_outlined, color: AdinnColors.info),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('$unread unread notification${unread == 1 ? '' : 's'}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                if (messages > 0) Text('$messages new message${messages == 1 ? '' : 's'} in your shops', style: const TextStyle(fontSize: 12, color: AdinnColors.muted)),
-              ]),
-            ),
-            const Icon(Icons.chevron_right, color: AdinnColors.muted),
-          ]),
-        ),
-      ),
-    );
   }
 }
 

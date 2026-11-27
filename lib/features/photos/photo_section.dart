@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -12,6 +13,7 @@ import '../../core/widgets/common_widgets.dart';
 import '../../data/catalog/signage_catalog.dart';
 import '../../data/models/models.dart';
 import '../../data/services/location_service.dart';
+import '../../data/storage/web_media.dart';
 import '../../state/app_controller.dart';
 import '../annotation/annotation_editor_screen.dart';
 import '../compare/comparison_screen.dart';
@@ -110,7 +112,7 @@ class _PhotoSectionState extends State<PhotoSection> {
       showSnack(context, 'Storage not available', error: true);
       return;
     }
-    if (source == ImageSource.camera) {
+    if (source == ImageSource.camera && !kIsWeb) {
       final status = await Permission.camera.request();
       if (!mounted) return;
       if (!status.isGranted) {
@@ -143,7 +145,11 @@ class _PhotoSectionState extends State<PhotoSection> {
       final decoded = await decodeImageFromList(bytes);
       final ext = picked.name.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
       final path = await media.newFilePath('photos', ext);
-      await File(path).writeAsBytes(bytes, flush: true);
+      if (kIsWeb) {
+        putMem(path, bytes); // a browser has no device folder: the picture is kept in memory
+      } else {
+        await File(path).writeAsBytes(bytes, flush: true);
+      }
       final width = decoded.width;
       final height = decoded.height;
       decoded.dispose();

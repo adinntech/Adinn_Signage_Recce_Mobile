@@ -1893,7 +1893,7 @@ void main() {
 
   group('dashboard screen', () {
     Future<_Rig> pumpDashboard(WidgetTester tester, _M3Api api) async {
-      _phone(tester, height: 4200);
+      _phone(tester, height: 9000); // the home screen is long: every section must be built
       api.shopRows = [ShopSummary.fromJson(_shopRow('s1', 'IN_PROGRESS')), ShopSummary.fromJson(_shopRow('s2', 'REWORK_REQUIRED'))];
       final rig = _Rig(api);
       await rig.shops.load();
@@ -1909,14 +1909,13 @@ void main() {
     testWidgets('the numbers, the average as days and hours, the rate with one decimal, the note and a bar per project', (tester) async {
       final api = _M3Api()..noteUnread = 2;
       await pumpDashboard(tester, api);
-      for (final label in ['Assigned shops', 'Started', 'Submitted', 'Under review', 'Approved', 'Rework', 'Completed', 'Pending', 'Avg. completion', 'Rework rate']) {
+      for (final label in ['Assigned Shops', 'Started', 'Submitted', 'Under Review', 'Approved', 'Rework', 'Completed', 'Pending', 'Avg. completion', 'Rework rate', 'Overall Progress']) {
         expect(find.text(label), findsWidgets, reason: label);
       }
       expect(find.text('1 d 2 h'), findsOneWidget); // 26.4 hours
       expect(find.text('0.0%'), findsOneWidget);
-      expect(find.text('0 of 1 submitted'), findsOneWidget);
       expect(find.textContaining('Completed = approved by both reviewers on the latest version'), findsOneWidget);
-      expect(find.text('Project-wise progress'), findsOneWidget);
+      expect(find.text('Project-wise Progress'), findsOneWidget);
       expect(find.text('P-M3'), findsWidgets);
       expect(find.text('P-M3B'), findsOneWidget);
       expect(find.text('Assigned 2'), findsOneWidget);
@@ -1932,11 +1931,11 @@ void main() {
       await pumpDashboard(tester, api);
       expect(find.byKey(const ValueKey('dashboard-error')), findsOneWidget);
       expect(find.textContaining('Not allowed for this login'), findsOneWidget);
-      expect(find.text('Total'), findsOneWidget); // the existing five cards
-      expect(find.text('Pending'), findsOneWidget);
-      expect(find.text('Rework'), findsOneWidget);
+      expect(find.text('Assigned Shops'), findsOneWidget); // the six tiles, from the shop list
+      expect(find.text('Under Review'), findsOneWidget);
+      expect(find.text('Rework'), findsWidgets);
+      expect(find.text('Completed'), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsNothing);
-      expect(find.byType(LinearProgressIndicator), findsNothing);
       expect(find.textContaining('Completed = approved'), findsNothing);
 
       api.dashboardError = null;
@@ -1944,7 +1943,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const ValueKey('dashboard-error')), findsNothing);
-      expect(find.text('Assigned shops'), findsOneWidget);
+      expect(find.text('Completed'), findsOneWidget); // only shown once the dashboard is read
       expect(find.text('Total'), findsNothing);
       expect(api.dashboardCalls, 2);
     });
@@ -1954,7 +1953,7 @@ void main() {
       await pumpDashboard(tester, api);
       expect(api.dashboardCalls, 1);
       api.dashboardJson = {..._dashboardJson(), 'completed': 7, 'avgCompletionHours': 5.25};
-      await tester.fling(find.byType(ListView).first, const Offset(0, 500), 1000);
+      await tester.fling(find.byType(ListView).first, const Offset(0, 1400), 1000); // the tall test screen needs a longer pull
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
       await tester.pump(const Duration(seconds: 1));
@@ -1963,16 +1962,15 @@ void main() {
       expect(find.text('5.3 h'), findsOneWidget);
     });
 
-    testWidgets('the unread banner shows the total from the one notifications read, and the bell the same count', (tester) async {
+    testWidgets('the bell shows the unread count from the one notifications read, the attention card the unread messages', (tester) async {
       final api = _M3Api()
         ..noteUnread = 3
         ..noteRows = [_note('n1', 'RECCE_MESSAGE', siteId: 's1'), _note('n2', 'RECCE_MESSAGE', siteId: 's2'), _note('n3', 'RECCE_REVIEWED')];
       final rig = await pumpDashboard(tester, api);
       await rig.services.notifications.load();
       await tester.pump();
-      expect(find.text('3 unread notifications'), findsOneWidget);
-      expect(find.text('2 new messages in your shops'), findsOneWidget);
       expect(find.byKey(const ValueKey('bell')), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const ValueKey('bell')), matching: find.text('3')), findsOneWidget); // the bell badge
       // the attention list shows the unread messages of a shop with rework, from what is already in memory
       expect(find.byKey(const ValueKey('unread-chat')), findsOneWidget);
     });

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/storage/web_media.dart';
 import '../theme/app_theme.dart';
 
 enum AppFileState { waiting, uploading, done, failed }
@@ -80,6 +81,10 @@ class AppFileRow extends StatelessWidget {
     const broken = ColoredBox(color: AdinnColors.canvas, child: Icon(Icons.broken_image_outlined, color: AdinnColors.muted));
     if (url != null) return appNetworkImage(url, fit: fit, cacheWidth: cacheWidth, errorBuilder: (_, _, _) => broken);
     if (localPath != null) {
+      if (isMemPath(localPath)) {
+        final kept = getMem(localPath);
+        return kept == null ? broken : Image.memory(kept, fit: fit, cacheWidth: cacheWidth, errorBuilder: (_, _, _) => broken);
+      }
       return kIsWeb
           ? Image.network(localPath, fit: fit, errorBuilder: (_, _, _) => broken)
           : Image.file(File(localPath), fit: fit, cacheWidth: cacheWidth, errorBuilder: (_, _, _) => broken);

@@ -1816,9 +1816,12 @@ class SignageCatalog {
     SignageUnit tu,
     SiteQuestion q,
   ) =>
-      !isInstallationSpecific(sb.installationOf(su), q.id) &&
-      !isInstallationSpecific(tb.installationOf(tu), q.id) &&
-      !(q.type == QuestionType.number && q.unit != null);
+      // Two units of the SAME board (the quantity entered, e.g. GSB Single 01 and 02) fixed the SAME way are the same kind of
+      // job: every answer, installation-specific and measured ones too, is carried over (the person can still change it).
+      (sb.id == tb.id && sb.installationOf(su) == tb.installationOf(tu)) ||
+      (!isInstallationSpecific(sb.installationOf(su), q.id) &&
+          !isInstallationSpecific(tb.installationOf(tu), q.id) &&
+          !(q.type == QuestionType.number && q.unit != null));
 
   /// Same canonical id AND same definition (type, unit, choices, condition).
   static bool sameQuestionDefinition(SiteQuestion a, SiteQuestion b) =>

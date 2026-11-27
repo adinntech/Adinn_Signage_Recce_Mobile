@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../../../core/network/api_config.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../data/storage/web_media.dart';
 import 'photo_shrink.dart';
 import 'catalog_data.dart';
 import 'recce_models.dart';
@@ -263,8 +264,10 @@ class RecceApi {
   Future<MultipartFile> _photoPart(UploadItem u) async {
     MultipartFile of(Uint8List bytes) => MultipartFile.fromBytes(bytes, filename: 'photo_${u.id}.${photoExtension(bytes)}');
     if (kIsWeb) {
-      // Browser: no dart:io File, send the bytes of the picked file.
-      return of(await shrinkPhoto(await XFile(u.path).readAsBytes()));
+      // Browser: no dart:io File. A photo kept in memory (`mem://`) is read from there; a picked file (a blob link) is read as bytes.
+      final kept = isMemPath(u.path) ? getMem(u.path) : null;
+      if (isMemPath(u.path) && kept == null) throw const RecceInputException('This photo is no longer in the browser (the page was reloaded). Take it again.');
+      return of(await shrinkPhoto(kept ?? await XFile(u.path).readAsBytes()));
     }
     final file = File(u.path);
     if (await file.length() <= serverPhotoLimitBytes) return MultipartFile.fromFile(u.path, filename: u.path.split(RegExp(r'[\\/]')).last);
@@ -282,6 +285,13 @@ class RecceApi {
           cancelToken: cancel,
           onSendProgress: (s, t) => onProgress(t <= 0 ? 0 : s / t),
         );
+      });
+
+  /// Saves the 2D drawing ([kind] `2d`) or the 3D preview (`3d`) picture of ONE board (`PUT /recce/shops/:siteId/boards/:mediaKey/renders/:kind`).
+  /// The server keeps it inside the shop's document with that board; sending it again replaces the earlier draft picture.
+  Future<ShopDetail> saveBoardRender(String siteId, String mediaKey, String kind, Uint8List png) => _run(() async {
+        final form = FormData.fromMap({'file': MultipartFile.fromBytes(png, filename: 'board_${mediaKey}_$kind.png')});
+        return ShopDetail.fromJson(_data(await _dio.put<dynamic>('/recce/shops/$siteId/boards/${Uri.encodeComponent(mediaKey)}/renders/$kind', data: form)));
       });
 
   Future<void> deletePhoto(String siteId, String photoId, {String? reason}) => _run(() async {

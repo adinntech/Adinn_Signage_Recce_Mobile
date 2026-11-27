@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
@@ -14,10 +15,14 @@ import '../../preview3d/renderer_painter.dart';
 import '../../preview3d/scene3d.dart';
 import '../../preview3d/signage_scene_builder.dart';
 import '../data/board_geometry.dart';
+import '../data/board_render_export.dart';
+import '../data/live_services.dart';
 import '../data/recce_models.dart';
 
-/// "2D / 3D view" of the boards of one shop, opened from the Photos tab once photos are uploaded. It only draws what the recce person
-/// entered on the Boards tab (type, size, unit, sided, position) with the same painters as the older recce screens. Nothing is saved.
+/// "2D / 3D view" of the boards of one shop, opened from the Photos tab once photos are uploaded. It draws what the recce person
+/// entered on the Boards tab (type, size, unit, sided, position) with the same painters as the older recce screens.
+/// "Save to shop" (top right) turns the 2D drawing and the 3D preview of EVERY board into pictures and stores them on the server inside
+/// that board of the shop, next to the board's photos, so reviewers see them with the board.
 class BoardViewsScreen extends StatefulWidget {
   /// [boards] are the boards as they are on the Boards tab right now (saved or not); [drawnBy] goes into the drawing's title block.
   const BoardViewsScreen({super.key, required this.detail, required this.boards, this.drawnBy = '-'});
@@ -35,6 +40,8 @@ class _BoardViewsScreenState extends State<BoardViewsScreen> with SingleTickerPr
   late final List<BoardItem> _boards = [for (final b in widget.boards) b.copy()];
   late final List<SignageGeometry> _geo = [for (final b in _boards) geometryForBoard(b)];
   var _selected = 0;
+  var _saving = false;
+  String _progress = '';
 
   @override
   void dispose() {
@@ -42,12 +49,42 @@ class _BoardViewsScreenState extends State<BoardViewsScreen> with SingleTickerPr
     super.dispose();
   }
 
+  /// Makes the 2D drawing and 3D preview picture of every board and sends them, board by board. Stops at the first failure and says which board.
+  Future<void> _save() async {
+    final d = widget.detail;
+    final api = context.read<LiveServices>().api;
+    final brand = d.project.name;
+    setState(() => _saving = true);
+    try {
+      for (var i = 0; i < _boards.length; i++) {
+        final b = _boards[i];
+        final label = '${b.name} ${b.key}';
+        if (mounted) setState(() => _progress = 'Saving $label (${i + 1}/${_boards.length})');
+        await api.saveBoardRender(d.siteId, b.key, '2d', await drawing2dPng(_geo[i], _info(d, b)));
+        await api.saveBoardRender(d.siteId, b.key, '3d', await view3dPng(_geo[i], brand: brand));
+      }
+      if (mounted) showSnack(context, '2D drawing and 3D preview of ${_boards.length} board(s) saved to this shop');
+    } catch (e) {
+      if (mounted) showSnack(context, 'Could not save the 2D / 3D pictures: $e', error: true);
+    } finally {
+      if (mounted) setState(() { _saving = false; _progress = ''; });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = widget.detail;
-    final photos = [for (final p in d.photos) if (p.displayUrl != null) p];
+    final photos = [for (final p in d.photos) if (p.displayUrl != null && p.category != 'DRAWING_2D' && p.category != 'VIEW_3D') p];
     return Scaffold(
-      appBar: AppBar(title: const Text('2D / 3D view')),
+      appBar: AppBar(
+        title: const Text('2D / 3D view'),
+        actions: [
+          if (_boards.isNotEmpty)
+            _saving
+                ? Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Center(child: Text(_progress, style: const TextStyle(fontSize: 12))))
+                : TextButton.icon(key: const Key('save-board-renders'), onPressed: _save, icon: const Icon(Icons.cloud_upload_outlined), label: const Text('Save to shop')),
+        ],
+      ),
       body: _boards.isEmpty
           ? const EmptyState(icon: Icons.architecture, title: 'No board yet', message: 'Add a board with its size on the Boards tab, then open this view again.')
           : Column(

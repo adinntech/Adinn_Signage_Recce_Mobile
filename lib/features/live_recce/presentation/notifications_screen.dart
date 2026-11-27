@@ -42,7 +42,10 @@ Color notificationColor(NotificationType t) => switch (t) {
 /// What the bell holds, grouped by day. A tap marks the item read and opens its shop (a message opens the Chat tab, a review the
 /// Review tab) when the shop is on this login's list.
 class NotificationsScreen extends StatelessWidget {
-  const NotificationsScreen({super.key});
+  /// [title] is "Activity" when the screen is a tab of the home shell.
+  const NotificationsScreen({super.key, this.title = 'Notifications'});
+
+  final String title;
 
   Future<void> _open(BuildContext context, AppNotification n) async {
     final notes = context.read<NotificationsController>();
@@ -76,7 +79,7 @@ class NotificationsScreen extends StatelessWidget {
     final c = context.watch<NotificationsController>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: Text(title),
         actions: [if (c.unread > 0) TextButton(key: const ValueKey('read-all'), onPressed: c.markAllRead, child: const Text('Read all'))],
       ),
       body: _body(context, c),

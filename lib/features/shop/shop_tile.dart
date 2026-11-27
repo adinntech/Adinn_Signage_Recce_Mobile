@@ -17,10 +17,13 @@ void openShop(BuildContext context, String shopId) {
 
 /// Compact card for a shop used in task lists, approvals and dashboard.
 class ShopTile extends StatelessWidget {
-  const ShopTile({super.key, required this.shop, this.showProject = false});
+  const ShopTile({super.key, required this.shop, this.showProject = false, this.compact = false});
 
   final Shop shop;
   final bool showProject;
+
+  /// Home page version: name, project line, status and board count only (no media chips, no version chip).
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -95,8 +98,9 @@ class ShopTile extends StatelessWidget {
                     '${shop.boards.length} board${shop.boards.length == 1 ? '' : 's'}',
                     icon: Icons.dashboard_customize_outlined,
                   ),
-                  for (final m in medias) TagChip(m, color: AdinnColors.red),
-                  if (sub != null)
+                  if (!compact)
+                    for (final m in medias) TagChip(m, color: AdinnColors.red),
+                  if (!compact && sub != null)
                     TagChip(
                       'v${sub.version} • ${fmtRelative(sub.submittedAt)}',
                       icon: Icons.history,

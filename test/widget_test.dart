@@ -114,7 +114,7 @@ void main() {
     await bootApp(tester);
     await enterPin(tester, '5678');
     expect(find.text('Murugan K'), findsOneWidget);
-    expect(find.text('Assigned shops'), findsOneWidget);
+    expect(find.textContaining('need field work'), findsOneWidget);
 
     await tester.tap(find.text('Projects').last);
     await tester.pumpAndSettle();
